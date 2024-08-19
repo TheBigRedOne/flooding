@@ -40,7 +40,7 @@ EOF
 
 $DOWNLOAD_FILES = <<EOF
   # Clone Flooding project
-  git clone https://github.com/TheBigRedOne/flooding_experiment.git /home/vagrant/mini-ndn/flooding_experiment
+  git clone https://github.com/TheBigRedOne/flooding_experiment.git /home/vagrant/mini-ndn/flooding
 EOF
 
 Vagrant.configure("2") do |config|
