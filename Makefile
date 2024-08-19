@@ -34,6 +34,7 @@ export-results: run-test
 	mkdir -p $(EXTERNAL_RESULTS_DIR)
 	vagrant ssh -c 'cp /home/vagrant/mini-ndn/flooding/consumer.log /vagrant/$(RESULTS_DIR)/'
 	vagrant ssh -c 'cp /home/vagrant/mini-ndn/flooding/producer.log /vagrant/$(RESULTS_DIR)/'
+	vagrant ssh -c 'cp /home/vagrant/mini-ndn/flooding/consumer_capture.pcap /vagrant/$(RESULTS_DIR)/'
 
 # Shut down Vagrant VM
 stop-vagrant: export-results
