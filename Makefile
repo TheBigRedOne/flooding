@@ -27,7 +27,7 @@ generate-keys: start-vagrant
 
 # Run the experiment
 run-test: compile-consumer compile-producer generate-keys
-	vagrant ssh -c 'cd /home/vagrant/mini-ndn/flooding && sudo python test.py'
+	vagrant ssh -c 'cd /home/vagrant/mini-ndn/flooding && sudo python exp.py'
 
 # Export results
 export-results: run-test
