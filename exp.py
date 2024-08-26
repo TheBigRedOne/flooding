@@ -60,7 +60,7 @@ if __name__ == '__main__':
     nfds = AppManager(ndn, ndn.net.hosts, Nfd)
     info('Starting NLSR on nodes\n')
     nlsrs = AppManager(ndn, ndn.net.hosts, Nlsr)
-    sleep(20)  # 等待NLSR启动并稳定 wait for NLSR
+    sleep(30)  # 等待NLSR启动并稳定 wait for NLSR
 
     # 禁用额外的连接，确保初始状态下只有到acc2的连接是启用的 disable producer-acc3&4 at beginning
     ndn.net.configLinkStatus('producer', 'acc3', 'down')
@@ -78,17 +78,17 @@ if __name__ == '__main__':
     consumer.cmd("/home/vagrant/mini-ndn/flooding/consumer &> /home/vagrant/mini-ndn/flooding/consumer.log &")
 
     # 调度生产者切换连接 link state changes to emulate producer movement
-    sleep(20)
+    sleep(30)
     info('Switching producer to acc3\n')
     ndn.net.configLinkStatus('producer', 'acc2', 'down')
     ndn.net.configLinkStatus('producer', 'acc3', 'up')
 
-    sleep(20)
+    sleep(30)
     info('Switching producer to acc4\n')
     ndn.net.configLinkStatus('producer', 'acc3', 'down')
     ndn.net.configLinkStatus('producer', 'acc4', 'up')
     
-    sleep(20)  # 保持监听状态 keep listening
+    sleep(30)  # 保持监听状态 keep listening
     consumer.cmd("kill %tcpdump")  # 终止tcpdump terminate tcpdump
     
     ndn.stop()
