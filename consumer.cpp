@@ -10,7 +10,7 @@ class Consumer
 {
 public:
   Consumer()
-    : m_scheduler(m_face.getIoService())
+    : m_scheduler(m_face.getIoContext())
   {
     m_validator.load("/home/vagrant/mini-ndn/flooding/trust-schema.conf");
   }
