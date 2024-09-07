@@ -7,7 +7,7 @@ def plot_throughput(csv_file):
     times = []
     throughput = []
 
-    with open(csv_file, 'r') as f):
+    with open(csv_file, 'r') as f:
         reader = csv.DictReader(f)
         start_time = None
         for row in reader:
