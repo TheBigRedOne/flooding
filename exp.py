@@ -29,22 +29,22 @@ class CustomTopo(Topo):
         consumer = self.addHost('consumer')
 
         # 连接主机，设置带宽和延迟 set links
-        self.addLink(core, agg1, bw=100, delay='10ms')
-        self.addLink(core, agg2, bw=100, delay='10ms')
+        self.addLink(core, agg1, bw=1000, delay='1ms')
+        self.addLink(core, agg2, bw=1000, delay='1ms')
         
-        self.addLink(agg1, acc1, bw=100, delay='5ms')
-        self.addLink(agg1, acc2, bw=100, delay='5ms')
-        self.addLink(agg1, acc3, bw=100, delay='5ms')
+        self.addLink(agg1, acc1, bw=1000, delay='1ms')
+        self.addLink(agg1, acc2, bw=1000, delay='1ms')
+        self.addLink(agg1, acc3, bw=1000, delay='1ms')
         
-        self.addLink(agg2, acc4, bw=100, delay='5ms')
-        self.addLink(agg2, acc5, bw=100, delay='5ms')
-        self.addLink(agg2, acc6, bw=100, delay='5ms')
+        self.addLink(agg2, acc4, bw=1000, delay='1ms')
+        self.addLink(agg2, acc5, bw=1000, delay='1ms')
+        self.addLink(agg2, acc6, bw=1000, delay='1ms')
 
         # 连接主机到接入主机 connect consumer and producer to switches
-        self.addLink(consumer, acc1, bw=100, delay='2ms')
-        self.addLink(producer, acc2, bw=100, delay='2ms')  # 初始连接到acc2
-        self.addLink(producer, acc3, bw=100, delay='2ms')  # 预先创建到acc3的连接 pre-build producer-acc3
-        self.addLink(producer, acc4, bw=100, delay='2ms')  # 预先创建到acc4的连接 pre-build producer-acc4
+        self.addLink(consumer, acc1, bw=100, delay='10ms')
+        self.addLink(producer, acc2, bw=100, delay='10ms')  # 初始连接到acc2
+        self.addLink(producer, acc3, bw=100, delay='10ms')  # 预先创建到acc3的连接 pre-build producer-acc3
+        self.addLink(producer, acc4, bw=100, delay='10ms')  # 预先创建到acc4的连接 pre-build producer-acc4
 
 if __name__ == '__main__':
     setLogLevel('info')
