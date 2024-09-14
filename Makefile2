@@ -17,10 +17,10 @@ THROUGHPUT_CSV = $(RESULTS_DIR)/consumer_capture_throughput.csv
 # Main targets
 all: $(PCAP_FILE) $(THROUGHPUT_CSV)
 
-$(CONSUMER_EXEC): $(FLOODING_DIR)/consumer.cpp | start-vagrant
+$(CONSUMER_EXEC): | start-vagrant
 	vagrant ssh -c 'cd $(FLOODING_DIR) && g++ -std=c++17 -o $(CONSUMER_EXEC) consumer.cpp $$(pkg-config --cflags --libs libndn-cxx)'
 
-$(PRODUCER_EXEC): $(FLOODING_DIR)/producer.cpp | start-vagrant
+$(PRODUCER_EXEC): | start-vagrant
 	vagrant ssh -c 'cd $(FLOODING_DIR) && g++ -std=c++17 -o $(PRODUCER_EXEC) producer.cpp $$(pkg-config --cflags --libs libndn-cxx)'
 
 $(PCAP_FILE): $(CONSUMER_EXEC) $(PRODUCER_EXEC) generate-keys | start-vagrant
