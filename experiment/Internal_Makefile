@@ -1,4 +1,4 @@
-# Internal Makefile (Makefile.internal)
+# Internal Makefile (located inside /home/vagrant/mini-ndn/flooding/experiment/)
 
 # Paths
 RESULTS_DIR = results
