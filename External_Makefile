@@ -1,19 +1,8 @@
 # External Makefile
 
-# Main target
-all: start-vagrant run-inside-vm stop-vagrant
-
-start-vagrant:
+all:
 	vagrant up --provider virtualbox
-
-stop-vagrant:
+	vagrant ssh -c 'cd /home/vagrant/mini-ndn/flooding/experiment && make'
 	vagrant halt
 
-run-inside-vm: start-vagrant
-	# Run the internal Makefile inside the VM
-	vagrant ssh -c 'cd /home/vagrant/mini-ndn/flooding && make -f Makefile.internal'
-
-clean-vagrant:
-	vagrant destroy -f
-
-.PHONY: all start-vagrant stop-vagrant run-inside-vm clean-vagrant
+.PHONY: all
