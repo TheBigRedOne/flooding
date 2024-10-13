@@ -114,29 +114,32 @@ private:
     return false;  // 没有检测到移动
   }
 
-  // 处理 Interest 的函数
-  void onInterest(const Interest& interest)
-  {
-    std::cout << ">> I: " << interest << std::endl;
+// 处理 Interest 的函数
+void onInterest(const Interest& interest)
+{
+  std::cout << ">> I: " << interest << std::endl;
 
-    // 创建数据包
-    auto data = std::make_shared<Data>();
-    data->setName(interest.getName());
-    data->setFreshnessPeriod(10_s);
+  // 创建数据包
+  auto data = std::make_shared<Data>();
+  data->setName(interest.getName());
+  data->setFreshnessPeriod(10_s);
 
-    // 设置内容，附加移动状态信息
-    const std::string content = "Hello, world! " + std::string(isMobile ? "(Mobile Producer)" : "(Fixed Producer)");
-    data->setContent(makeStringBlock(tlv::Content, content));
+  // 设置内容，附加移动状态信息
+  const std::string content = "Hello, world! " + std::string(isMobile ? "(Mobile Producer)" : "(Fixed Producer)");
+  data->setContent(makeStringBlock(tlv::Content, content));
 
-    // 设置一个自定义字段标记移动状态
-    data->getMetaInfo().setMobilityFlag(isMobile);
-
-    // 使用默认密钥签名数据
-    m_keyChain.sign(*data);
-
-    std::cout << "<< D: " << *data << std::endl;
-    m_face.put(*data);
+  // 如果生产者处于移动状态，设置 MobilityFlag 和 HopLimit
+  if (isMobile) {
+    data->getMetaInfo().setMobilityFlag(true);  // 标记数据包为移动生产者发出的
+    data->getMetaInfo().setHopLimit(5);         // 设置初始 HopLimit 为 5，表示最多转发 5 次
   }
+
+  // 使用默认密钥签名数据
+  m_keyChain.sign(*data);
+
+  std::cout << "<< D: " << *data << std::endl;
+  m_face.put(*data);
+}
 
   // 注册失败时的处理函数
   void onRegisterFailed(const Name& prefix, const std::string& reason)
