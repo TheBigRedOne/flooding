@@ -132,6 +132,7 @@ void onInterest(const Interest& interest)
   if (isMobile) {
     data->getMetaInfo().setMobilityFlag(true);  // 标记数据包为移动生产者发出的
     data->getMetaInfo().setHopLimit(5);         // 设置初始 HopLimit 为 5，表示最多转发 5 次
+    data->getMetaInfo().setTimeStamp(time::steady_clock::now());  // 设置时间戳为当前时间
   }
 
   // 使用默认密钥签名数据
