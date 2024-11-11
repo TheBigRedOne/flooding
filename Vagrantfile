@@ -24,7 +24,7 @@ $INSTALL_BASE = <<EOF
   #
   git clone https://github.com/named-data/mini-ndn.git /home/vagrant/mini-ndn
   cd /home/vagrant/mini-ndn
-  git checkout b5c893d5a190f530885a4e31ce440e7077848f97
+  git checkout 5158e5fff3acac3c19290b51f9158a48ab0d8bba
   ./install.sh -y --source 
 
   # Change ownership of the mini-ndn folder to vagrant user
