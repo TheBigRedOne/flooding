@@ -28,12 +28,6 @@ public:
     // 使用一个线程来监听网络接口状态
     netlinkListenerThread = std::thread(&Producer::listenToNetlink, this);
 
-    // 设置监听转发器的路由更新通知
-    m_face.setInterestFilter("/local/ndn/forwarder/globalRoutingUpdate",
-                             std::bind(&Producer::onRoutingUpdateNotification, this, std::placeholders::_2),
-                             nullptr,
-                             std::bind(&Producer::onRegisterFailed, this, std::placeholders::_1, std::placeholders::_2));
-
     m_face.setInterestFilter("/example/testApp/randomData",
                              std::bind(&Producer::onInterest, this, std::placeholders::_2),
                              nullptr,
@@ -50,17 +44,6 @@ public:
   }
 
 private:
-  // 处理转发器发送的路由更新通知
-  void onRoutingUpdateNotification(const Interest& interest)
-  {
-    std::cout << "Received global routing update notification." << std::endl;
-
-    // 收到通知后，取消移动性标记
-    globalRoutingUpdated = true;
-    isMobile = false;
-    std::cout << "Stopped marking MobilityFlag after routing update." << std::endl;
-  }
-
   // 使用 Netlink 监听网络接口状态变化
   void listenToNetlink()
   {
@@ -173,7 +156,6 @@ private:
   std::atomic<bool> isMobile; // 生产者是否在移动状态
   std::thread netlinkListenerThread; // 用于监听网络接口的线程
   std::atomic<bool> keepRunning; // 控制线程运行状态
-  std::atomic<bool> globalRoutingUpdated; // 标记全局路由是否已更新
 };
 
 } // namespace examples
