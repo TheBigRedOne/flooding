@@ -2,15 +2,13 @@
 #include <ndn-cxx/security/key-chain.hpp>
 #include <ndn-cxx/security/signing-helpers.hpp>
 #include <iostream>
-#include <cstdlib> // for std::system
 #include <thread>
 #include <atomic>
 #include <queue>
+#include <map>
 #include <mutex>
 #include <condition_variable>
-#include <sys/socket.h>
-#include <linux/netlink.h>
-#include <unistd.h>
+#include <chrono>
 
 namespace ndn {
 namespace examples {
@@ -19,33 +17,31 @@ class Producer
 {
 public:
   Producer()
-    : isMobile(false), keepRunning(true) {}
+    : keepRunning(true), frameRate(30), isMobile(false) {}
 
   void run()
   {
     // Automatically advertise prefix using system call
-    std::system("nlsrc advertise /example/testApp");
-
-    // Start the Netlink listener thread
-    netlinkListenerThread = std::thread(&Producer::listenToNetlink, this);
+    std::system("nlsrc advertise /example/liveStream");
 
     // Register Interest filter
-    m_face.setInterestFilter("/example/testApp/randomData",
+    m_face.setInterestFilter("/example/liveStream",
                              std::bind(&Producer::onInterestReceived, this, std::placeholders::_2),
                              nullptr,
                              std::bind(&Producer::onRegisterFailed, this, std::placeholders::_1, std::placeholders::_2));
 
-    std::cout << "Producer running, waiting for Interests...\n";
+    std::cout << "Producer running, generating video data...\n";
 
-    // Start the worker thread for processing Interest queue
+    // Start threads for data generation and processing
+    dataGenerationThread = std::thread(&Producer::generateData, this);
     interestProcessingThread = std::thread(&Producer::processInterestQueue, this);
 
     m_face.processEvents();
 
-    // Shutdown
+    // Shutdown threads
     keepRunning.store(false);
-    if (netlinkListenerThread.joinable()) {
-      netlinkListenerThread.join();
+    if (dataGenerationThread.joinable()) {
+      dataGenerationThread.join();
     }
     if (interestProcessingThread.joinable()) {
       interestProcessingThread.join();
@@ -53,73 +49,45 @@ public:
   }
 
 private:
-  // Listener for Netlink messages to monitor mobility
-  void listenToNetlink()
+  // Data generation thread: simulate video frame generation
+  void generateData()
   {
-    int nlSock = socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
-    if (nlSock < 0) {
-      std::cerr << "ERROR: Failed to create Netlink socket\n";
-      return;
-    }
-
-    sockaddr_nl sa;
-    std::memset(&sa, 0, sizeof(sa));
-    sa.nl_family = AF_NETLINK;
-    sa.nl_groups = RTMGRP_LINK;
-
-    if (bind(nlSock, (sockaddr*)&sa, sizeof(sa)) < 0) {
-      std::cerr << "ERROR: Failed to bind Netlink socket\n";
-      close(nlSock);
-      return;
-    }
-
+    int frameNumber = 0;
     while (keepRunning.load()) {
-      char buffer[4096];
-      int len = recv(nlSock, buffer, sizeof(buffer), 0);
-      if (len < 0) {
-        continue;
+      // Simulate frame generation at a fixed frame rate
+      std::this_thread::sleep_for(std::chrono::milliseconds(1000 / frameRate));
+
+      // Create frame data
+      std::string frameContent = "Frame-" + std::to_string(frameNumber);
+      {
+        std::lock_guard<std::mutex> lock(dataBufferMutex);
+        dataBuffer[frameNumber] = frameContent;
       }
 
-      for (nlmsghdr* nlh = (nlmsghdr*)buffer; NLMSG_OK(nlh, (unsigned int)len); nlh = NLMSG_NEXT(nlh, len)) {
-        if (nlh->nlmsg_type == RTM_NEWLINK || nlh->nlmsg_type == RTM_DELLINK) {
-          bool mobilityDetected = detectMobility();
-          if (mobilityDetected != isMobile) {
-            isMobile = mobilityDetected;
-            std::cout << (isMobile ? "Mobility detected: now in mobile state.\n" : "Producer is now stationary.\n");
-          }
+      // Notify waiting threads if Interests are waiting for this frame
+      {
+        std::lock_guard<std::mutex> lock(interestQueueMutex);
+        if (interestQueue.find(frameNumber) != interestQueue.end()) {
+          interestQueueCondition.notify_all();
         }
       }
+
+      std::cout << "Generated data for " << frameContent << std::endl;
+      ++frameNumber;
     }
-
-    close(nlSock);
-  }
-
-  // Detect mobility by checking network interface status
-  bool detectMobility()
-  {
-    struct ifaddrs *ifap, *ifa;
-    getifaddrs(&ifap);
-
-    for (ifa = ifap; ifa != nullptr; ifa = ifa->ifa_next) {
-      if (ifa->ifa_addr && ifa->ifa_addr->sa_family == AF_INET) {
-        std::string iface(ifa->ifa_name);
-        if (iface == "eth0" && !(ifa->ifa_flags & IFF_UP)) {
-          freeifaddrs(ifap);
-          return true;
-        }
-      }
-    }
-
-    freeifaddrs(ifap);
-    return false;
   }
 
   // Add Interest to processing queue
   void onInterestReceived(const Interest& interest)
   {
-    std::unique_lock<std::mutex> lock(interestQueueMutex);
-    interestQueue.push(interest);
-    lock.unlock();
+    int requestedFrame = parseRequestedFrame(interest.getName());
+    std::cout << ">> Received Interest for Frame-" << requestedFrame << std::endl;
+
+    {
+      std::lock_guard<std::mutex> lock(interestQueueMutex);
+      waitingInterests.push(interest);
+    }
+
     interestQueueCondition.notify_one();
   }
 
@@ -127,47 +95,66 @@ private:
   void processInterestQueue()
   {
     while (keepRunning.load()) {
-      std::unique_lock<std::mutex> lock(interestQueueMutex);
-      interestQueueCondition.wait(lock, [this] { return !interestQueue.empty() || !keepRunning.load(); });
+      Interest interest;
+      {
+        std::unique_lock<std::mutex> lock(interestQueueMutex);
+        interestQueueCondition.wait(lock, [this] {
+          return !waitingInterests.empty() || !keepRunning.load();
+        });
 
-      if (!keepRunning.load() && interestQueue.empty()) {
-        return;
+        if (!keepRunning.load() && waitingInterests.empty()) {
+          return;
+        }
+
+        interest = waitingInterests.front();
+        waitingInterests.pop();
       }
 
-      Interest interest = interestQueue.front();
-      interestQueue.pop();
-      lock.unlock();
+      int requestedFrame = parseRequestedFrame(interest.getName());
 
-      processInterest(interest);
+      // Wait until the requested frame is available
+      std::string frameContent;
+      {
+        std::unique_lock<std::mutex> lock(dataBufferMutex);
+        interestQueueCondition.wait(lock, [this, requestedFrame] {
+          return dataBuffer.find(requestedFrame) != dataBuffer.end() || !keepRunning.load();
+        });
+
+        if (!keepRunning.load()) {
+          return;
+        }
+
+        frameContent = dataBuffer[requestedFrame];
+      }
+
+      // Create and send data packet
+      auto data = std::make_shared<Data>();
+      data->setName(interest.getName());
+      data->setFreshnessPeriod(1_s);
+      data->setContent(makeStringBlock(tlv::Content, frameContent));
+
+      // If the producer is mobile, set mobility flag
+      if (isMobile.load()) {
+        data->getMetaInfo().setMobilityFlag(true);
+        data->getMetaInfo().setHopLimit(5);
+      }
+
+      m_keyChain.sign(*data);
+
+      std::cout << "<< Responding with Data for Frame-" << requestedFrame << std::endl;
+      m_face.put(*data);
     }
   }
 
-  // Process a single Interest
-  void processInterest(const Interest& interest)
+  // Parse the requested frame number from the Interest name
+  int parseRequestedFrame(const Name& name)
   {
-    std::cout << ">> I: " << interest << std::endl;
-
-    // Create data
-    auto data = std::make_shared<Data>();
-    data->setName(interest.getName());
-    data->setFreshnessPeriod(10_s);
-
-    // Set content
-    const std::string content = "Hello, world! (Producer Response)";
-    data->setContent(makeStringBlock(tlv::Content, content));
-
-    // Mark data with mobility flag if producer is in mobile state
-    if (isMobile.load()) {
-      data->getMetaInfo().setMobilityFlag(true);
-      data->getMetaInfo().setHopLimit(5);
-      data->getMetaInfo().setTimeStamp(time::steady_clock::now());
+    // Assume name format: /example/liveStream/<frame-number>
+    if (name.size() < 2) {
+      throw std::runtime_error("Invalid Interest name");
     }
 
-    // Sign data
-    m_keyChain.sign(*data);
-
-    std::cout << "<< D: " << *data << std::endl;
-    m_face.put(*data);
+    return std::stoi(name[-1].toUri());
   }
 
   // Handle registration failure
@@ -181,14 +168,18 @@ private:
   Face m_face;
   KeyChain m_keyChain;
 
-  std::atomic<bool> isMobile;
   std::atomic<bool> keepRunning;
+  std::atomic<bool> isMobile;
+  int frameRate; // Frames per second
 
-  std::queue<Interest> interestQueue;
+  std::map<int, std::string> dataBuffer; // Buffer for generated frames
+  std::mutex dataBufferMutex;
+
+  std::queue<Interest> waitingInterests; // Queue for received Interests
   std::mutex interestQueueMutex;
   std::condition_variable interestQueueCondition;
 
-  std::thread netlinkListenerThread;
+  std::thread dataGenerationThread;
   std::thread interestProcessingThread;
 };
 
