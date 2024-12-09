@@ -85,7 +85,7 @@ private:
 
     {
       std::lock_guard<std::mutex> lock(interestQueueMutex);
-      waitingInterests.push(interest);
+      interestQueue[requestedFrame].push(interest);
     }
 
     interestQueueCondition.notify_one();
@@ -96,21 +96,28 @@ private:
   {
     while (keepRunning.load()) {
       Interest interest;
+      int requestedFrame = -1;
+
       {
         std::unique_lock<std::mutex> lock(interestQueueMutex);
         interestQueueCondition.wait(lock, [this] {
-          return !waitingInterests.empty() || !keepRunning.load();
+          return !interestQueue.empty() || !keepRunning.load();
         });
 
-        if (!keepRunning.load() && waitingInterests.empty()) {
+        if (!keepRunning.load() && interestQueue.empty()) {
           return;
         }
 
-        interest = waitingInterests.front();
-        waitingInterests.pop();
-      }
+        // Get the next Interest to process
+        auto it = interestQueue.begin();
+        requestedFrame = it->first;
+        interest = it->second.front();
+        it->second.pop();
 
-      int requestedFrame = parseRequestedFrame(interest.getName());
+        if (it->second.empty()) {
+          interestQueue.erase(it);
+        }
+      }
 
       // Wait until the requested frame is available
       std::string frameContent;
@@ -135,8 +142,9 @@ private:
 
       // If the producer is mobile, set mobility flag
       if (isMobile.load()) {
-        data->getMetaInfo().setMobilityFlag(true);
-        data->getMetaInfo().setHopLimit(5);
+        auto& metaInfo = const_cast<MetaInfo&>(data->getMetaInfo());
+        metaInfo.setMobilityFlag(true);
+        metaInfo.setHopLimit(5);
       }
 
       m_keyChain.sign(*data);
@@ -175,7 +183,7 @@ private:
   std::map<int, std::string> dataBuffer; // Buffer for generated frames
   std::mutex dataBufferMutex;
 
-  std::queue<Interest> waitingInterests; // Queue for received Interests
+  std::map<int, std::queue<Interest>> interestQueue; // Map for received Interests
   std::mutex interestQueueMutex;
   std::condition_variable interestQueueCondition;
 
