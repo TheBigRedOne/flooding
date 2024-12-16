@@ -71,11 +71,11 @@ if __name__ == '__main__':
     consumer = ndn.net['consumer']
 
     # 在consumer节点上启动tcpdump监听 enable tcpdump listening on consumer
-    consumer.cmd("tcpdump -i consumer-eth0 -w /home/vagrant/mini-ndn/flooding/consumer_capture.pcap &")
+    consumer.cmd("tcpdump -i consumer-eth0 -w /home/vagrant/mini-ndn/flooding/experiment/consumer_capture.pcap &")
     
     # 启动生产者和消费者应用程序 enbale applications
-    producer.cmd("/home/vagrant/mini-ndn/flooding/producer &> /home/vagrant/mini-ndn/flooding/producer.log &")
-    consumer.cmd("/home/vagrant/mini-ndn/flooding/consumer &> /home/vagrant/mini-ndn/flooding/consumer.log &")
+    producer.cmd("/home/vagrant/mini-ndn/flooding/experiment/producer &> /home/vagrant/mini-ndn/flooding/experiment/producer.log &")
+    consumer.cmd("/home/vagrant/mini-ndn/flooding/experiment/consumer &> /home/vagrant/mini-ndn/flooding/experiment/consumer.log &")
 
     # 调度生产者切换连接 link state changes to emulate producer movement
     sleep(30)
