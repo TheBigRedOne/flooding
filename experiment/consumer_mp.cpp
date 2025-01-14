@@ -13,7 +13,7 @@ public:
   Consumer()
     : m_scheduler(m_face.getIoContext()), frameNumber(0)
   {
-    m_validator.load("/home/vagrant/mini-ndn/flooding/experiemnt/trust-schema.conf");
+    m_validator.load("/home/vagrant/mini-ndn/flooding/experiment/trust-schema.conf");
   }
 
   void run()
