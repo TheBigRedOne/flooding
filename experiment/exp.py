@@ -31,11 +31,13 @@ class CustomTopo(Topo):
         # 连接主机，设置带宽和延迟 set links
         self.addLink(core, agg1, bw=1000, delay='1ms')
         self.addLink(core, agg2, bw=1000, delay='1ms')
-        
+
+        self.addLink(agg1, agg2, bw=1000, delay='1ms')
+
         self.addLink(agg1, acc1, bw=1000, delay='1ms')
         self.addLink(agg1, acc2, bw=1000, delay='1ms')
         self.addLink(agg1, acc3, bw=1000, delay='1ms')
-        
+
         self.addLink(agg2, acc4, bw=1000, delay='1ms')
         self.addLink(agg2, acc5, bw=1000, delay='1ms')
         self.addLink(agg2, acc6, bw=1000, delay='1ms')
@@ -72,23 +74,23 @@ if __name__ == '__main__':
 
     # 在consumer节点上启动tcpdump监听 enable tcpdump listening on consumer
     consumer.cmd("tcpdump -i consumer-eth0 -w /home/vagrant/mini-ndn/flooding/experiment/consumer_capture.pcap &")
-    
+
     # 启动生产者和消费者应用程序 enbale applications
     producer.cmd("/home/vagrant/mini-ndn/flooding/experiment/producer &> /home/vagrant/mini-ndn/flooding/experiment/producer.log &")
     consumer.cmd("/home/vagrant/mini-ndn/flooding/experiment/consumer &> /home/vagrant/mini-ndn/flooding/experiment/consumer.log &")
+    sleep(120)
 
     # 调度生产者切换连接 link state changes to emulate producer movement
-    sleep(30)
     info('Switching producer to acc3\n')
     ndn.net.configLinkStatus('producer', 'acc2', 'down')
     ndn.net.configLinkStatus('producer', 'acc3', 'up')
+    sleep(120)
 
-    sleep(30)
     info('Switching producer to acc4\n')
     ndn.net.configLinkStatus('producer', 'acc3', 'down')
     ndn.net.configLinkStatus('producer', 'acc4', 'up')
-    
-    sleep(30)  # 保持监听状态 keep listening
+    sleep(120)  # 保持监听状态 keep listening
+
     consumer.cmd("kill %tcpdump")  # 终止tcpdump terminate tcpdump
-    
+
     ndn.stop()
