@@ -30,7 +30,7 @@ class CustomTopo(Topo):
         consumer = self.addHost('consumer')
 
         # 连接主机，设置带宽和延迟 set links
-        self.addLink(core1, core2, bw=1000, delay='1ms'))
+        self.addLink(core1, core2, bw=1000, delay='1ms')
 
         self.addLink(core1, agg1, bw=1000, delay='1ms')
         self.addLink(core1, agg2, bw=1000, delay='1ms')
