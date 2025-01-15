@@ -1,8 +1,8 @@
 {
   "ExpandedNodes": [
     "",
-    "\\experiments"
+    "\\experiments",
+    "\\experiments\\baseline"
   ],
-  "SelectedNode": "\\Makefile",
   "PreviewInSolutionExplorer": false
 }
