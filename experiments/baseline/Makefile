@@ -14,9 +14,10 @@ PRODUCER_LOG := $(RESULTS_DIR)/producer.log
 PCAP_FILE := $(RESULTS_DIR)/consumer_capture.pcap
 PCAP_CSV := $(RESULTS_DIR)/consumer_capture.csv
 THROUGHPUT_CSV := $(RESULTS_DIR)/consumer_capture_throughput.csv
+THROUGHPUT_PDF := $(RESULTS_DIR)/consumer_capture_throughput.pdf
 
 # Main targets
-all: $(PCAP_FILE) $(THROUGHPUT_CSV)
+all: $(PCAP_FILE) $(THROUGHPUT_CSV) $(THROUGHPDF)
 
 $(CONSUMER_EXEC):
 	g++ -std=c++17 -o $(CONSUMER_EXEC) consumer.cpp $$(pkg-config --cflags --libs libndn-cxx)
@@ -32,6 +33,8 @@ $(PCAP_FILE): $(CONSUMER_EXEC) $(PRODUCER_EXEC) generate-keys
 $(THROUGHPUT_CSV): $(PCAP_FILE)
 	tshark -r $(PCAP_FILE) -T fields -e frame.time_epoch -e frame.len -E header=y -E separator=, -E quote=d > $(PCAP_CSV)
 	python throughput_calculation.py $(PCAP_CSV)
+
+$(THROUGHPUT_PDF): $(THROUGHPUT_CSV)
 	python plot_throughput.py $(THROUGHPUT_CSV)
 
 # Key generation
@@ -43,7 +46,7 @@ generate-keys:
 
 # Cleanup
 clean:
-	rm -f $(CONSUMER_LOG) $(PRODUCER_LOG) $(PCAP_FILE) $(PCAP_CSV) $(THROUGHPUT_CSV)
+	rm -f $(CONSUMER_LOG) $(PRODUCER_LOG) $(PCAP_FILE) $(PCAP_CSV) $(THROUGHPUT_CSV) $(THROUGHPUT_PDF)
 	rm -f $(CONSUMER_EXEC) $(PRODUCER_EXEC)
 
 .PHONY: all clean generate-keys
