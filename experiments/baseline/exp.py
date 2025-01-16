@@ -10,8 +10,8 @@ from mininet.topo import Topo
 class CustomTopo(Topo):
     def build(self):
         # 添加核心主机（模拟核心交换机）add core switches
-        core = self.addHost('core1')
-        core = self.addHost('core2')
+        core1 = self.addHost('core1')
+        core2 = self.addHost('core2')
 
         # 添加汇聚主机（模拟汇聚交换机）add aggregation switches
         agg1 = self.addHost('agg1')
@@ -30,7 +30,7 @@ class CustomTopo(Topo):
         consumer = self.addHost('consumer')
 
         # 连接主机，设置带宽和延迟 set links
-        self.addLink(core1, core2, bw=1000, delay='1ms'))
+        self.addLink(core1, core2, bw=1000, delay='1ms')
 
         self.addLink(core1, agg1, bw=1000, delay='1ms')
         self.addLink(core1, agg2, bw=1000, delay='1ms')
