@@ -28,9 +28,9 @@ export-results:
 		if [ -d $(VM_RESULTS_DIR) ]; then \
 			cp -r $(VM_RESULTS_DIR)/* /vagrant/$(HOST_RESULTS_DIR); \
 		else \
-			echo "Error: Results directory does not exist in VM."; \
+			echo "Error: Results directory does not exist in VM." >&2; \
 			exit 1; \
-		fi'
+		fi' > /dev/null
 
 # Shutdown the VM
 shutdown-vm:
