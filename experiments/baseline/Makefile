@@ -17,7 +17,7 @@ THROUGHPUT_CSV := $(RESULTS_DIR)/consumer_capture_throughput.csv
 THROUGHPUT_PDF := $(RESULTS_DIR)/consumer_capture_throughput.pdf
 
 # Main targets
-all: $(PCAP_FILE) $(THROUGHPUT_CSV) $(THROUGHPDF)
+all: $(PCAP_FILE) $(THROUGHPUT_CSV) $(THROUGHPUT_PDF)
 
 $(CONSUMER_EXEC):
 	g++ -std=c++17 -o $(CONSUMER_EXEC) consumer.cpp $$(pkg-config --cflags --libs libndn-cxx)
