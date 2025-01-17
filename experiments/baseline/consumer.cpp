@@ -12,7 +12,7 @@ namespace ndn {
 			Consumer()
 				: m_scheduler(m_face.getIoContext())
 			{
-				m_validator.load("/home/vagrant/mini-ndn/flooding/experiments/baseline/trust-schema.conf");
+				m_validator.load("/home/vagrant/mini-ndn/flooding/experiments/tools/trust-schema.conf");
 			}
 
 			void run()

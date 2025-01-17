@@ -3,6 +3,7 @@
 # Base paths
 BASE_DIR := $(shell pwd)
 RESULTS_DIR := $(BASE_DIR)/results
+TOOLS_DIR := $(BASE_DIR)/tools
 
 # Executable names
 CONSUMER_EXEC := $(BASE_DIR)/consumer
@@ -26,16 +27,16 @@ $(PRODUCER_EXEC):
 	g++ -std=c++17 -o $(PRODUCER_EXEC) producer.cpp $$(pkg-config --cflags --libs libndn-cxx)
 
 $(PCAP_FILE): $(CONSUMER_EXEC) $(PRODUCER_EXEC) generate-keys
-	sudo python exp.py
+	sudo python $(TOOLS_DIR)/exp.py
 	mkdir -p $(RESULTS_DIR)
 	cp consumer_capture.pcap $(PCAP_FILE)
 
 $(THROUGHPUT_CSV): $(PCAP_FILE)
 	tshark -r $(PCAP_FILE) -T fields -e frame.time_epoch -e frame.len -E header=y -E separator=, -E quote=d > $(PCAP_CSV)
-	python throughput_calculation.py $(PCAP_CSV)
+	python $(TOOLS_DIR)/throughput_calculation.py $(PCAP_CSV)
 
 $(THROUGHPUT_PDF): $(THROUGHPUT_CSV)
-	python plot_throughput.py $(THROUGHPUT_CSV)
+	python $(TOOLS_DIR)/plot_throughput.py $(THROUGHPUT_CSV)
 
 # Key generation
 generate-keys:
@@ -43,6 +44,7 @@ generate-keys:
 	ndnsec cert-dump -i /example > example-trust-anchor.cert && \
 	ndnsec key-gen /example/LiveStream && \
 	ndnsec sign-req /example/LiveStream | ndnsec cert-gen -s /example -i example | ndnsec cert-install -
+	cp $(TOOLS_DIR)/trust-schema.conf .
 
 # Cleanup
 clean:
