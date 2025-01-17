@@ -3,7 +3,7 @@
 # Base paths
 BASE_DIR := $(shell pwd)
 RESULTS_DIR := $(BASE_DIR)/results
-TOOLS_DIR := $(BASE_DIR)/tools
+TOOLS_DIR := $(BASE_DIR)/../tools
 
 # Executable names
 CONSUMER_EXEC := $(BASE_DIR)/consumer
