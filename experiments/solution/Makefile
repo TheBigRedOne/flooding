@@ -1,8 +1,8 @@
-# Baseline Test Makefile
+# Solution Test Makefile
 
 # Base paths
 BASE_DIR := $(shell pwd)
-RESULTS_DIR := $(BASE_DIR)/results
+RESULTS_DIR := $(BASE_DIR)/solution_results
 TOOLS_DIR := $(BASE_DIR)/../tools
 
 # Executable names
@@ -21,13 +21,13 @@ THROUGHPUT_PDF := $(RESULTS_DIR)/consumer_capture_throughput.pdf
 all: $(PCAP_FILE) $(THROUGHPUT_CSV) $(THROUGHPUT_PDF)
 
 $(CONSUMER_EXEC):
-	g++ -std=c++17 -o $(CONSUMER_EXEC) consumer.cpp $$(pkg-config --cflags --libs libndn-cxx)
+	g++ -std=c++17 -o $(CONSUMER_EXEC) solution/consumer_mp.cpp $(shell pkg-config --cflags --libs libndn-cxx)
 
 $(PRODUCER_EXEC):
-	g++ -std=c++17 -o $(PRODUCER_EXEC) producer.cpp $$(pkg-config --cflags --libs libndn-cxx)
+	g++ -std=c++17 -o $(PRODUCER_EXEC) solution/producer_mp.cpp $(shell pkg-config --cflags --libs libndn-cxx)
 
 $(PCAP_FILE): $(CONSUMER_EXEC) $(PRODUCER_EXEC) generate-keys
-	env EXPERIMENT_DIR=$(BASE_DIR) sudo -E python $(TOOLS_DIR)/exp.py
+	sudo python $(TOOLS_DIR)/exp.py
 	mkdir -p $(RESULTS_DIR)
 	cp consumer_capture.pcap $(PCAP_FILE)
 

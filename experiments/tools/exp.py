@@ -6,6 +6,7 @@ from minindn.apps.app_manager import AppManager
 from minindn.apps.nfd import Nfd
 from minindn.apps.nlsr import Nlsr
 from mininet.topo import Topo
+import os
 
 class CustomTopo(Topo):
     def build(self):
@@ -55,6 +56,12 @@ class CustomTopo(Topo):
 if __name__ == '__main__':
     setLogLevel('info')
 
+    # 从环境变量读取实验目录路径 read experiment directory from environment variable
+    experiment_dir = os.getenv('EXPERIMENT_DIR')
+    if not experiment_dir:
+        print("Error: EXPERIMENT_DIR environment variable is not set")
+        exit(1)
+
     Minindn.cleanUp()
     Minindn.verifyDependencies()
 
@@ -77,11 +84,17 @@ if __name__ == '__main__':
     consumer = ndn.net['consumer']
 
     # 在consumer节点上启动tcpdump监听 enable tcpdump listening on consumer
-    consumer.cmd("tcpdump -i consumer-eth0 -w /home/vagrant/mini-ndn/flooding/experiments/baseline/consumer_capture.pcap &")
+    consumer_pcap = os.path.join(experiment_dir, "consumer_capture.pcap")
+    consumer.cmd(f"tcpdump -i consumer-eth0 -w {consumer_pcap} &")
 
     # 启动生产者和消费者应用程序 enbale applications
-    producer.cmd("/home/vagrant/mini-ndn/flooding/experiments/baseline/producer &> /home/vagrant/mini-ndn/flooding/experiments/baseline/producer.log &")
-    consumer.cmd("/home/vagrant/mini-ndn/flooding/experiments/baseline/consumer &> /home/vagrant/mini-ndn/flooding/experiments/baseline/consumer.log &")
+    producer_exec = os.path.join(experiment_dir, "producer")
+    consumer_exec = os.path.join(experiment_dir, "consumer")
+    producer_log = os.path.join(experiment_dir, "producer.log")
+    consumer_log = os.path.join(experiment_dir, "consumer.log")
+
+    producer.cmd(f"{producer_exec} &> {producer_log} &")
+    consumer.cmd(f"{consumer_exec} &> {consumer_log} &")
     sleep(120)
 
     # 调度生产者切换连接 link state changes to emulate producer movement
