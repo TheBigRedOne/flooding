@@ -41,8 +41,8 @@ $(THROUGHPUT_PDF): $(THROUGHPUT_CSV)
 generate-keys:
 	ndnsec key-gen /example && \
 	ndnsec cert-dump -i /example > example-trust-anchor.cert && \
-	ndnsec key-gen /example/testApp && \
-	ndnsec sign-req /example/testApp | ndnsec cert-gen -s /example -i example | ndnsec cert-install -
+	ndnsec key-gen /example/LiveStream && \
+	ndnsec sign-req /example/LiveStream | ndnsec cert-gen -s /example -i example | ndnsec cert-install -
 
 # Cleanup
 clean:

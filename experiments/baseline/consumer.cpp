@@ -12,7 +12,7 @@ namespace ndn {
 			Consumer()
 				: m_scheduler(m_face.getIoContext())
 			{
-				m_validator.load("/home/vagrant/mini-ndn/flooding/experiment/trust-schema.conf");
+				m_validator.load("/home/vagrant/mini-ndn/flooding/experiments/baseline/trust-schema.conf");
 			}
 
 			void run()
@@ -24,7 +24,7 @@ namespace ndn {
 		private:
 			void sendInterest()
 			{
-				Name interestName("/example/testApp/randomData");
+				Name interestName("/example/LiveStream");
 				interestName.appendVersion();
 				Interest interest(interestName);
 				interest.setMustBeFresh(true);

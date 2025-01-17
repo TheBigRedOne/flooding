@@ -13,9 +13,9 @@ namespace ndn {
 			void run()
 			{
 				// Automatically advertise prefix using system call
-				std::system("nlsrc advertise /example/testApp");
+				std::system("nlsrc advertise /example/LiveStream");
 
-				m_face.setInterestFilter("/example/testApp/randomData",
+				m_face.setInterestFilter("/example/LiveStream",
 					std::bind(&Producer::onInterest, this, std::placeholders::_2),
 					nullptr,
 					std::bind(&Producer::onRegisterFailed, this, std::placeholders::_1, std::placeholders::_2));
