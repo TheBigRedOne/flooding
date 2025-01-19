@@ -1,47 +1,48 @@
 # Master Control Makefile
 
-# Results directory on the host
-HOST_RESULTS_DIR := ./results/experiments/baseline
-PAPER_DIR := ./paper
-PAPER_RESULTS_DIR := $(PAPER_DIR) # 将结果导入到论文文件夹
-# Results directory in the VM
-VM_RESULTS_DIR := /home/vagrant/mini-ndn/flooding/experiments/baseline/results
+# Base paths
+BASE_DIR := $(shell pwd)
+RESULTS_DIR := $(BASE_DIR)/results
+BASELINE_RESULTS := $(RESULTS_DIR)/baseline
+SOLUTION_RESULTS := $(RESULTS_DIR)/solution
+PAPER_DIR := $(BASE_DIR)/paper
+
+# Results from experiments
+BASELINE_PDF := $(BASELINE_RESULTS)/consumer_capture_throughput.pdf
+SOLUTION_PDF := $(SOLUTION_RESULTS)/consumer_capture_throughput.pdf
+
+# Final paper
+PAPER_PDF := $(PAPER_DIR)/OptoFlood.pdf
 
 # Main targets
-all: run-experiment export-results generate-paper shutdown-vm
+all: $(BASELINE_PDF) $(SOLUTION_PDF) $(PAPER_PDF)
 
-# Start the VM and run the experiment
-run-experiment:
-	vagrant status | grep "running (virtualbox)" > /dev/null || vagrant up --provider virtualbox
-	vagrant ssh -c '\
-		if [ -d /home/vagrant/mini-ndn/flooding/experiments/baseline ]; then \
-			cd /home/vagrant/mini-ndn/flooding/experiments/baseline && make all; \
-		else \
-			echo "Error: Path /home/vagrant/mini-ndn/flooding/experiments/baseline does not exist."; \
-			exit 1; \
-		fi'
+# Baseline experiment results
+$(BASELINE_PDF):
+	cd $(BASE_DIR)/experiments/baseline && vagrant up && vagrant ssh -c '\
+		cd /home/vagrant/mini-ndn/flooding/experiments/baseline && make all;'
+	mkdir -p $(BASELINE_RESULTS)
+	cp $(BASE_DIR)/experiments/baseline/results/consumer_capture_throughput.pdf $(BASELINE_PDF)
 
-# Export experiment results to host
-export-results:
-	# Ensure the results directory exists on the host
-	mkdir -p $(HOST_RESULTS_DIR)
-	mkdir -p $(PAPER_RESULTS_DIR)
-	# Copy results from VM to host
-	vagrant ssh -c '\
-		if [ -d $(VM_RESULTS_DIR) ]; then \
-			cp -r $(VM_RESULTS_DIR)/* /vagrant/$(HOST_RESULTS_DIR); \
-			cp -r $(VM_RESULTS_DIR)/consumer_capture_throughput.pdf /vagrant/$(PAPER_RESULTS_DIR); \
-		else \
-			echo "Error: Results directory does not exist in VM." >&2; \
-			exit 1; \
-		fi' > /dev/null
+# Solution experiment results
+$(SOLUTION_PDF):
+	cd $(BASE_DIR)/experiments/solution && vagrant up && vagrant ssh -c '\
+		cd /home/vagrant/mini-ndn/flooding/experiments/solution && make all;'
+	mkdir -p $(SOLUTION_RESULTS)
+	cp $(BASE_DIR)/experiments/solution/results/consumer_capture_throughput.pdf $(SOLUTION_PDF)
 
-# Generate the paper PDF
-generate-paper:
+# Paper generation
+$(PAPER_PDF): $(BASELINE_PDF) $(SOLUTION_PDF)
+	cp $(BASELINE_PDF) $(PAPER_DIR)/baseline_throughput.pdf
+	cp $(SOLUTION_PDF) $(PAPER_DIR)/solution_throughput.pdf
 	$(MAKE) -C $(PAPER_DIR)
 
-# Shutdown the VM
-shutdown-vm:
-	vagrant halt
+# Cleanup
+clean:
+	cd $(BASE_DIR)/experiments/baseline && vagrant destroy -f || true
+	cd $(BASE_DIR)/experiments/solution && vagrant destroy -f || true
+	rm -rf $(RESULTS_DIR)
+	cd $(PAPER_DIR) && $(MAKE) clean
 
-.PHONY: all run-experiment export-results generate-paper shutdown-vm
+.PHONY: all clean
+.DELETE_ON_ERROR:
