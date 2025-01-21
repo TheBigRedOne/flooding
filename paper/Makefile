@@ -25,6 +25,10 @@ $(OUTPUT_PDF): $(MAIN_TEX) $(FIGURES)
 
 clean:
 	@echo "Cleaning up..."
-	rm -rf $(BIN_DIR) *.aux *.log *.out *.toc
+	rm -rf $(BIN_DIR) *.aux *.log *.out *.toc $(OUTPUT_PDF)
 
-.PHONY: all clean
+deep-clean: clean
+	@echo "Removing all generated files, including figures..."
+	rm -f $(FIGURES_DIR)/*.pdf
+
+.PHONY: all clean deep-clean
