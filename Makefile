@@ -12,9 +12,14 @@ BASELINE_PDF := $(BASELINE_RESULTS)/consumer_capture_throughput.pdf
 SOLUTION_PDF := $(SOLUTION_RESULTS)/consumer_capture_throughput.pdf
 
 # Paper dependencies and output
+MAIN_TEX := $(PAPER_DIR)/OptoFlood.tex
 BASELINE_FIGURE := $(PAPER_DIR)/figures/baseline_throughput.pdf
 SOLUTION_FIGURE := $(PAPER_DIR)/figures/solution_throughput.pdf
 PAPER_PDF := $(PAPER_DIR)/OptoFlood.pdf
+STATIC_FIGURES := $(PAPER_DIR)/figures/NLSR_Work_Flow.png \
+                  $(PAPER_DIR)/figures/Producer_Mobility_Problems.png \
+                  $(PAPER_DIR)/figures/Topology.png
+ALL_FIGURES := $(STATIC_FIGURES) $(BASELINE_FIGURE) $(SOLUTION_FIGURE)
 
 # Main target
 all: $(PAPER_PDF)
@@ -36,15 +41,15 @@ $(SOLUTION_PDF): $(SOLUTION_RESULTS) $(BASE_DIR)/experiments/solution/Vagrantfil
 	cp $(BASE_DIR)/experiments/solution/results/consumer_capture_throughput.pdf $@
 
 # Copy baseline figure to paper figures directory
-$(BASELINE_FIGURE): $(BASELINE_PDF) $(PAPER_DIR)/figures
+$(BASELINE_FIGURE): $(BASELINE_PDF) | $(PAPER_DIR)/figures
 	cp $< $@
 
 # Copy solution figure to paper figures directory
-$(SOLUTION_FIGURE): $(SOLUTION_PDF) $(PAPER_DIR)/figures
+$(SOLUTION_FIGURE): $(SOLUTION_PDF) | $(PAPER_DIR)/figures
 	cp $< $@
 
 # Generate the paper
-$(PAPER_PDF): $(BASELINE_FIGURE) $(SOLUTION_FIGURE)
+$(PAPER_PDF): $(MAIN_TEX) $(ALL_FIGURES) | $(PAPER_DIR)
 	$(MAKE) -C $(PAPER_DIR)
 
 # Cleanup

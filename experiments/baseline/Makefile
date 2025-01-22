@@ -46,20 +46,20 @@ $(CERT_FILE): $(TRUST_SCHEMA)
 	cp $< .
 
 # Generate the PCAP file
-$(PCAP_FILE): $(RESULTS_DIR) $(CONSUMER_EXEC) $(PRODUCER_EXEC) $(CERT_FILE)
+$(PCAP_FILE): $(CONSUMER_EXEC) $(PRODUCER_EXEC) $(CERT_FILE) | $(RESULTS_DIR)
 	env EXPERIMENT_DIR=$(BASE_DIR) sudo -E python $(TOOLS_DIR)/exp.py
 	cp consumer_capture.pcap $@
 
 # Generate the CSV file from PCAP
-$(PCAP_CSV): $(PCAP_FILE)
+$(PCAP_CSV): $(PCAP_FILE) | $(RESULTS_DIR)
 	tshark -r $< -T fields -e frame.time_epoch -e frame.len -E header=y -E separator=, -E quote=d > $@
 
 # Generate the throughput CSV
-$(THROUGHPUT_CSV): $(PCAP_CSV)
+$(THROUGHPUT_CSV): $(PCAP_CSV) | $(RESULTS_DIR)
 	python $(TOOLS_DIR)/throughput_calculation.py $<
 
 # Generate the throughput PDF
-$(THROUGHPUT_PDF): $(THROUGHPUT_CSV)
+$(THROUGHPUT_PDF): $(THROUGHPUT_CSV) | $(RESULTS_DIR)
 	python $(TOOLS_DIR)/plot_throughput.py $<
 
 # Cleanup
