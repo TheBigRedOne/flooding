@@ -16,33 +16,32 @@ BASELINE_FIGURE := $(PAPER_DIR)/figures/baseline_throughput.pdf
 SOLUTION_FIGURE := $(PAPER_DIR)/figures/solution_throughput.pdf
 PAPER_PDF := $(PAPER_DIR)/OptoFlood.pdf
 
-# Main targets
+# Main target
 all: $(PAPER_PDF)
 
+# Ensure results directories exist
+$(BASELINE_RESULTS) $(SOLUTION_RESULTS) $(PAPER_DIR)/figures:
+	mkdir -p $@
+
 # Baseline experiment results
-$(BASELINE_PDF): $(BASE_DIR)/experiments/baseline/Vagrantfile $(BASE_DIR)/experiments/baseline/consumer.cpp $(BASE_DIR)/experiments/baseline/producer.cpp
+$(BASELINE_PDF): $(BASELINE_RESULTS) $(BASE_DIR)/experiments/baseline/Vagrantfile $(BASE_DIR)/experiments/baseline/consumer.cpp $(BASE_DIR)/experiments/baseline/producer.cpp
 	cd $(BASE_DIR)/experiments/baseline && vagrant up && vagrant ssh -c '\
 		cd /home/vagrant/mini-ndn/flooding/experiments/baseline && make all;'
-	mkdir -p $(BASELINE_RESULTS)
-	cp $(BASE_DIR)/experiments/baseline/results/consumer_capture_throughput.pdf $(BASELINE_PDF)
+	cp $(BASE_DIR)/experiments/baseline/results/consumer_capture_throughput.pdf $@
 
 # Solution experiment results
-$(SOLUTION_PDF): $(BASE_DIR)/experiments/solution/Vagrantfile $(BASE_DIR)/experiments/solution/consumer_mp.cpp $(BASE_DIR)/experiments/solution/producer_mp.cpp
+$(SOLUTION_PDF): $(SOLUTION_RESULTS) $(BASE_DIR)/experiments/solution/Vagrantfile $(BASE_DIR)/experiments/solution/consumer_mp.cpp $(BASE_DIR)/experiments/solution/producer_mp.cpp
 	cd $(BASE_DIR)/experiments/solution && vagrant up && vagrant ssh -c '\
 		cd /home/vagrant/mini-ndn/flooding/experiments/solution && make all;'
-	mkdir -p $(SOLUTION_RESULTS)
-	cp $(BASE_DIR)/experiments/solution/results/consumer_capture_throughput.pdf $(SOLUTION_PDF)
-
+	cp $(BASE_DIR)/experiments/solution/results/consumer_capture_throughput.pdf $@
 
 # Copy baseline figure to paper figures directory
-$(BASELINE_FIGURE): $(BASELINE_PDF)
-	mkdir -p $(PAPER_DIR)/figures
-	cp $(BASELINE_PDF) $(BASELINE_FIGURE)
+$(BASELINE_FIGURE): $(BASELINE_PDF) $(PAPER_DIR)/figures
+	cp $< $@
 
 # Copy solution figure to paper figures directory
-$(SOLUTION_FIGURE): $(SOLUTION_PDF)
-	mkdir -p $(PAPER_DIR)/figures
-	cp $(SOLUTION_PDF) $(SOLUTION_FIGURE)
+$(SOLUTION_FIGURE): $(SOLUTION_PDF) $(PAPER_DIR)/figures
+	cp $< $@
 
 # Generate the paper
 $(PAPER_PDF): $(BASELINE_FIGURE) $(SOLUTION_FIGURE)
@@ -56,7 +55,8 @@ clean:
 	cd $(PAPER_DIR) && $(MAKE) clean
 
 deep-clean: clean
-	rm -rf $(PAPER_DIR)/figures
+	rm -rf $(PAPER_DIR)/figures $(PAPER_PDF)
 
 .PHONY: all clean deep-clean
 .DELETE_ON_ERROR:
+.NOTINTERMEDIATE:

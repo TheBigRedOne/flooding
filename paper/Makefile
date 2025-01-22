@@ -7,28 +7,35 @@ FIGURES_DIR := figures
 BIN_DIR := bin
 
 # LaTeX Compiler
-LATEX := pdflatex
-LATEX_FLAGS := -interaction=nonstopmode -halt-on-error
+LATEXMK := latexmk
+LATEXMK_FLAGS := -pdf -interaction=nonstopmode -output-directory=$(BIN_DIR)
 
 # Figures
 FIGURES := $(wildcard $(FIGURES_DIR)/*.pdf) $(wildcard $(FIGURES_DIR)/*.png)
 
-# Targets
+# Main target
 all: $(OUTPUT_PDF)
 
-$(OUTPUT_PDF): $(MAIN_TEX) $(FIGURES)
-	@echo "Compiling LaTeX to PDF..."
-	mkdir -p $(BIN_DIR)
-	$(LATEX) $(LATEX_FLAGS) -output-directory=$(BIN_DIR) $(MAIN_TEX)
-	$(LATEX) $(LATEX_FLAGS) -output-directory=$(BIN_DIR) $(MAIN_TEX) # Run twice for references
+# Ensure bin directory exists
+$(BIN_DIR):
+	mkdir -p $@
+
+# Generate the PDF using latexmk
+$(OUTPUT_PDF): $(MAIN_TEX) $(FIGURES) $(BIN_DIR)
+	@echo "Compiling LaTeX with latexmk..."
+	$(LATEXMK) $(LATEXMK_FLAGS) $(MAIN_TEX)
 	cp $(BIN_DIR)/$(OUTPUT_PDF) .
 
+# Cleanup intermediate files
 clean:
-	@echo "Cleaning up..."
-	rm -rf $(BIN_DIR) *.aux *.log *.out *.toc $(OUTPUT_PDF)
+	@echo "Cleaning up intermediate files..."
+	$(LATEXMK) -c -output-directory=$(BIN_DIR)
 
+# Cleanup all generated files, including figures
 deep-clean: clean
-	@echo "Removing all generated files, including figures..."
-	rm -f $(FIGURES_DIR)/*.pdf
+	@echo "Removing all generated files..."
+	rm -f $(BIN_DIR)/* $(OUTPUT_PDF) $(FIGURES_DIR)/*.pdf
 
 .PHONY: all clean deep-clean
+.DELETE_ON_ERROR:
+.NOTINTERMEDIATE:
