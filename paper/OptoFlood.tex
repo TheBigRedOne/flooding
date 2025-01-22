@@ -148,7 +148,7 @@ NLSR is highly adaptive to dynamic changes in the network. Nodes periodically se
 
 \begin{figure}
     \centering
-    \includegraphics[width=0.5\linewidth]{NLSR Work Flow.png}
+    \includegraphics[width=0.5\linewidth]{figures/NLSR Work Flow.png}
     \caption{NLSR Work Flow}
     \label{fig:enter-label}
 \end{figure}
@@ -158,7 +158,7 @@ In NDN, the change in producer locations poses significant challenges to network
 
 \begin{figure}
     \centering
-    \includegraphics[width=0.5\linewidth]{Producer Mobility Problems.png}
+    \includegraphics[width=0.5\linewidth]{figures/Producer Mobility Problems.png}
     \caption{Producer Mobility Problems}
     \label{fig:enter-label}
 \end{figure}
@@ -229,7 +229,7 @@ Automatic data request: The consumer program automatically sends interest packet
 
 Request frequency: In order to meet the high packet transmission frequency requirements of real-time video transmission, the consumer sends a new interest packet every 33 milliseconds. This setting is based on the need to simulate the transmission of 30fps video.
 
-Management and retransmission of unresponsive interest packets：The consumer application introduces an unresponsive interest packet queue to store interest packets that have not responded due to timeout. The unresponsive queue uses a first-in-first-out (FIFO) strategy. When the queue is full, the earliest interest packet will be discarded to make room. Unresponsive interest packets will not be retransmitted at the normal sending frequency, but will be sent at a uniform retransmission frequency of once per second to ensure low occupancy of network resources.
+Management and retransmission of unresponsive interest packets: The consumer application introduces an unresponsive interest packet queue to store interest packets that have not responded due to timeout. The unresponsive queue uses a first-in-first-out (FIFO) strategy. When the queue is full, the earliest interest packet will be discarded to make room. Unresponsive interest packets will not be retransmitted at the normal sending frequency, but will be sent at a uniform retransmission frequency of once per second to ensure low occupancy of network resources.
 
 Data reception and verification: After receiving the data, the consumer outputs the data content and verifies the authenticity of the data using the preloaded trust architecture configuration. When the data packet conforms to the trust architecture, the system outputs confirmation information; if the verification fails, the verification error is reported.
 
@@ -271,7 +271,7 @@ The experiment was constructed using a classic three-layer mobile network model,
 
 \begin{figure}
     \centering
-    \includegraphics[width=\columnwidth]{Topology.png}
+    \includegraphics[width=\columnwidth]{figures/Topology.png}
     \caption{Experiment}
     \label{fig:enter-label}
 \end{figure}
@@ -291,10 +291,10 @@ After the experiment, stop data capture and terminate the tcpdump process, and t
 
 This experiment systematically simulates the movement of producers in the network and provides benchmark data for evaluating producer mobility issues in the NDN environment. These data will provide an important reference for subsequent research on the application effect of optimization mechanisms in producer mobility scenarios.
 
-\begin{figure}[H]
+\begin{figure}
     \centering
     \includegraphics[width=\textwidth]{consumer_capture_throughput.pdf} % Baseline 的结果文件
-    \caption{Baseline 测试的吞吐量分析}
+    \caption{Baseline Test Throughput}
     \label{fig:baseline-throughput}
 \end{figure}
 
