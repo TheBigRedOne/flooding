@@ -6,6 +6,7 @@ RESULTS_DIR := $(BASE_DIR)/results
 BASELINE_RESULTS := $(RESULTS_DIR)/baseline
 SOLUTION_RESULTS := $(RESULTS_DIR)/solution
 PAPER_DIR := $(BASE_DIR)/paper
+SYNC_DIR := /vagrant # Synced folder in VM (shared with Host)
 
 # Results from experiments
 BASELINE_PDF := $(BASELINE_RESULTS)/consumer_capture_throughput.pdf
@@ -29,15 +30,19 @@ $(BASELINE_RESULTS) $(SOLUTION_RESULTS) $(PAPER_DIR)/figures:
 	mkdir -p $@
 
 # Baseline experiment results
-$(BASELINE_PDF): $(BASELINE_RESULTS) $(BASE_DIR)/experiments/baseline/Vagrantfile $(BASE_DIR)/experiments/baseline/consumer.cpp $(BASE_DIR)/experiments/baseline/producer.cpp
+$(BASELINE_PDF): $(BASELINE_RESULTS) $(BASE_DIR)/experiments/baseline/consumer.cpp $(BASE_DIR)/experiments/baseline/producer.cpp
 	cd $(BASE_DIR)/experiments/baseline && vagrant up && vagrant ssh -c '\
+		cp -r $(SYNC_DIR)/experiments/baseline /home/vagrant/mini-ndn/flooding/experiments/baseline && \
 		cd /home/vagrant/mini-ndn/flooding/experiments/baseline && make all;'
+	mkdir -p $@
 	cp $(BASE_DIR)/experiments/baseline/results/consumer_capture_throughput.pdf $@
 
 # Solution experiment results
-$(SOLUTION_PDF): $(SOLUTION_RESULTS) $(BASE_DIR)/experiments/solution/Vagrantfile $(BASE_DIR)/experiments/solution/consumer_mp.cpp $(BASE_DIR)/experiments/solution/producer_mp.cpp
+$(SOLUTION_PDF): $(SOLUTION_RESULTS) $(BASE_DIR)/experiments/solution/consumer_mp.cpp $(BASE_DIR)/experiments/solution/producer_mp.cpp
 	cd $(BASE_DIR)/experiments/solution && vagrant up && vagrant ssh -c '\
+		cp -r $(SYNC_DIR)/experiments/solution /home/vagrant/mini-ndn/flooding/experiments/solution && \
 		cd /home/vagrant/mini-ndn/flooding/experiments/solution && make all;'
+	mkdir -p $@
 	cp $(BASE_DIR)/experiments/solution/results/consumer_capture_throughput.pdf $@
 
 # Copy baseline figure to paper figures directory
