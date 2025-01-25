@@ -1,5 +1,4 @@
-# -*- mode: ruby -*-
-# vi: set ft=ruby :
+# Baseline Vagrantfile
 
 $INSTALL_BASE = <<EOF
   export DEBIAN_FRONTEND=noninteractive
@@ -27,15 +26,12 @@ $INSTALL_BASE = <<EOF
   sudo chown -R vagrant:vagrant /home/vagrant/mini-ndn
 
   # Set environment variables in .profile rather than .bashrc
-  # because .bashrc is only read for interactive shells and
-  # "vagrant ssh -c command" starts a non-interactive shell.
   echo "export PATH=\$PATH:/usr/local/bin" >> /home/vagrant/.profile
   echo "export LD_LIBRARY_PATH=\$LD_LIBRARY_PATH:/usr/local/lib64/" >> /home/vagrant/.profile
   echo "export PKG_CONFIG_PATH=/usr/local/lib64/pkgconfig/" >> /home/vagrant/.profile
 EOF
 
 Vagrant.configure("2") do |config|
-  # Use Ubuntu 22.04
   config.vm.box = "bento/ubuntu-22.04"
   config.vm.box_version = "202407.23.0"
 
@@ -48,12 +44,8 @@ Vagrant.configure("2") do |config|
     v.gui = false
   end
 
-  config.vm.synced_folder ".", "/vagrant", disabled: false
-
-  # Copy the project code from synced folder to the target location
-  config.vm.provision "shell", inline: <<-SHELL
-    cp -r /vagrant/experiments/baseline /home/vagrant/mini-ndn/flooding/experiments/baseline
-  SHELL
+  # Explicitly transfer host files to VM
+  config.vm.provision "file", source: "../baseline", destination: "/home/vagrant/mini-ndn/flooding/experiments/baseline"
 
   config.vm.provision "shell", inline: $INSTALL_BASE, privileged: false
 end

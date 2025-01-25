@@ -62,11 +62,15 @@ $(THROUGHPUT_CSV): $(PCAP_CSV) | $(RESULTS_DIR)
 $(THROUGHPUT_PDF): $(THROUGHPUT_CSV) | $(RESULTS_DIR)
 	python $(TOOLS_DIR)/plot_throughput.py $<
 
-# Cleanup
+# Cleanup intermediate files
 clean:
 	rm -f $(CONSUMER_LOG) $(PRODUCER_LOG) $(PCAP_FILE) $(PCAP_CSV) $(THROUGHPUT_CSV) $(THROUGHPUT_PDF)
 	rm -f $(CONSUMER_EXEC) $(PRODUCER_EXEC) $(CERT_FILE)
 
-.PHONY: all clean
+# Cleanup all generated files, including results directory
+deep-clean: clean
+	rm -rf $(RESULTS_DIR)
+
+.PHONY: all clean deep-clean
 .DELETE_ON_ERROR:
 .NOTINTERMEDIATE: $(PCAP_CSV) $(THROUGHPUT_CSV)
