@@ -32,10 +32,7 @@ $(BASELINE_RESULTS) $(SOLUTION_RESULTS) $(PAPER_DIR)/figures:
 # Baseline experiment results
 $(BASELINE_PDF): $(BASELINE_RESULTS) $(BASE_DIR)/experiments/baseline/consumer.cpp $(BASE_DIR)/experiments/baseline/producer.cpp
 	cd $(BASE_DIR)/experiments/baseline && vagrant up && vagrant ssh -c '\
-		mkdir -p /home/vagrant/mini-ndn/flooding/experiments && \
-		cp -r $(SYNC_DIR)/experiments/baseline /home/vagrant/mini-ndn/flooding/experiments && \
 		cd /home/vagrant/mini-ndn/flooding/experiments/baseline && make all;'
-	mkdir -p $(BASELINE_RESULTS)
 	cp $(BASE_DIR)/experiments/baseline/results/consumer_capture_throughput.pdf $@
 
 # Solution experiment results
