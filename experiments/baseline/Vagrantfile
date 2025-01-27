@@ -43,11 +43,11 @@ Vagrant.configure("2") do |config|
 
   # Explicitly transfer host files to VM
   config.vm.provision "file", source: "../baseline", destination: "/home/vagrant/mini-ndn/flooding/experiments/baseline"
-  config.vm.provision "file", source: "../tools", destination: "/home/vagrant/mini-ndn/flooding/tools"
+  config.vm.provision "file", source: "../tools", destination: "/home/vagrant/mini-ndn/flooding/experiments/tools"
 
   config.vm.provision "shell", inline: <<-SHELL
     mkdir -p /home/vagrant/mini-ndn/flooding/experiments/baseline
-    mkdir -p /home/vagrant/mini-ndn/flooding/tools
+    mkdir -p /home/vagrant/mini-ndn/flooding/experiments/tools
   SHELL
 
   config.vm.provision "shell", inline: $INSTALL_BASE, privileged: false
