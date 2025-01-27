@@ -17,13 +17,14 @@ $INSTALL_BASE = <<EOF
   sudo apt-get install -y tcpdump
 
   # Clone and install mini-ndn
-  git clone https://github.com/named-data/mini-ndn.git /home/vagrant/mini-ndn
-  cd /home/vagrant/mini-ndn
-  git checkout 73add71f860979426aef63136bf78ed525862e5c
-  ./install.sh -y --source 
-
-  # Change ownership of the mini-ndn folder to vagrant user
-  sudo chown -R vagrant:vagrant /home/vagrant/mini-ndn
+  if [ ! -d "/home/vagrant/mini-ndn" ]; then
+    git clone https://github.com/named-data/mini-ndn.git /home/vagrant/mini-ndn
+    cd /home/vagrant/mini-ndn
+    git checkout 73add71f860979426aef63136bf78ed525862e5c
+    ./install.sh -y --source 
+  else
+    echo "mini-ndn is already installed, skipping clone and install."
+  fi
 
   # Set environment variables in .profile rather than .bashrc
   echo "export PATH=\$PATH:/usr/local/bin" >> /home/vagrant/.profile
@@ -45,7 +46,7 @@ Vagrant.configure("2") do |config|
   end
 
   # Explicitly transfer host files to VM
-  config.vm.provision "file", source: "../baseline", destination: "/home/vagrant/mini-ndn/flooding/experiments/baseline"
+  config.vm.synced_folder "../../", "/vagrant"
 
   config.vm.provision "shell", inline: $INSTALL_BASE, privileged: false
 end
