@@ -31,14 +31,18 @@ all: $(PAPER_PDF)
 $(BASELINE_RESULTS) $(SOLUTION_RESULTS) $(PAPER_DIR)/figures:
 	mkdir -p $@
 
+# Generate SSH config
+.SSH_CONFIG:
+	vagrant ssh-config > $(BASE_DIR)/.ssh_config
+
 # Baseline experiment results
-$(BASELINE_PDF): $(BASELINE_RESULTS) | $(BASELINE_RESULTS)
+$(BASELINE_PDF): $(BASE_DIR)/experiments/baseline/consumer.cpp $(BASE_DIR)/experiments/baseline/producer.cpp .SSH_CONFIG | $(BASELINE_RESULTS)
 	cd $(BASE_DIR)/experiments/baseline && vagrant up && vagrant ssh -c '\
 		cd /home/vagrant/mini-ndn/flooding/experiments/baseline && make all;'
 	$(RSYNC_CMD) default:/home/vagrant/mini-ndn/flooding/experiments/baseline/results/ $(BASELINE_RESULTS)
 
 # Solution experiment results
-$(SOLUTION_PDF): $(SOLUTION_RESULTS) | $(SOLUTION_RESULTS)
+$(SOLUTION_PDF): $(BASE_DIR)/experiments/solution/consumer_mp.cpp $(BASE_DIR)/experiments/solution/producer_mp.cpp .SSH_CONFIG | $(SOLUTION_RESULTS)
 	cd $(BASE_DIR)/experiments/solution && vagrant up && vagrant ssh -c '\
 		cd /home/vagrant/mini-ndn/flooding/experiments/solution && make all;'
 	$(RSYNC_CMD) default:/home/vagrant/mini-ndn/flooding/experiments/solution/results/ $(SOLUTION_RESULTS)
