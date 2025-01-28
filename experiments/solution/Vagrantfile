@@ -1,5 +1,4 @@
-# -*- mode: ruby -*-
-# vi: set ft=ruby :
+# Solution Vagrantfile
 
 $INSTALL_BASE = <<EOF
   export DEBIAN_FRONTEND=noninteractive
@@ -23,9 +22,6 @@ $INSTALL_BASE = <<EOF
   git checkout 44e06411ab412285d74fb412a6b9b2ced8e577a8
   ./install.sh -y --source 
 
-  # Change ownership of the mini-ndn folder to vagrant user
-  sudo chown -R vagrant:vagrant /home/vagrant/mini-ndn
-
   # Set environment variables in .profile rather than .bashrc
   echo "export PATH=\$PATH:/usr/local/bin" >> /home/vagrant/.profile
   echo "export LD_LIBRARY_PATH=\$LD_LIBRARY_PATH:/usr/local/lib64/" >> /home/vagrant/.profile
@@ -46,8 +42,16 @@ Vagrant.configure("2") do |config|
     v.gui = false
   end
 
-  # Transfer the solution experiment files from the host to the VM
-  config.vm.provision "file", source: "../solution", destination: "/home/vagrant/mini-ndn/flooding/experiments/solution"
-
+  # Run the base installation
   config.vm.provision "shell", inline: $INSTALL_BASE, privileged: false
+
+  # Transfer the solution and tools files from the host to the VM
+  config.vm.provision "file", source: "../solution", destination: "/home/vagrant/mini-ndn/flooding/experiments/solution"
+  config.vm.provision "file", source: "../tools", destination: "/home/vagrant/mini-ndn/flooding/experiments/tools"
+
+  # Explicitly create the directories if they don't already exist
+  config.vm.provision "shell", inline: <<-SHELL
+    mkdir -p /home/vagrant/mini-ndn/flooding/experiments/solution
+    mkdir -p /home/vagrant/mini-ndn/flooding/experiments/tools
+  SHELL
 end
