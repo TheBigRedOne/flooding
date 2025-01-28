@@ -54,4 +54,10 @@ Vagrant.configure("2") do |config|
     mkdir -p /home/vagrant/mini-ndn/flooding/experiments/solution
     mkdir -p /home/vagrant/mini-ndn/flooding/experiments/tools
   SHELL
+
+  # Generate SSH config for rsync (to be used by Makefile)
+  config.vm.provision "shell", inline: <<-SHELL
+    vagrant ssh-config > /vagrant/.ssh_config
+  SHELL
+
 end

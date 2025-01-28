@@ -6,7 +6,6 @@ RESULTS_DIR := $(BASE_DIR)/results
 BASELINE_RESULTS := $(RESULTS_DIR)/baseline
 SOLUTION_RESULTS := $(RESULTS_DIR)/solution
 PAPER_DIR := $(BASE_DIR)/paper
-SYNC_DIR := /vagrant # Synced folder in VM (shared with Host)
 
 # Results from experiments
 BASELINE_PDF := $(BASELINE_RESULTS)/consumer_capture_throughput.pdf
@@ -22,6 +21,9 @@ STATIC_FIGURES := $(PAPER_DIR)/figures/NLSR_Work_Flow.png \
                   $(PAPER_DIR)/figures/Topology.png
 ALL_FIGURES := $(STATIC_FIGURES) $(BASELINE_FIGURE) $(SOLUTION_FIGURE)
 
+# Rsync command
+RSYNC_CMD = rsync -avH -e "ssh -F $(BASE_DIR)/.ssh_config"
+
 # Main target
 all: $(PAPER_PDF)
 
@@ -30,18 +32,16 @@ $(BASELINE_RESULTS) $(SOLUTION_RESULTS) $(PAPER_DIR)/figures:
 	mkdir -p $@
 
 # Baseline experiment results
-$(BASELINE_PDF): $(BASELINE_RESULTS) $(BASE_DIR)/experiments/baseline/consumer.cpp $(BASE_DIR)/experiments/baseline/producer.cpp
+$(BASELINE_PDF): $(BASELINE_RESULTS) | $(BASELINE_RESULTS)
 	cd $(BASE_DIR)/experiments/baseline && vagrant up && vagrant ssh -c '\
 		cd /home/vagrant/mini-ndn/flooding/experiments/baseline && make all;'
-	mkdir -p $(BASELINE_RESULTS)
-	cp $(BASE_DIR)/experiments/baseline/results/consumer_capture_throughput.pdf $@
+	$(RSYNC_CMD) default:/home/vagrant/mini-ndn/flooding/experiments/baseline/results/ $(BASELINE_RESULTS)
 
 # Solution experiment results
-$(SOLUTION_PDF): $(SOLUTION_RESULTS) $(BASE_DIR)/experiments/solution/consumer_mp.cpp $(BASE_DIR)/experiments/solution/producer_mp.cpp
+$(SOLUTION_PDF): $(SOLUTION_RESULTS) | $(SOLUTION_RESULTS)
 	cd $(BASE_DIR)/experiments/solution && vagrant up && vagrant ssh -c '\
 		cd /home/vagrant/mini-ndn/flooding/experiments/solution && make all;'
-	mkdir -p $(SOLUTION_RESULTS)
-	cp $(BASE_DIR)/experiments/solution/results/consumer_capture_throughput.pdf $@
+	$(RSYNC_CMD) default:/home/vagrant/mini-ndn/flooding/experiments/solution/results/ $(SOLUTION_RESULTS)
 
 # Copy baseline figure to paper figures directory
 $(BASELINE_FIGURE): $(BASELINE_PDF) | $(PAPER_DIR)/figures
@@ -56,7 +56,7 @@ $(PAPER_PDF): $(MAIN_TEX) $(ALL_FIGURES) | $(PAPER_DIR)
 	$(MAKE) -C $(PAPER_DIR)
 
 # Cleanup
-clean:
+clean: clean-ssh-config
 	cd $(BASE_DIR)/experiments/baseline && vagrant destroy -f || true
 	cd $(BASE_DIR)/experiments/solution && vagrant destroy -f || true
 	rm -rf $(RESULTS_DIR)
@@ -65,6 +65,10 @@ clean:
 deep-clean: clean
 	rm -rf $(PAPER_DIR)/figures $(PAPER_PDF)
 
-.PHONY: all clean deep-clean
+# Clean SSH config file
+clean-ssh-config:
+	rm -f $(BASE_DIR)/.ssh_config
+
+.PHONY: all clean deep-clean clean-ssh-config
 .DELETE_ON_ERROR:
 .NOTINTERMEDIATE:
