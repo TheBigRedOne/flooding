@@ -7,6 +7,10 @@ BASELINE_RESULTS := $(RESULTS_DIR)/baseline
 SOLUTION_RESULTS := $(RESULTS_DIR)/solution
 PAPER_DIR := $(BASE_DIR)/paper
 
+# Experiment Paths
+BASELINE_DIR := $(BASE_DIR)/experiments/baseline
+SOLUTION_DIR := $(BASE_DIR)/experiments/solution
+
 # Results from experiments
 BASELINE_PDF := $(BASELINE_RESULTS)/consumer_capture_throughput.pdf
 SOLUTION_PDF := $(SOLUTION_RESULTS)/consumer_capture_throughput.pdf
@@ -31,21 +35,29 @@ all: $(PAPER_PDF)
 $(BASELINE_RESULTS) $(SOLUTION_RESULTS) $(PAPER_DIR)/figures:
 	mkdir -p $@
 
-# Generate SSH config
-.SSH_CONFIG:
-	vagrant ssh-config > $(BASE_DIR)/.ssh_config
+# Baseline experiment SSH config
+.SSH_CONFIG_BASELINE:
+	cd $(BASELINE_DIR) && vagrant up
+	vagrant ssh-config --host baseline > $(BASE_DIR)/.ssh_config
+
+# Solution experiment SSH config
+.SSH_CONFIG_SOLUTION:
+	cd $(SOLUTION_DIR) && vagrant up
+	vagrant ssh-config --host solution > $(BASE_DIR)/.ssh_config
 
 # Baseline experiment results
-$(BASELINE_PDF): $(BASE_DIR)/experiments/baseline/consumer.cpp $(BASE_DIR)/experiments/baseline/producer.cpp .SSH_CONFIG | $(BASELINE_RESULTS)
-	cd $(BASE_DIR)/experiments/baseline && vagrant up && vagrant ssh -c '\
+$(BASELINE_PDF): $(BASELINE_DIR)/consumer.cpp $(BASELINE_DIR)/producer.cpp .SSH_CONFIG_BASELINE | $(BASELINE_RESULTS)
+	cd $(BASELINE_DIR) && vagrant ssh -c '\
 		cd /home/vagrant/mini-ndn/flooding/experiments/baseline && make all;'
-	$(RSYNC_CMD) default:/home/vagrant/mini-ndn/flooding/experiments/baseline/results/ $(BASELINE_RESULTS)
+	$(RSYNC_CMD) baseline:/home/vagrant/mini-ndn/flooding/experiments/baseline/results/ $(BASELINE_RESULTS)
+	cd $(BASELINE_DIR) && vagrant destroy -f || true
 
 # Solution experiment results
-$(SOLUTION_PDF): $(BASE_DIR)/experiments/solution/consumer_mp.cpp $(BASE_DIR)/experiments/solution/producer_mp.cpp .SSH_CONFIG | $(SOLUTION_RESULTS)
-	cd $(BASE_DIR)/experiments/solution && vagrant up && vagrant ssh -c '\
+$(SOLUTION_PDF): $(SOLUTION_DIR)/consumer_mp.cpp $(SOLUTION_DIR)/producer_mp.cpp .SSH_CONFIG_SOLUTION | $(SOLUTION_RESULTS)
+	cd $(SOLUTION_DIR) && vagrant ssh -c '\
 		cd /home/vagrant/mini-ndn/flooding/experiments/solution && make all;'
-	$(RSYNC_CMD) default:/home/vagrant/mini-ndn/flooding/experiments/solution/results/ $(SOLUTION_RESULTS)
+	$(RSYNC_CMD) solution:/home/vagrant/mini-ndn/flooding/experiments/solution/results/ $(SOLUTION_RESULTS)
+	cd $(SOLUTION_DIR) && vagrant destroy -f || true
 
 # Copy baseline figure to paper figures directory
 $(BASELINE_FIGURE): $(BASELINE_PDF) | $(PAPER_DIR)/figures
@@ -61,8 +73,6 @@ $(PAPER_PDF): $(MAIN_TEX) $(ALL_FIGURES) | $(PAPER_DIR)
 
 # Cleanup
 clean: clean-ssh-config
-	cd $(BASE_DIR)/experiments/baseline && vagrant destroy -f || true
-	cd $(BASE_DIR)/experiments/solution && vagrant destroy -f || true
 	rm -rf $(RESULTS_DIR)
 	cd $(PAPER_DIR) && $(MAKE) clean
 
