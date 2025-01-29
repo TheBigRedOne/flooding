@@ -1,5 +1,12 @@
 # Master Control Makefile
 
+# Detect OS (for Windows compatibility)
+#ifeq ($(OS),Windows_NT)
+#    BASE_DIR := $(shell cygpath -m $(shell pwd))
+#else
+#    BASE_DIR := $(shell pwd)
+#endif
+
 # Base paths
 BASE_DIR := $(shell pwd)
 RESULTS_DIR := $(BASE_DIR)/results
