@@ -32,7 +32,7 @@ STATIC_FIGURES := $(PAPER_DIR)/figures/NLSR_Work_Flow.png \
                   $(PAPER_DIR)/figures/Topology.png
 ALL_FIGURES := $(STATIC_FIGURES) $(BASELINE_FIGURE) $(SOLUTION_FIGURE)
 
-# Rsync command
+# Rsync command for copying files from VM
 RSYNC_CMD = rsync -avH -e "ssh -F $(BASE_DIR)/.ssh_config"
 
 # Main target
@@ -44,27 +44,29 @@ $(BASELINE_RESULTS) $(SOLUTION_RESULTS) $(PAPER_DIR)/figures:
 
 # Baseline experiment SSH config
 .SSH_CONFIG_BASELINE:
-	cd $(BASELINE_DIR) && vagrant up
+	cd $(BASELINE_DIR); \
+	vagrant up; \
 	vagrant ssh-config --host baseline > $(BASE_DIR)/.ssh_config
 
 # Solution experiment SSH config
 .SSH_CONFIG_SOLUTION:
-	cd $(SOLUTION_DIR) && vagrant up
-	vagrant ssh-config --host solution > $(BASE_DIR)/.ssh_config
+	cd $(SOLUTION_DIR); \
+	vagrant up; \
+	vagrant ssh-config --host solution >> $(BASE_DIR)/.ssh_config
 
 # Baseline experiment results
 $(BASELINE_PDF): $(BASELINE_DIR)/consumer.cpp $(BASELINE_DIR)/producer.cpp .SSH_CONFIG_BASELINE | $(BASELINE_RESULTS)
-	cd $(BASELINE_DIR) && vagrant ssh -c '\
-		cd /home/vagrant/mini-ndn/flooding/experiments/baseline && make all;'
-	$(RSYNC_CMD) baseline:/home/vagrant/mini-ndn/flooding/experiments/baseline/results/ $(BASELINE_RESULTS)
-	cd $(BASELINE_DIR) && vagrant destroy -f || true
+	cd $(BASELINE_DIR); \
+	vagrant ssh -c 'cd /home/vagrant/mini-ndn/flooding/experiments/baseline && make all'; \
+	$(RSYNC_CMD) baseline:/home/vagrant/mini-ndn/flooding/experiments/baseline/results/ $(BASELINE_RESULTS); \
+	cd $(BASELINE_DIR); vagrant destroy -f || true
 
 # Solution experiment results
 $(SOLUTION_PDF): $(SOLUTION_DIR)/consumer_mp.cpp $(SOLUTION_DIR)/producer_mp.cpp .SSH_CONFIG_SOLUTION | $(SOLUTION_RESULTS)
-	cd $(SOLUTION_DIR) && vagrant ssh -c '\
-		cd /home/vagrant/mini-ndn/flooding/experiments/solution && make all;'
-	$(RSYNC_CMD) solution:/home/vagrant/mini-ndn/flooding/experiments/solution/results/ $(SOLUTION_RESULTS)
-	cd $(SOLUTION_DIR) && vagrant destroy -f || true
+	cd $(SOLUTION_DIR); \
+	vagrant ssh -c 'cd /home/vagrant/mini-ndn/flooding/experiments/solution && make all'; \
+	$(RSYNC_CMD) solution:/home/vagrant/mini-ndn/flooding/experiments/solution/results/ $(SOLUTION_RESULTS); \
+	cd $(SOLUTION_DIR); vagrant destroy -f || true
 
 # Copy baseline figure to paper figures directory
 $(BASELINE_FIGURE): $(BASELINE_PDF) | $(PAPER_DIR)/figures
