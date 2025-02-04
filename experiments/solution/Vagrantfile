@@ -17,9 +17,9 @@ $INSTALL_BASE = <<EOF
   sudo apt-get install -y tcpdump
 
   # Clone and install mini-ndn
-  git clone https://github.com/named-data/mini-ndn.git /home/vagrant/mini-ndn
+  git clone https://github.com/TheBigRedOne/mini-ndn.git /home/vagrant/mini-ndn
   cd /home/vagrant/mini-ndn
-  git checkout 44e06411ab412285d74fb412a6b9b2ced8e577a8
+  git checkout 016991ad8a43fc327b43f4605bd799f788eaad74
   ./install.sh -y --source 
 
   # Set environment variables in .profile rather than .bashrc

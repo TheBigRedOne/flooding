@@ -42,14 +42,11 @@ all: $(PAPER_PDF)
 $(BASELINE_RESULTS) $(SOLUTION_RESULTS) $(PAPER_DIR)/figures:
 	mkdir -p $@
 
-# Baseline experiment SSH config
-.SSH_CONFIG_BASELINE:
+# SSH config
+.SSH_CONFIG: $(BASELINE_DIR)/Vagrantfile $(SOLUTION_DIR)/Vagrantfile
 	cd $(BASELINE_DIR); \
 	vagrant up; \
-	vagrant ssh-config --host baseline > $(BASE_DIR)/.ssh_config
-
-# Solution experiment SSH config
-.SSH_CONFIG_SOLUTION:
+	vagrant ssh-config --host baseline > $(BASE_DIR)/.ssh_config; \
 	cd $(SOLUTION_DIR); \
 	vagrant up; \
 	vagrant ssh-config --host solution >> $(BASE_DIR)/.ssh_config
