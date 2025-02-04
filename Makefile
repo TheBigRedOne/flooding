@@ -58,14 +58,14 @@ RSYNC_CMD_SOLUTION = rsync -avH -e "ssh -F $(BASE_DIR)/.ssh_config_solution"
 # Baseline experiment results
 $(BASELINE_PDF): $(BASELINE_DIR)/consumer.cpp $(BASELINE_DIR)/producer.cpp $(BASE_DIR)/.ssh_config_baseline | $(BASELINE_RESULTS)
 	cd $(BASELINE_DIR); \
-	vagrant ssh -F $(BASE_DIR)/.ssh_config_baseline -c 'cd /home/vagrant/mini-ndn/flooding/experiments/baseline && make all'; \
+	vagrant ssh -c 'cd /home/vagrant/mini-ndn/flooding/experiments/baseline && make all'; \
 	$(RSYNC_CMD_BASELINE) baseline:/home/vagrant/mini-ndn/flooding/experiments/baseline/results/ $(BASELINE_RESULTS); \
 	cd $(BASELINE_DIR); vagrant destroy -f || true
 
 # Solution experiment results
 $(SOLUTION_PDF): $(SOLUTION_DIR)/consumer_mp.cpp $(SOLUTION_DIR)/producer_mp.cpp $(BASE_DIR)/.ssh_config_solution | $(SOLUTION_RESULTS)
 	cd $(SOLUTION_DIR); \
-	vagrant ssh -F $(BASE_DIR)/.ssh_config_solution -c 'cd /home/vagrant/mini-ndn/flooding/experiments/solution && make all'; \
+	vagrant ssh -c 'cd /home/vagrant/mini-ndn/flooding/experiments/solution && make all'; \
 	$(RSYNC_CMD_SOLUTION) solution:/home/vagrant/mini-ndn/flooding/experiments/solution/results/ $(SOLUTION_RESULTS); \
 	cd $(SOLUTION_DIR); vagrant destroy -f || true
 
