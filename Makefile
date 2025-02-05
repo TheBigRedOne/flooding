@@ -32,12 +32,23 @@ STATIC_FIGURES := $(PAPER_DIR)/figures/NLSR_Work_Flow.png \
                   $(PAPER_DIR)/figures/Topology.png
 ALL_FIGURES := $(STATIC_FIGURES) $(BASELINE_FIGURE) $(SOLUTION_FIGURE)
 
+# Minindn box
+MININDN_BOX := $(BASE_DIR)/minindn-vm/minindn.box
+
 # Main target
 all: $(PAPER_PDF)
 
 # Ensure results directories exist
 $(BASELINE_RESULTS) $(SOLUTION_RESULTS) $(PAPER_DIR)/figures:
 	mkdir -p $@
+
+# Minindn box check
+$(MININDN_BOX):
+	@echo "Minindn box not found. Creating it now..."
+	$(MAKE) -C minindn-vm
+
+.PHONY: check-box
+check-box: $(MININDN_BOX)
 
 # SSH config file for baseline experiment
 $(BASE_DIR)/.ssh_config_baseline: $(BASELINE_DIR)/Vagrantfile
