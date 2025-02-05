@@ -1,20 +1,13 @@
-#Initial Box Vagrantfile
+# Solution Vagrantfile
 
 $INSTALL_BASE = <<EOF
   export DEBIAN_FRONTEND=noninteractive
 
-  # Update and install dependencies
-  sudo apt-get update
-  sudo apt-get install -y build-essential 
-  sudo apt-get install -y python3-pip 
-  sudo apt-get install -y python3-pep8 
-  sudo apt-get install -y pkg-config 
-  sudo apt-get install -y libboost-all-dev 
-  sudo apt-get install -y libssl-dev 
-  sudo apt-get install -y libsqlite3-dev 
-  sudo apt-get install -y libpcap-dev 
-  sudo apt-get install -y libsystemd-dev
-  sudo apt-get install -y tcpdump
+  # Clone and install mini-ndn
+  git clone https://github.com/TheBigRedOne/mini-ndn.git /home/vagrant/mini-ndn
+  cd /home/vagrant/mini-ndn
+  git checkout 016991ad8a43fc327b43f4605bd799f788eaad74
+  ./install.sh -y --source 
 
   # Set environment variables in .profile rather than .bashrc
   echo "export PATH=\$PATH:/usr/local/bin" >> /home/vagrant/.profile
@@ -23,8 +16,8 @@ $INSTALL_BASE = <<EOF
 EOF
 
 Vagrant.configure("2") do |config|
-  config.vm.box = "bento/ubuntu-22.04"
-  config.vm.box_version = "202407.23.0"
+  config.vm.box = "initial"
+  config.vm.box_url = "../../boxes/initial/initial.box"
 
   config.vm.network "private_network", type: "dhcp"
 
@@ -36,4 +29,5 @@ Vagrant.configure("2") do |config|
   end
 
   config.vm.provision "shell", inline: $INSTALL_BASE, privileged: false
+
 end

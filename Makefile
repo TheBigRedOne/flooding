@@ -18,6 +18,16 @@ PAPER_DIR := $(BASE_DIR)/paper
 BASELINE_DIR := $(BASE_DIR)/experiments/baseline
 SOLUTION_DIR := $(BASE_DIR)/experiments/solution
 
+# Source directories
+SOURCE_BASELINE := $(BASE_DIR)/baseline
+SOURCE_SOLUTION := $(BASE_DIR)/solution
+SOURCE_TOOLS    := $(BASE_DIR)/tools
+
+# Box files
+INITIAL_BOX := $(BASE_DIR)/boxes/initial/initial.box
+BASELINE_BOX := $(BASE_DIR)/boxes/baseline/baseline.box
+SOLUTION_BOX := $(BASE_DIR)/boxes/solution/solution.box
+
 # Results from experiments
 BASELINE_PDF := $(BASELINE_RESULTS)/consumer_capture_throughput.pdf
 SOLUTION_PDF := $(SOLUTION_RESULTS)/consumer_capture_throughput.pdf
@@ -32,9 +42,6 @@ STATIC_FIGURES := $(PAPER_DIR)/figures/NLSR_Work_Flow.png \
                   $(PAPER_DIR)/figures/Topology.png
 ALL_FIGURES := $(STATIC_FIGURES) $(BASELINE_FIGURE) $(SOLUTION_FIGURE)
 
-# Initial box
-INITIAL_BOX := $(BASE_DIR)/initial-vm/initial.box
-
 # Main target
 all: $(PAPER_PDF)
 
@@ -42,22 +49,30 @@ all: $(PAPER_PDF)
 $(BASELINE_RESULTS) $(SOLUTION_RESULTS) $(PAPER_DIR)/figures:
 	mkdir -p $@
 
-# Initial box check
-$(INITIAL_BOX): initial-vm/Vagrantfile
+# Boxes check
+$(INITIAL_BOX): boxes/initial/Vagrantfile
 	@echo "Initial box not found. Creating it now..."
-	$(MAKE) -C initial-vm
+	$(MAKE) -C boxes/initial
 
-.PHONY: check-box
-check-box: $(INITIAL_BOX)
+$(BASELINE_BOX): boxes/baseline/Vagrantfile
+	@echo "Baseline box not found. Creating it now..."
+	$(MAKE) -C boxes/baseline
+
+$(SOLUTION_BOX): boxes/solution/Vagrantfile
+	@echo "Solution box not found. Creating it now..."
+	$(MAKE) -C boxes/solution
+
+.PHONY: check-boxes
+check-boxes: $(INITIAL_BOX) $(BASELINE_BOX) $(SOLUTION_BOX)
 
 # SSH config file for baseline experiment
-$(BASE_DIR)/.ssh_config_baseline: $(BASELINE_DIR)/Vagrantfile check-box
+$(BASE_DIR)/.ssh_config_baseline: $(BASELINE_DIR)/Vagrantfile check-boxes
 	cd $(BASELINE_DIR); \
 	vagrant up; \
 	vagrant ssh-config --host baseline > $(BASE_DIR)/.ssh_config_baseline
 
 # SSH config file for solution experiment
-$(BASE_DIR)/.ssh_config_solution: $(SOLUTION_DIR)/Vagrantfile check-box
+$(BASE_DIR)/.ssh_config_solution: $(SOLUTION_DIR)/Vagrantfile check-boxes
 	cd $(SOLUTION_DIR); \
 	vagrant up; \
 	vagrant ssh-config --host solution > $(BASE_DIR)/.ssh_config_solution
@@ -67,16 +82,20 @@ RSYNC_CMD_BASELINE = rsync -avH -e "ssh -F $(BASE_DIR)/.ssh_config_baseline"
 RSYNC_CMD_SOLUTION = rsync -avH -e "ssh -F $(BASE_DIR)/.ssh_config_solution"
 
 # Baseline experiment results
-$(BASELINE_PDF): $(BASELINE_DIR)/consumer.cpp $(BASELINE_DIR)/producer.cpp $(BASE_DIR)/.ssh_config_baseline | $(BASELINE_RESULTS)
+$(BASELINE_PDF): $(BASELINE_DIR) $(BASE_DIR)/.ssh_config_baseline | $(BASELINE_RESULTS)
+	$(RSYNC_CMD_BASELINE) $(SOURCE_BASELINE)/ baseline:/home/vagrant/mini-ndn/flooding/experiments/baseline
+	$(RSYNC_CMD_BASELINE) $(SOURCE_TOOLS)/ baseline:/home/vagrant/mini-ndn/flooding/experiments/tools
 	cd $(BASELINE_DIR); \
-	vagrant ssh -c 'cd /home/vagrant/mini-ndn/flooding/experiments/baseline && make all'; \
+		vagrant ssh -c 'cd /home/vagrant/mini-ndn/flooding/experiments/baseline && make all'; \
 	$(RSYNC_CMD_BASELINE) baseline:/home/vagrant/mini-ndn/flooding/experiments/baseline/results/ $(BASELINE_RESULTS); \
 	cd $(BASELINE_DIR); vagrant halt -f || true
 
 # Solution experiment results
-$(SOLUTION_PDF): $(SOLUTION_DIR)/consumer_mp.cpp $(SOLUTION_DIR)/producer_mp.cpp $(BASE_DIR)/.ssh_config_solution | $(SOLUTION_RESULTS)
+$(SOLUTION_PDF): $(SOLUTION_DIR) $(BASE_DIR)/.ssh_config_solution | $(SOLUTION_RESULTS)
+	$(RSYNC_CMD_SOLUTION) $(SOURCE_SOLUTION)/ solution:/home/vagrant/mini-ndn/flooding/experiments/solution
+	$(RSYNC_CMD_SOLUTION) $(SOURCE_TOOLS)/ solution:/home/vagrant/mini-ndn/flooding/experiments/tools
 	cd $(SOLUTION_DIR); \
-	vagrant ssh -c 'cd /home/vagrant/mini-ndn/flooding/experiments/solution && make all'; \
+		vagrant ssh -c 'cd /home/vagrant/mini-ndn/flooding/experiments/solution && make all'; \
 	$(RSYNC_CMD_SOLUTION) solution:/home/vagrant/mini-ndn/flooding/experiments/solution/results/ $(SOLUTION_RESULTS); \
 	cd $(SOLUTION_DIR); vagrant halt -f || true
 
