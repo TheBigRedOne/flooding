@@ -60,14 +60,14 @@ $(BASELINE_PDF): $(BASELINE_DIR)/consumer.cpp $(BASELINE_DIR)/producer.cpp $(BAS
 	cd $(BASELINE_DIR); \
 	vagrant ssh -c 'cd /home/vagrant/mini-ndn/flooding/experiments/baseline && make all'; \
 	$(RSYNC_CMD_BASELINE) baseline:/home/vagrant/mini-ndn/flooding/experiments/baseline/results/ $(BASELINE_RESULTS); \
-	cd $(BASELINE_DIR); vagrant destroy -f || true
+	cd $(BASELINE_DIR); vagrant halt -f || true
 
 # Solution experiment results
 $(SOLUTION_PDF): $(SOLUTION_DIR)/consumer_mp.cpp $(SOLUTION_DIR)/producer_mp.cpp $(BASE_DIR)/.ssh_config_solution | $(SOLUTION_RESULTS)
 	cd $(SOLUTION_DIR); \
 	vagrant ssh -c 'cd /home/vagrant/mini-ndn/flooding/experiments/solution && make all'; \
 	$(RSYNC_CMD_SOLUTION) solution:/home/vagrant/mini-ndn/flooding/experiments/solution/results/ $(SOLUTION_RESULTS); \
-	cd $(SOLUTION_DIR); vagrant destroy -f || true
+	cd $(SOLUTION_DIR); vagrant halt -f || true
 
 # Copy baseline figure to paper figures directory
 $(BASELINE_FIGURE): $(BASELINE_PDF) | $(PAPER_DIR)/figures
