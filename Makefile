@@ -66,13 +66,13 @@ $(SOLUTION_BOX): boxes/solution/Vagrantfile
 check-boxes: $(INITIAL_BOX) $(BASELINE_BOX) $(SOLUTION_BOX)
 
 # SSH config file for baseline experiment
-$(BASE_DIR)/.ssh_config_baseline: $(BASELINE_DIR)/Vagrantfile check-boxes
+$(BASE_DIR)/.ssh_config_baseline: $(BASELINE_DIR)/Vagrantfile $(BASELINE_BOX)
 	cd $(BASELINE_DIR); \
 	vagrant up; \
 	vagrant ssh-config --host baseline > $(BASE_DIR)/.ssh_config_baseline
 
 # SSH config file for solution experiment
-$(BASE_DIR)/.ssh_config_solution: $(SOLUTION_DIR)/Vagrantfile check-boxes
+$(BASE_DIR)/.ssh_config_solution: $(SOLUTION_DIR)/Vagrantfile $(SOLUTION_BOX)
 	cd $(SOLUTION_DIR); \
 	vagrant up; \
 	vagrant ssh-config --host solution > $(BASE_DIR)/.ssh_config_solution
@@ -83,8 +83,6 @@ RSYNC_CMD_SOLUTION = rsync -avH -e "ssh -F $(BASE_DIR)/.ssh_config_solution"
 
 # Baseline experiment results
 $(BASELINE_PDF): $(BASELINE_DIR) $(BASE_DIR)/.ssh_config_baseline | $(BASELINE_RESULTS)
-	$(RSYNC_CMD_BASELINE) $(SOURCE_BASELINE)/ baseline:/home/vagrant/mini-ndn/flooding/experiments/baseline
-	$(RSYNC_CMD_BASELINE) $(SOURCE_TOOLS)/ baseline:/home/vagrant/mini-ndn/flooding/experiments/tools
 	cd $(BASELINE_DIR); \
 		vagrant ssh -c 'cd /home/vagrant/mini-ndn/flooding/experiments/baseline && make all'; \
 	$(RSYNC_CMD_BASELINE) baseline:/home/vagrant/mini-ndn/flooding/experiments/baseline/results/ $(BASELINE_RESULTS); \
@@ -92,8 +90,6 @@ $(BASELINE_PDF): $(BASELINE_DIR) $(BASE_DIR)/.ssh_config_baseline | $(BASELINE_R
 
 # Solution experiment results
 $(SOLUTION_PDF): $(SOLUTION_DIR) $(BASE_DIR)/.ssh_config_solution | $(SOLUTION_RESULTS)
-	$(RSYNC_CMD_SOLUTION) $(SOURCE_SOLUTION)/ solution:/home/vagrant/mini-ndn/flooding/experiments/solution
-	$(RSYNC_CMD_SOLUTION) $(SOURCE_TOOLS)/ solution:/home/vagrant/mini-ndn/flooding/experiments/tools
 	cd $(SOLUTION_DIR); \
 		vagrant ssh -c 'cd /home/vagrant/mini-ndn/flooding/experiments/solution && make all'; \
 	$(RSYNC_CMD_SOLUTION) solution:/home/vagrant/mini-ndn/flooding/experiments/solution/results/ $(SOLUTION_RESULTS); \

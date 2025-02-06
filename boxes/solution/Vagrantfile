@@ -1,4 +1,4 @@
-# Solution Vagrantfile
+# Solution Box Vagrantfile
 
 $INSTALL_BASE = <<EOF
   export DEBIAN_FRONTEND=noninteractive

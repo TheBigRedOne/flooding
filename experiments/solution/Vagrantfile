@@ -1,0 +1,25 @@
+# Solution Experiment Vagrantfile
+
+Vagrant.configure("2") do |config|
+  config.vm.box = "solution"
+  config.vm.box_url = "../../boxes/solution/solution.box"
+
+  config.vm.network "private_network", type: "dhcp"
+
+  config.vm.provider :virtualbox do |v|
+    v.customize ["modifyvm", :id, "--cpus", "4"]
+    v.customize ["modifyvm", :id, "--memory", "8192"]
+    v.customize ["modifyvm", :id, "--vram", "256"]
+    v.gui = false
+  end
+
+   # Explicitly transfer host files to VM
+  config.vm.provision "file", source: "../solution", destination: "/home/vagrant/mini-ndn/flooding/experiments/solution"
+  config.vm.provision "file", source: "../tools", destination: "/home/vagrant/mini-ndn/flooding/experiments/tools"
+
+  config.vm.provision "shell", inline: <<-SHELL
+    mkdir -p /home/vagrant/mini-ndn/flooding/experiments/solution
+    mkdir -p /home/vagrant/mini-ndn/flooding/experiments/tools
+  SHELL
+
+end

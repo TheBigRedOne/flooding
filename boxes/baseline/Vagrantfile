@@ -1,4 +1,4 @@
-# Baseline Vagrantfile
+# Baseline Box Vagrantfile
 
 $INSTALL_BASE = <<EOF
   export DEBIAN_FRONTEND=noninteractive
