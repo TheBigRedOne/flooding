@@ -1,10 +1,11 @@
 # Baseline Box Makefile
 
+INITIAL_BOX := $(abspath ../../boxes/initial/initial.box)
 BASELINE_BOX = $(CURDIR)/baseline.box
 
 all: $(BASELINE_BOX)
 
-$(BASELINE_BOX): Vagrantfile
+$(BASELINE_BOX): Vagrantfile $(INITIAL_BOX)
 	@echo "Creating baseline box (with mini-ndn)..."
 	-rm -f $(BASELINE_BOX)
 	vagrant up

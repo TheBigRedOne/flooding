@@ -54,11 +54,11 @@ $(INITIAL_BOX): boxes/initial/Vagrantfile
 	@echo "Initial box not found. Creating it now..."
 	$(MAKE) -C boxes/initial
 
-$(BASELINE_BOX): boxes/baseline/Vagrantfile
+$(BASELINE_BOX): boxes/baseline/Vagrantfile $(INITIAL_BOX)
 	@echo "Baseline box not found. Creating it now..."
 	$(MAKE) -C boxes/baseline
 
-$(SOLUTION_BOX): boxes/solution/Vagrantfile
+$(SOLUTION_BOX): boxes/solution/Vagrantfile $(INITIAL_BOX)
 	@echo "Solution box not found. Creating it now..."
 	$(MAKE) -C boxes/solution
 
@@ -83,6 +83,7 @@ RSYNC_CMD_SOLUTION = rsync -avH -e "ssh -F $(BASE_DIR)/.ssh_config_solution"
 
 # Baseline experiment results
 $(BASELINE_PDF): $(BASELINE_DIR) $(BASE_DIR)/.ssh_config_baseline | $(BASELINE_RESULTS)
+	vagrant up; \
 	cd $(BASELINE_DIR); \
 		vagrant ssh -c 'cd /home/vagrant/mini-ndn/flooding/experiments/baseline && make all'; \
 	$(RSYNC_CMD_BASELINE) baseline:/home/vagrant/mini-ndn/flooding/experiments/baseline/results/ $(BASELINE_RESULTS); \
@@ -90,6 +91,7 @@ $(BASELINE_PDF): $(BASELINE_DIR) $(BASE_DIR)/.ssh_config_baseline | $(BASELINE_R
 
 # Solution experiment results
 $(SOLUTION_PDF): $(SOLUTION_DIR) $(BASE_DIR)/.ssh_config_solution | $(SOLUTION_RESULTS)
+	vagrant up; \
 	cd $(SOLUTION_DIR); \
 		vagrant ssh -c 'cd /home/vagrant/mini-ndn/flooding/experiments/solution && make all'; \
 	$(RSYNC_CMD_SOLUTION) solution:/home/vagrant/mini-ndn/flooding/experiments/solution/results/ $(SOLUTION_RESULTS); \
@@ -113,7 +115,7 @@ clean: clean-ssh-config
 	cd $(PAPER_DIR) && $(MAKE) clean
 
 deep-clean: clean
-	rm -rf $(PAPER_DIR)/figures $(PAPER_PDF)
+	rm -rf $(BASELINE_FIGURE) $(SOLUTION_FIGURE) $(PAPER_PDF)
 
 # Clean SSH config file
 clean-ssh-config:
