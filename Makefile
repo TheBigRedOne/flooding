@@ -83,16 +83,16 @@ RSYNC_CMD_SOLUTION = rsync -avH -e "ssh -F $(BASE_DIR)/.ssh_config_solution"
 
 # Baseline experiment results
 $(BASELINE_PDF): $(BASELINE_DIR) $(BASE_DIR)/.ssh_config_baseline | $(BASELINE_RESULTS)
-	vagrant up; \
 	cd $(BASELINE_DIR); \
+		vagrant up; \
 		vagrant ssh -c 'cd /home/vagrant/mini-ndn/flooding/experiments/baseline && make all'; \
 	$(RSYNC_CMD_BASELINE) baseline:/home/vagrant/mini-ndn/flooding/experiments/baseline/results/ $(BASELINE_RESULTS); \
 	cd $(BASELINE_DIR); vagrant halt -f || true
 
 # Solution experiment results
 $(SOLUTION_PDF): $(SOLUTION_DIR) $(BASE_DIR)/.ssh_config_solution | $(SOLUTION_RESULTS)
-	vagrant up; \
 	cd $(SOLUTION_DIR); \
+		vagrant up; \
 		vagrant ssh -c 'cd /home/vagrant/mini-ndn/flooding/experiments/solution && make all'; \
 	$(RSYNC_CMD_SOLUTION) solution:/home/vagrant/mini-ndn/flooding/experiments/solution/results/ $(SOLUTION_RESULTS); \
 	cd $(SOLUTION_DIR); vagrant halt -f || true
