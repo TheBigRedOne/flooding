@@ -116,11 +116,11 @@ clean: clean-ssh-config
 
 deep-clean: clean
 	rm -rf $(BASELINE_FIGURE) $(SOLUTION_FIGURE) $(PAPER_PDF)
-
-    # Remove local Vagrant box cache to ensure using .box files
-    vagrant box remove initial -f --all || true
-    vagrant box remove baseline -f --all || true
-    vagrant box remove solution -f --all || true
+	
+	# Remove local Vagrant box cache to ensure using .box files
+	vagrant box remove initial -f --all || true
+	vagrant box remove baseline -f --all || true
+	vagrant box remove solution -f --all || true
 
 # Clean SSH config file
 clean-ssh-config:
