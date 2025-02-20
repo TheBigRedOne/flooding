@@ -1,8 +1,7 @@
 # Solution Experiment Vagrantfile
 
 Vagrant.configure("2") do |config|
-  config.vm.box = "solution"
-  config.vm.box_url = "../../boxes/solution/solution.box"
+  config.vm.box = "../../boxes/solution/solution.box"
 
   config.vm.network "private_network", type: "dhcp"
 

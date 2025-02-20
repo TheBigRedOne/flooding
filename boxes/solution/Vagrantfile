@@ -16,8 +16,7 @@ $INSTALL_BASE = <<EOF
 EOF
 
 Vagrant.configure("2") do |config|
-  config.vm.box = "initial"
-  config.vm.box_url = "../../boxes/initial/initial.box"
+  config.vm.box = "../../boxes/initial/initial.box"
 
   config.vm.network "private_network", type: "dhcp"
 

@@ -1,8 +1,7 @@
 # Baseline Experiment Vagrantfile
 
 Vagrant.configure("2") do |config|
-  config.vm.box = "baseline"
-  config.vm.box_url = "../../boxes/baseline/baseline.box"
+  config.vm.box = "../../boxes/baseline/baseline.box"
 
   config.vm.network "private_network", type: "dhcp"
 
