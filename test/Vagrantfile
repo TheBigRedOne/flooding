@@ -1,0 +1,44 @@
+﻿# Vagrantfile for Windows Host with VirtualBox
+
+$INSTALL_BASE = <<EOF
+  export DEBIAN_FRONTEND=noninteractive
+
+  # Update and install dependencies
+  sudo apt-get update
+  sudo apt-get install -y build-essential python3-pip python3-pep8 pkg-config \
+                          libboost-all-dev libssl-dev libsqlite3-dev libpcap-dev \
+                          libsystemd-dev tcpdump git
+
+  # Clone and install mini-ndn
+  if [ ! -d "/home/vagrant/mini-ndn" ]; then
+    git clone https://github.com/TheBigRedOne/mini-ndn.git /home/vagrant/mini-ndn
+    cd /home/vagrant/mini-ndn
+    git checkout eb89bc95579555c742e0989c49bc92bc5371e60e
+    ./install.sh -y --release=2025-02
+  fi
+
+  # Set environment variables in .profile
+  echo "export PATH=\$PATH:/usr/local/bin" >> /home/vagrant/.profile
+  echo "export LD_LIBRARY_PATH=\$LD_LIBRARY_PATH:/usr/local/lib64/" >> /home/vagrant/.profile
+  echo "export PKG_CONFIG_PATH=/usr/local/lib64/pkgconfig/" >> /home/vagrant/.profile
+EOF
+
+Vagrant.configure("2") do |config|
+  # 使用 Ubuntu 22.04 作为 Vagrant Box
+  config.vm.box = "bento/ubuntu-22.04"
+  config.vm.box_version = "202407.23.0"
+
+  # 网络设置
+  config.vm.network "private_network", type: "dhcp"
+
+  # VirtualBox 配置
+  config.vm.provider :virtualbox do |v|
+    v.customize ["modifyvm", :id, "--cpus", "4"]
+    v.customize ["modifyvm", :id, "--memory", "4096"]
+    v.customize ["modifyvm", :id, "--vram", "256"]
+    v.gui = false
+  end
+
+  # 运行安装脚本
+  config.vm.provision "shell", inline: $INSTALL_BASE, privileged: false
+end
