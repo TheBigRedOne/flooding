@@ -101,9 +101,18 @@ clean: clean-ssh-config
 
 deep-clean: clean
 	rm -rf $(BASELINE_FIGURE) $(SOLUTION_FIGURE) $(PAPER_PDF)
-	VAGRANT_CWD=boxes/initial  vagrant destroy -f
+	VAGRANT_CWD=experiments/baseline vagrant destroy -f
+	VAGRANT_CWD=experiments/solution vagrant destroy -f
 	VAGRANT_CWD=boxes/baseline vagrant destroy -f
 	VAGRANT_CWD=boxes/solution vagrant destroy -f
+	VAGRANT_CWD=boxes/initial  vagrant destroy -f
+	vagrant box remove boxes/baseline/baseline.box || true
+	vagrant box remove boxes/solution/solution.box || true
+	vagrant box remove boxes/initial/initial.box || true
+	rm -f boxes/baseline/baseline.box
+	rm -f boxes/solution/solution.box
+	rm -f boxes/initial/initial.box
+
 
 # Clean SSH config file
 clean-ssh-config:
