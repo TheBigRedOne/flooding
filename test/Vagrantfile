@@ -13,8 +13,8 @@ $INSTALL_BASE = <<EOF
   if [ ! -d "/home/vagrant/mini-ndn" ]; then
     git clone https://github.com/TheBigRedOne/mini-ndn.git /home/vagrant/mini-ndn
     cd /home/vagrant/mini-ndn
-    git checkout eb89bc95579555c742e0989c49bc92bc5371e60e
-    ./install.sh -y --release=2025-02
+    git checkout 55079bac6f48a050d88134c4526c6a926e48ccbb
+    ./install.sh -y --release=test
   fi
 
   # Set environment variables in .profile
