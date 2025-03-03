@@ -69,6 +69,8 @@ RSYNC_BASELINE = rsync -avH -e "ssh -F .ssh_config_baseline"
 RSYNC_SOLUTION = rsync -avH -e "ssh -F .ssh_config_solution"
 
 # Baseline experiment results
+# FIXME: this should depend on the files in experiments/baseline, not on
+# the experiments/baseline directory.
 $(BASELINE_PDF): experiments/baseline .ssh_config_baseline | results/baseline
 	VAGRANT_CWD=experiments/baseline vagrant up
 	VAGRANT_CWD=experiments/baseline vagrant ssh -c 'cd /home/vagrant/mini-ndn/flooding/experiments/baseline && make all'
@@ -76,6 +78,8 @@ $(BASELINE_PDF): experiments/baseline .ssh_config_baseline | results/baseline
 	VAGRANT_CWD=experiments/baseline vagrant halt -f || true
 
 # Solution experiment results
+# FIXME: this should depend on the files in experiments/solution, not on
+# the experiments/solution directory.
 $(SOLUTION_PDF): experiments/solution .ssh_config_solution | results/solution
 	VAGRANT_CWD=experiments/solution vagrant up
 	VAGRANT_CWD=experiments/solution vagrant ssh -c 'cd /home/vagrant/mini-ndn/flooding/experiments/solution && make all'
