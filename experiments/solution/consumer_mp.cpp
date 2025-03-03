@@ -26,7 +26,7 @@ namespace ndn {
 			void sendInterest()
 			{
 				// Construct Interest for the current frame
-				Name interestName("/example/LiveStream");
+				Name interestName("/example/liveStream");
 				interestName.append(std::to_string(frameNumber)); // Request Frame-<frameNumber>
 				Interest interest(interestName);
 				interest.setMustBeFresh(true);
