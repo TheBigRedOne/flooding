@@ -14,6 +14,23 @@ STATIC_FIGURES := paper/figures/NLSR_Work_Flow.png \
                   paper/figures/Topology.png
 ALL_FIGURES := $(STATIC_FIGURES) $(BASELINE_FIGURE) $(SOLUTION_FIGURE)
 
+# Experiment source files
+BASELINE_SRCS := experiments/baseline/Vagrantfile \
+                experiments/baseline/Makefile \
+                experiments/baseline/consumer.cpp \
+                experiments/baseline/producer.cpp
+
+SOLUTION_SRCS := experiments/solution/Vagrantfile \
+                experiments/solution/Makefile \
+                experiments/solution/consumer_mp.cpp \
+                experiments/solution/producer_mp.cpp
+
+# Common tools used by both experiments
+TOOLS_SRCS := experiments/tools/exp.py \
+             experiments/tools/plot_throughput.py \
+             experiments/tools/throughput_calculation.py \
+             experiments/tools/trust-schema.conf
+
 # Main target
 all: $(PAPER_PDF)
 
@@ -69,18 +86,14 @@ RSYNC_BASELINE = rsync -avH -e "ssh -F .ssh_config_baseline"
 RSYNC_SOLUTION = rsync -avH -e "ssh -F .ssh_config_solution"
 
 # Baseline experiment results
-# FIXME: this should depend on the files in experiments/baseline, not on
-# the experiments/baseline directory.
-$(BASELINE_PDF): experiments/baseline .ssh_config_baseline | results/baseline
+$(BASELINE_PDF): $(BASELINE_SRCS) $(TOOLS_SRCS) .ssh_config_baseline | results/baseline
 	VAGRANT_CWD=experiments/baseline vagrant up
 	VAGRANT_CWD=experiments/baseline vagrant ssh -c 'cd /home/vagrant/mini-ndn/flooding/experiments/baseline && make all'
 	$(RSYNC_BASELINE) baseline:/home/vagrant/mini-ndn/flooding/experiments/baseline/results/ results/baseline
 	VAGRANT_CWD=experiments/baseline vagrant halt -f || true
 
 # Solution experiment results
-# FIXME: this should depend on the files in experiments/solution, not on
-# the experiments/solution directory.
-$(SOLUTION_PDF): experiments/solution .ssh_config_solution | results/solution
+$(SOLUTION_PDF): $(SOLUTION_SRCS) $(TOOLS_SRCS) .ssh_config_solution | results/solution
 	VAGRANT_CWD=experiments/solution vagrant up
 	VAGRANT_CWD=experiments/solution vagrant ssh -c 'cd /home/vagrant/mini-ndn/flooding/experiments/solution && make all'
 	$(RSYNC_SOLUTION) solution:/home/vagrant/mini-ndn/flooding/experiments/solution/results/ results/solution; \
@@ -127,5 +140,3 @@ clean-ssh-config:
 .DELETE_ON_ERROR:
 
 .NOTINTERMEDIATE:
-
-
