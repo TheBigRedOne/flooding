@@ -1,23 +1,44 @@
-﻿# Vagrantfile for Windows Host with VirtualBox
+# Vagrantfile for Windows Host with VirtualBox
 
 $INSTALL_BASE = <<EOF
   export DEBIAN_FRONTEND=noninteractive
 
-  # Update and install dependencies
   sudo apt-get update
-  sudo apt-get install -y build-essential python3-pip python3-pep8 pkg-config \
-                          libboost-all-dev libssl-dev libsqlite3-dev libpcap-dev \
-                          libsystemd-dev tcpdump git
+  sudo apt-get install -y build-essential 
+  sudo apt-get install -y python3-pip 
+  sudo apt-get install -y python3-pep8 
+  sudo apt-get install -y pkg-config 
+  sudo apt-get install -y libboost-all-dev 
+  sudo apt-get install -y libssl-dev 
+  sudo apt-get install -y libsqlite3-dev 
+  sudo apt-get install -y libpcap-dev 
+  sudo apt-get install -y libsystemd-dev
+  sudo apt-get install -y tcpdump
 
   # Clone and install mini-ndn
-  if [ ! -d "/home/vagrant/mini-ndn" ]; then
-    git clone https://github.com/TheBigRedOne/mini-ndn.git /home/vagrant/mini-ndn
-    cd /home/vagrant/mini-ndn
-    git checkout 55079bac6f48a050d88134c4526c6a926e48ccbb
-    ./install.sh -y --release=test
-  fi
+  #
+  # install.sh has additional options that can be used to install specific 
+  # versions of ndn-cxx, nfd, etc. from GitHub as needed. For details, see
+  # https://github.com/named-data/mini-ndn/blob/master/install.sh
+  #
+  git clone https://github.com/TheBigRedOne/mini-ndn.git /home/vagrant/mini-ndn
+  cd /home/vagrant/mini-ndn
+  git checkout 55079bac6f48a050d88134c4526c6a926e48ccbb
+  ./install.sh -y 
+  --cxx=https://github.com/TheBigRedOne/ndn-cxx.git@3f18325c7ed363acbf9b7a90b33bd269c1b39787
+  --nfd=https://github.com/TheBigRedOne/NFD.git@edeecbc3d9bb4516e2043564af65627b159d2058
+  --psync=https://github.com/named-data/PSync.git@0.5.0
+  --nlsr=https://github.com/named-data/NLSR.git@NLSR-24.08
+  --tools=https://github.com/named-data/ndn-tools.git@ndn-tools-24.07
+  --traffic=https://github.com/named-data/ndn-traffic-generator.git@9bec15ac63ae2ac225c4e514daa9fc1366889d62
+  --infoedit=https://github.com/NDN-Routing/infoedit.git@cecfe583f5d2df974f5cbd50996f91b9d321be99
+  
+  # Change ownership of the mini-ndn folder to vagrant user
+  sudo chown -R vagrant:vagrant /home/vagrant/mini-ndn
 
-  # Set environment variables in .profile
+  # Set environment variables in .profile rather than .bashrc
+  # because .bashrc is only read for interactive shells and
+  # "vagrant ssh -c command" starts a non-interactive shell.
   echo "export PATH=\$PATH:/usr/local/bin" >> /home/vagrant/.profile
   echo "export LD_LIBRARY_PATH=\$LD_LIBRARY_PATH:/usr/local/lib64/" >> /home/vagrant/.profile
   echo "export PKG_CONFIG_PATH=/usr/local/lib64/pkgconfig/" >> /home/vagrant/.profile
