@@ -6,8 +6,8 @@ $INSTALL_BASE = <<EOF
   # Clone and install mini-ndn
   git clone https://github.com/TheBigRedOne/mini-ndn.git /home/vagrant/mini-ndn
   cd /home/vagrant/mini-ndn
-  git checkout 55079bac6f48a050d88134c4526c6a926e48ccbb
-  ./install.sh -y --release=test
+  git checkout 727e028c6d2fa04ddf6553aabb68a29cd123c221
+  ./install.sh -y --release=2025-03
 
   # Set environment variables in .profile rather than .bashrc
   echo "export PATH=\$PATH:/usr/local/bin" >> /home/vagrant/.profile
