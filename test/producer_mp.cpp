@@ -17,37 +17,31 @@ namespace ndn {
         {
         public:
             Producer()
-                : keepRunning(true), frameRate(30), isMobile(false) {}
+                : keepRunning(true), isMobile(false) {
+            }
 
             void run()
             {
-                // Automatically advertise prefix using system call
                 std::system("nlsrc advertise /example/liveStream");
-                // Register for connection status notifications
                 m_face.registerPrefix("/example/liveStream",
                     std::bind(&Producer::onRegisterSuccess, this, std::placeholders::_1),
                     std::bind(&Producer::onRegisterFailed, this, std::placeholders::_1, std::placeholders::_2));
-
-                // Register Interest filter
                 m_face.setInterestFilter("/example/liveStream",
                     std::bind(&Producer::onInterestReceived, this, std::placeholders::_2),
                     nullptr,
                     std::bind(&Producer::onRegisterFailed, this, std::placeholders::_1, std::placeholders::_2));
 
-                std::cout << "Producer running, generating video data...\n";
+                std::cout << "Producer running, waiting for Interests...\n";
 
-                // Start threads for data generation and processing
-                dataGenerationThread = std::thread(&Producer::generateData, this);
+                // Start interest processing and face monitoring threads.
                 interestProcessingThread = std::thread(&Producer::processInterestQueue, this);
                 faceMonitorThread = std::thread(&Producer::monitorFaceStatus, this);
 
                 m_face.processEvents();
 
-                // Shutdown threads
                 keepRunning.store(false);
-                if (dataGenerationThread.joinable()) {
-                    dataGenerationThread.join();
-                }
+                // Notify condition variable to wake up processing thread for clean exit.
+                interestQueueCondition.notify_all();
                 if (interestProcessingThread.joinable()) {
                     interestProcessingThread.join();
                 }
@@ -127,34 +121,6 @@ namespace ndn {
                 }
             }
 
-            // Data generation thread: simulate video frame generation
-            void generateData()
-            {
-                int frameNumber = 0;
-                while (keepRunning.load()) {
-                    // Simulate frame generation at a fixed frame rate
-                    std::this_thread::sleep_for(std::chrono::milliseconds(1000 / frameRate));
-
-                    // Create frame data
-                    std::string frameContent = "Frame-" + std::to_string(frameNumber);
-                    {
-                        std::lock_guard<std::mutex> lock(dataBufferMutex);
-                        dataBuffer[frameNumber] = frameContent;
-                    }
-
-                    // Notify waiting threads if Interests are waiting for this frame
-                    {
-                        std::lock_guard<std::mutex> lock(interestQueueMutex);
-                        if (interestQueue.find(frameNumber) != interestQueue.end()) {
-                            interestQueueCondition.notify_all();
-                        }
-                    }
-
-                    std::cout << "Generated data for " << frameContent << std::endl;
-                    ++frameNumber;
-                }
-            }
-
             // Add Interest to processing queue
             void onInterestReceived(const Interest& interest)
             {
@@ -163,6 +129,10 @@ namespace ndn {
 
                 {
                     std::lock_guard<std::mutex> lock(interestQueueMutex);
+                    // Store interest in the queue for the requested frame.
+                    if (interestQueue.find(requestedFrame) == interestQueue.end()) {
+                        interestQueue[requestedFrame] = std::queue<Interest>();
+                    }
                     interestQueue[requestedFrame].push(interest);
                 }
 
@@ -180,6 +150,7 @@ namespace ndn {
                     {
                         std::unique_lock<std::mutex> lock(interestQueueMutex);
 
+                        // Wait until the queue is not empty, a mobility event occurs, or the producer is stopping.
                         interestQueueCondition.wait(lock, [this] {
                             return !interestQueue.empty() || isMobile.load() || !keepRunning.load();
                             });
@@ -188,6 +159,7 @@ namespace ndn {
                             if (interestQueue.empty()) return;
                         }
 
+                        // Get an interest if the queue is not empty.
                         if (!interestQueue.empty()) {
                             auto it = interestQueue.begin();
                             requestedFrame = it->first;
@@ -202,54 +174,44 @@ namespace ndn {
                     }
 
                     if (interestFound) {
-                        std::string frameContent;
-                        bool frameAvailable = false;
+                        // Simulate processing delay.
+                        std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
-                        {
-                            std::unique_lock<std::mutex> lock(dataBufferMutex);
-                            interestQueueCondition.wait(lock, [this, requestedFrame] {
-                                return !keepRunning.load() || dataBuffer.count(requestedFrame) > 0;
-                                });
+                        // Check if still running after delay.
+                        if (!keepRunning.load()) break;
 
-                            if (keepRunning.load() && dataBuffer.count(requestedFrame) > 0) {
-                                frameContent = dataBuffer[requestedFrame];
-                                frameAvailable = true;
-                                // The frame remains in the dataBuffer after being sent.
-                            }
-                        }
+                        // Generate content on-the-fly for VOD scenario.
+                        std::string frameContent = "Chunk-" + std::to_string(requestedFrame);
 
-                        if (frameAvailable) {
-                            auto data = std::make_shared<Data>();
-                            data->setName(interest.getName());
-                            data->setFreshnessPeriod(1_s);
-                            data->setContent(makeStringBlock(tlv::Content, frameContent));
+                        // Create Data packet.
+                        auto data = std::make_shared<Data>();
+                        data->setName(interest.getName());
+                        // Set Data FreshnessPeriod.
+                        data->setFreshnessPeriod(1_s);
+                        data->setContent(makeStringBlock(tlv::Content, frameContent));
 
-                            bool currentlyMobile = isMobile.load();
-                            if (currentlyMobile) {
-                                auto& metaInfo = const_cast<MetaInfo&>(data->getMetaInfo());
-                                metaInfo.setMobilityFlag(true);
-                                metaInfo.setFloodingHopLimit(5);
+                        bool currentlyMobile = isMobile.load();
+                        if (currentlyMobile) {
+                            auto& metaInfo = const_cast<MetaInfo&>(data->getMetaInfo());
+                            metaInfo.setMobilityFlag(true);
+                            metaInfo.setFloodingHopLimit(5);
 
-                                auto now = time::system_clock::now().time_since_epoch();
-                                auto msTimestamp = time::duration_cast<time::milliseconds>(now);
-                                metaInfo.setFloodingTimestamp(msTimestamp);
+                            auto now = time::system_clock::now().time_since_epoch();
+                            auto msTimestamp = time::duration_cast<time::milliseconds>(now);
+                            metaInfo.setFloodingTimestamp(msTimestamp);
 
-                                std::cout << "<< Responding with Mobility Data for Frame-" << requestedFrame << std::endl;
-                            }
-                            else {
-                                std::cout << "<< Responding with Data for Frame-" << requestedFrame << std::endl;
-                            }
-
-                            m_keyChain.sign(*data);
-                            m_face.put(*data);
+                            std::cout << "<< Responding with Mobility Data for Chunk-" << requestedFrame << std::endl;
                         }
                         else {
-                            std::cout << "WARN: Frame " << requestedFrame << " did not become available for Interest " << interest.getName() << std::endl;
+                            std::cout << "<< Responding with Data for Chunk-" << requestedFrame << std::endl;
                         }
+
+                        m_keyChain.sign(*data);
+                        m_face.put(*data);
+
                     }
 
                     // Reset the mobility flag after processing interests potentially affected by mobility.
-                    // This resets the flag after one processing cycle where mobility was detected.
                     bool wasMobile = isMobile.load();
                     if (wasMobile) {
                         isMobile.store(false);
@@ -282,22 +244,17 @@ namespace ndn {
 
             std::atomic<bool> keepRunning;
             std::atomic<bool> isMobile;
-            int frameRate; // Frames per second
 
-            std::map<int, std::string> dataBuffer; // Buffer for generated frames
-            std::mutex dataBufferMutex;
-
-            std::map<int, std::queue<Interest>> interestQueue; // Map for received Interests
+            std::map<int, std::queue<Interest>> interestQueue;
             std::mutex interestQueueMutex;
             std::condition_variable interestQueueCondition;
 
-            // Face status monitoring
+            // Face status monitoring members.
             std::mutex faceStatusMutex;
             std::condition_variable faceStatusCV;
             bool isConnected = false;
             Name lastRegisteredPrefix;
 
-            std::thread dataGenerationThread;
             std::thread interestProcessingThread;
             std::thread faceMonitorThread;
         };
