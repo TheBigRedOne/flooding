@@ -63,25 +63,29 @@ if __name__ == '__main__':
     ndn.net.configLinkStatus('producer', 'acc3', 'down')
     ndn.net.configLinkStatus('producer', 'acc4', 'down')
 
-    producer = ndn.net['producer']
     consumer = ndn.net['consumer']
+    producer = ndn.net['producer']
 
     consumer.cmd("tcpdump -i consumer-eth0 -w /home/vagrant/mini-ndn/flooding/consumer_capture.pcap &")
+    producer.cmd("tcpdump -i producer-eth0 -w /home/vagrant/mini-ndn/flooding/producer_capture_1.pcap &")
 
-    producer.cmd("/home/vagrant/mini-ndn/flooding/producer &> /home/vagrant/mini-ndn/flooding/producer.log &")
     consumer.cmd("/home/vagrant/mini-ndn/flooding/consumer &> /home/vagrant/mini-ndn/flooding/consumer.log &")
+    producer.cmd("/home/vagrant/mini-ndn/flooding/producer &> /home/vagrant/mini-ndn/flooding/producer.log &")
     sleep(120)
 
     info('Switching producer to acc3\n')
     ndn.net.configLinkStatus('producer', 'acc2', 'down')
     ndn.net.configLinkStatus('producer', 'acc3', 'up')
+    producer.cmd("tcpdump -i producer-eth0 -w /home/vagrant/mini-ndn/flooding/producer_capture_2.pcap &")
     sleep(120)
 
     info('Switching producer to acc4\n')
     ndn.net.configLinkStatus('producer', 'acc3', 'down')
     ndn.net.configLinkStatus('producer', 'acc4', 'up')
+    producer.cmd("tcpdump -i producer-eth0 -w /home/vagrant/mini-ndn/flooding/producer_capture_3.pcap &")
     sleep(120)
 
     consumer.cmd("kill %tcpdump")
+    producer.cmd("kill %tcpdump")
 
     ndn.stop()
