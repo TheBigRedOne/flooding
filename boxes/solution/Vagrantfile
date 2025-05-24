@@ -16,24 +16,34 @@ $INSTALL_BASE = <<EOF
   --traffic=https://github.com/named-data/ndn-traffic-generator.git@9bec15ac63ae2ac225c4e514daa9fc1366889d62 \
   --infoedit=https://github.com/NDN-Routing/infoedit.git@cecfe583f5d2df974f5cbd50996f91b9d321be99
 
-  # Set environment variables in .profile rather than .bashrc
+  # Set environment variables in .profile
   echo "export PATH=\$PATH:/usr/local/bin" >> /home/vagrant/.profile
   echo "export LD_LIBRARY_PATH=\$LD_LIBRARY_PATH:/usr/local/lib64/" >> /home/vagrant/.profile
   echo "export PKG_CONFIG_PATH=/usr/local/lib64/pkgconfig/" >> /home/vagrant/.profile
 EOF
 
 Vagrant.configure("2") do |config|
-  config.vm.box = "boxes/initial/initial.box"
+  initial_box_path = ENV['ACTUAL_INITIAL_BOX_PATH'] || "boxes/initial/initial.box"
+  config.vm.box = initial_box_path
 
   config.vm.network "private_network", type: "dhcp"
+  
+  common_cpus   = 4
+  common_memory = 4096
 
-  config.vm.provider :virtualbox do |v|
-    #v.customize ["modifyvm", :id, "--cpus", "18"]
-    #v.customize ["modifyvm", :id, "--memory", "32768"]
-    v.customize ["modifyvm", :id, "--cpus", "4"]
-    v.customize ["modifyvm", :id, "--memory", "4096"]
-    v.customize ["modifyvm", :id, "--vram", "256"]
-    v.gui = false
+  config.vm.provider :virtualbox do |vb|
+    vb.name = "solution-virtualbox"
+    vb.cpus = common_cpus
+    vb.memory = common_memory
+    vb.customize ["modifyvm", :id, "--vram", "256"]
+    vb.gui = false
+  end
+
+  config.vm.provider :libvirt do |lv|
+    lv.driver = "kvm"
+    lv.name   = "solution-kvm"
+    lv.cpus   = common_cpus
+    lv.memory = common_memory
   end
 
   config.vm.provision "shell", inline: $INSTALL_BASE, privileged: false

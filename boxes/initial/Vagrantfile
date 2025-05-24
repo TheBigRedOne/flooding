@@ -16,7 +16,7 @@ $INSTALL_BASE = <<EOF
   sudo apt-get install -y libsystemd-dev
   sudo apt-get install -y tcpdump
 
-  # Set environment variables in .profile rather than .bashrc
+  # Set environment variables in .profile
   echo "export PATH=\$PATH:/usr/local/bin" >> /home/vagrant/.profile
   echo "export LD_LIBRARY_PATH=\$LD_LIBRARY_PATH:/usr/local/lib64/" >> /home/vagrant/.profile
   echo "export PKG_CONFIG_PATH=/usr/local/lib64/pkgconfig/" >> /home/vagrant/.profile
@@ -28,13 +28,22 @@ Vagrant.configure("2") do |config|
 
   config.vm.network "private_network", type: "dhcp"
 
-  config.vm.provider :virtualbox do |v|
-    #v.customize ["modifyvm", :id, "--cpus", "18"]
-    #v.customize ["modifyvm", :id, "--memory", "32768"]
-    v.customize ["modifyvm", :id, "--cpus", "4"]
-    v.customize ["modifyvm", :id, "--memory", "4096"]
-    v.customize ["modifyvm", :id, "--vram", "256"]
-    v.gui = false
+  common_cpus   = 4
+  common_memory = 4096
+
+  config.vm.provider :virtualbox do |vb|
+    vb.name = "initial-virtualbox"
+    vb.cpus = common_cpus
+    vb.memory = common_memory
+    vb.customize ["modifyvm", :id, "--vram", "256"]
+    vb.gui = false
+  end
+
+  config.vm.provider :libvirt do |lv|
+    lv.driver = "kvm"
+    lv.name   = "initial-kvm"
+    lv.cpus   = common_cpus
+    lv.memory = common_memory
   end
 
   config.vm.provision "shell", inline: $INSTALL_BASE, privileged: false

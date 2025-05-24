@@ -9,24 +9,34 @@ $INSTALL_BASE = <<EOF
   git checkout 73add71f860979426aef63136bf78ed525862e5c
   ./install.sh -y --release=2024-08
 
-  # Set environment variables in .profile rather than .bashrc
+  # Set environment variables in .profile
   echo "export PATH=\$PATH:/usr/local/bin" >> /home/vagrant/.profile
   echo "export LD_LIBRARY_PATH=\$LD_LIBRARY_PATH:/usr/local/lib64/" >> /home/vagrant/.profile
   echo "export PKG_CONFIG_PATH=/usr/local/lib64/pkgconfig/" >> /home/vagrant/.profile
 EOF
 
 Vagrant.configure("2") do |config|
-  config.vm.box = "boxes/initial/initial.box"
-
+  initial_box_path = ENV['ACTUAL_INITIAL_BOX_PATH'] || "boxes/initial/initial.box"
+  config.vm.box = initial_box_path
+  
   config.vm.network "private_network", type: "dhcp"
 
-  config.vm.provider :virtualbox do |v|
-    #v.customize ["modifyvm", :id, "--cpus", "18"]
-    #v.customize ["modifyvm", :id, "--memory", "32768"]
-    v.customize ["modifyvm", :id, "--cpus", "4"]
-    v.customize ["modifyvm", :id, "--memory", "4096"]
-    v.customize ["modifyvm", :id, "--vram", "256"]
-    v.gui = false
+  common_cpus   = 4
+  common_memory = 4096
+
+  config.vm.provider :virtualbox do |vb|
+    vb.name = "baseline-virtualbox"
+    vb.cpus = common_cpus
+    vb.memory = common_memory
+    vb.customize ["modifyvm", :id, "--vram", "256"]
+    vb.gui = false
+  end
+
+  config.vm.provider :libvirt do |lv|
+    lv.driver = "kvm"
+    lv.name   = "baseline-kvm"
+    lv.cpus   = common_cpus
+    lv.memory = common_memory
   end
 
   config.vm.provision "shell", inline: $INSTALL_BASE, privileged: false

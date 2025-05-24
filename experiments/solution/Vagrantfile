@@ -1,17 +1,27 @@
 # Solution Experiment Vagrantfile
 
 Vagrant.configure("2") do |config|
-  config.vm.box = "boxes/solution/solution.box"
+  solution_box_path = ENV['ACTUAL_SOLUTION_BOX_PATH'] || "boxes/solution/solution.box"
+  config.vm.box = solution_box_path
 
   config.vm.network "private_network", type: "dhcp"
 
-  config.vm.provider :virtualbox do |v|
-    #v.customize ["modifyvm", :id, "--cpus", "18"]
-    #v.customize ["modifyvm", :id, "--memory", "32768"]
-    v.customize ["modifyvm", :id, "--cpus", "4"]
-    v.customize ["modifyvm", :id, "--memory", "4096"]
-    v.customize ["modifyvm", :id, "--vram", "256"]
-    v.gui = false
+  common_cpus   = 4
+  common_memory = 4096
+
+  config.vm.provider :virtualbox do |vb|
+    vb.name = "exp-solution-virtualbox"
+    vb.cpus = common_cpus
+    vb.memory = common_memory
+    vb.customize ["modifyvm", :id, "--vram", "256"]
+    vb.gui = false
+  end
+
+  config.vm.provider :libvirt do |lv|
+    lv.driver = "kvm"
+    lv.name   = "exp-solution-kvm"
+    lv.cpus   = common_cpus
+    lv.memory = common_memory
   end
 
    # Explicitly transfer host files to VM
