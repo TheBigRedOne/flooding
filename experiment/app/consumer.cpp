@@ -1,11 +1,11 @@
 // consumer.cpp
 
-#include "common.hpp"
-
 #include <ndn-cxx/face.hpp>
 #include <ndn-cxx/interest.hpp>
 #include <ndn-cxx/security/validator-config.hpp>
+#include <ndn-cxx/util/scheduler.hpp>
 
+#include <boost/asio/io_context.hpp>
 #include <iostream>
 #include <queue>
 
@@ -23,15 +23,15 @@ public:
     try {
       m_validator.load("trust-schema.conf");
     }
-    catch (const security::v2::ValidationError& e) {
-      NDN_LOG_ERROR("Failed to load trust schema: " << e.what());
+    catch (const security::ValidationError& e) {
+      std::cerr << "ERROR: Failed to load trust schema: " << e << std::endl;
       return;
     }
 
     // Schedule the first Interest request
     sendInterest();
 
-    m_face.processEvents();
+    m_ioCtx.run();
   }
 
 private:
@@ -43,7 +43,7 @@ private:
       auto name = m_retransmissionQueue.front();
       m_retransmissionQueue.pop();
 
-      NDN_LOG_INFO("Retransmitting interest for: " << name);
+      std::cout << "Retransmitting interest for: " << name << std::endl;
       expressInterest(name);
       
       // Schedule the next retransmission check
@@ -64,7 +64,7 @@ private:
   void
   expressInterest(const Name& name)
   {
-    NDN_LOG_INFO(">> I: " << name);
+    std::cout << ">> I: " << name << std::endl;
 
     Interest interest(name);
     interest.setCanBePrefix(false);
@@ -80,18 +80,18 @@ private:
   void
   onData(const Interest&, const Data& data)
   {
-    NDN_LOG_INFO("<< D: " << data);
+    std::cout << "<< D: " << data << std::endl;
 
     // Validate the received data packet
     m_validator.validate(data,
                        [this] (const Data&) {
-                         NDN_LOG_INFO("Data validated successfully");
+                         std::cout << "Data validated successfully" << std::endl;
                          // Schedule the next interest immediately after successful validation
                          // This maintains the 33ms request interval.
                          m_scheduler.schedule(33_ms, [this] { this->sendInterest(); });
                        },
-                       [this] (const Data&, const security::v2::ValidationError& error) {
-                         NDN_LOG_ERROR("Data validation failed: " << error);
+                       [this] (const Data&, const security::ValidationError& error) {
+                         std::cerr << "ERROR: Data validation failed: " << error << std::endl;
                          // Even on validation failure, we continue to request the next packet.
                          m_scheduler.schedule(33_ms, [this] { this->sendInterest(); });
                        });
@@ -100,7 +100,8 @@ private:
   void
   onNack(const Interest& interest, const lp::Nack& nack)
   {
-    NDN_LOG_ERROR("Received Nack for " << interest.getName() << " with reason " << nack.getReason());
+    std::cerr << "ERROR: Received Nack for " << interest.getName() 
+              << " with reason " << nack.getReason() << std::endl;
     
     // Add the failed interest to the retransmission queue
     m_retransmissionQueue.push(interest.getName());
@@ -113,7 +114,7 @@ private:
   void
   onTimeout(const Interest& interest)
   {
-    NDN_LOG_ERROR("Timeout for " << interest.getName());
+    std::cerr << "ERROR: Timeout for " << interest.getName() << std::endl;
 
     // Add the failed interest to the retransmission queue
     m_retransmissionQueue.push(interest.getName());
@@ -123,9 +124,10 @@ private:
   }
 
 private:
-  Face m_face;
+  boost::asio::io_context m_ioCtx;
+  Face m_face{m_ioCtx};
   ValidatorConfig m_validator{m_face};
-  Scheduler m_scheduler{m_face.getIoService()};
+  Scheduler m_scheduler{m_ioCtx};
 
   uint64_t m_sequenceNo = 0;
   std::queue<Name> m_retransmissionQueue;
@@ -142,7 +144,7 @@ main(int argc, char** argv)
     consumer.run();
   }
   catch (const std::exception& e) {
-    NDN_LOG_ERROR("Exception: " << e.what());
+    std::cerr << "ERROR: Exception: " << e.what() << std::endl;
   }
   return 0;
 }

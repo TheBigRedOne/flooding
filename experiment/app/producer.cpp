@@ -1,15 +1,21 @@
 // producer.cpp
 
-#include "common.hpp"
-
 #include <ndn-cxx/face.hpp>
 #include <ndn-cxx/interest.hpp>
 #include <ndn-cxx/security/key-chain.hpp>
+#include <ndn-cxx/meta-info.hpp>
+#include <ndn-cxx/encoding/block.hpp>
+#include <ndn-cxx/encoding/tlv.hpp>
 
+#include <boost/asio/io_context.hpp>
 #include <boost/asio/posix/stream_descriptor.hpp>
 
 #include <iostream>
 #include <string>
+#include <string_view>
+#include <cstdlib> // For std::system
+#include <chrono>
+#include <thread>
 
 // Linux headers for Netlink
 #include <asm/types.h>
@@ -39,7 +45,7 @@ public:
   // The callback will be invoked when a mobility event is detected.
   using MobilityCallback = std::function<void()>;
 
-  NetlinkListener(boost::asio::io_service& io, MobilityCallback callback)
+  NetlinkListener(boost::asio::io_context& io, MobilityCallback callback)
     : m_ioService(io)
     , m_callback(callback)
     , m_netlinkSocket(io)
@@ -82,7 +88,7 @@ private:
   handleEvent(const boost::system::error_code& error)
   {
     if (error) {
-      NDN_LOG_ERROR("Netlink socket error: " << error.message());
+      std::cerr << "Netlink socket error: " << error.message() << std::endl;
       return;
     }
 
@@ -93,7 +99,7 @@ private:
 
     ssize_t len = recvmsg(m_netlinkSocket.native_handle(), &msg, 0);
     if (len < 0) {
-      NDN_LOG_ERROR("Netlink recvmsg failed");
+      std::cerr << "Netlink recvmsg failed" << std::endl;
       return;
     }
 
@@ -107,7 +113,7 @@ private:
           for (; RTA_OK(rta, rta_len); rta = RTA_NEXT(rta, rta_len)) {
             if (rta->rta_type == IFLA_IFNAME) {
                 std::string ifname(static_cast<char*>(RTA_DATA(rta)));
-                NDN_LOG_INFO("<<<<< MOBILITY EVENT DETECTED: Interface '" << ifname << "' is UP >>>>>");
+                std::cout << "<<<<< MOBILITY EVENT DETECTED: Interface '" << ifname << "' is UP >>>>>" << std::endl;
                 m_callback(); // Trigger the producer's mobility logic
                 break;
             }
@@ -121,7 +127,7 @@ private:
   }
 
 private:
-  boost::asio::io_service& m_ioService;
+  boost::asio::io_context& m_ioService;
   MobilityCallback m_callback;
   boost::asio::posix::stream_descriptor m_netlinkSocket;
 };
@@ -133,31 +139,46 @@ public:
   Producer(const std::string& mode)
     : m_mode(mode)
     , m_hasMoved(false)
-    , m_netlinkListener(m_face.getIoService(), bind(&Producer::onMobilityEvent, this))
+    , m_netlinkListener(m_ioCtx, std::bind(&Producer::onMobilityEvent, this))
   {
   }
 
   void
   run()
   {
+    // The order of operations is critical for stability in this environment.
+    // 1. First, register the interest filter with the local NFD.
+    // This ensures that the local forwarder knows what to do with incoming interests
+    // before we announce the prefix to the wider network.
     m_face.setInterestFilter("/example/LiveStream",
-                             bind(&Producer::onInterest, this, _1),
+                             std::bind(&Producer::onInterest, this, _1, _2),
                              [] (const auto&, const auto& reason) {
-                               NDN_LOG_ERROR("Failed to register prefix: " << reason);
+                               std::cerr << "ERROR: Failed to register prefix: " << reason << std::endl;
                              });
+
+    // Give the face a moment to process the registration.
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    // 2. Second, explicitly advertise the prefix via NLSR.
+    // Now that the local NFD is ready, we can safely tell the network to send interests.
+    if (std::system("nlsrc advertise /example/LiveStream") != 0) {
+        std::cerr << "ERROR: Failed to advertise prefix with nlsrc." << std::endl;
+        m_face.shutdown();
+        return;
+    }
 
     // In solution mode, start listening for real network events.
     if (m_mode == "solution") {
       try {
         m_netlinkListener.start();
-        NDN_LOG_INFO("Netlink listener started for mobility detection.");
+        std::cout << "Netlink listener started for mobility detection." << std::endl;
       }
       catch (const std::exception& e) {
-        NDN_LOG_ERROR("Failed to start Netlink listener: " << e.what());
+        std::cerr << "ERROR: Failed to start Netlink listener: " << e.what() << std::endl;
       }
     }
 
-    m_face.processEvents();
+    m_ioCtx.run();
   }
 
 private:
@@ -165,36 +186,52 @@ private:
   void
   onMobilityEvent()
   {
+    std::cout << "<<<<< MOBILITY EVENT DETECTED via Netlink >>>>>" << std::endl;
     m_hasMoved = true;
   }
 
   void
-  onInterest(const Interest& interest)
+  onInterest(const InterestFilter&, const Interest& interest)
   {
-    NDN_LOG_INFO(">> I: " << interest);
+    std::cout << ">> I: " << interest << std::endl;
 
     auto data = make_shared<Data>(interest.getName());
     data->setFreshnessPeriod(10_s);
-    data->setContent(reinterpret_cast<const uint8_t*>("OptoFlood Test Data"), 19);
+    data->setContent(std::string_view("OptoFlood Test Data"));
 
     if (m_mode == "solution" && m_hasMoved) {
-      NDN_LOG_INFO("Attaching OptoFlood MetaInfo to Data packet due to mobility event.");
+      std::cout << "Attaching OptoFlood MetaInfo to Data packet due to mobility event." << std::endl;
 
-      auto& metaInfo = data->getMetaInfo();
-      metaInfo.push_back(make_shared<Block>(TLV_MOBILITY_FLAG));
-      // ... (add other fields as before)
+      // This is the correct way for this ndn-cxx version, based on compiler feedback.
+      // 1. Create a parent Block that will represent the entire MetaInfo
+      Block metaBlock(tlv::MetaInfo);
+
+      // 2. Create the specific TLV block for our flag
+      Block mobilityFlagBlock(TLV_MOBILITY_FLAG);
+      
+      // 3. Add our flag block as a child to the parent MetaInfo block
+      metaBlock.push_back(mobilityFlagBlock);
+
+      // Here you can add other TLV fields as needed. For example:
+      // Block floodIdBlock(TLV_FLOOD_ID);
+      // floodIdBlock.assign( ... content ... );
+      // metaBlock.push_back(floodIdBlock);
+      
+      // 4. Construct the final MetaInfo object from our prepared parent Block
+      data->setMetaInfo(MetaInfo(metaBlock));
       
       // Reset the flag after processing. This is a simplification.
       m_hasMoved = false; 
     }
 
     m_keyChain.sign(*data);
-    NDN_LOG_INFO("<< D: " << *data);
+    std::cout << "<< D: " << *data << std::endl;
     m_face.put(*data);
   }
 
 private:
-  Face m_face;
+  boost::asio::io_context m_ioCtx;
+  Face m_face{m_ioCtx};
   KeyChain m_keyChain;
   bool m_hasMoved;
   std::string m_mode;
@@ -223,7 +260,7 @@ main(int argc, char** argv)
     producer.run();
   }
   catch (const std::exception& e) {
-    NDN_LOG_ERROR("Exception: " << e.what());
+    std::cerr << "ERROR: Exception: " << e.what() << std::endl;
   }
   return 0;
 }

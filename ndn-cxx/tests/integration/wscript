@@ -1,0 +1,13 @@
+# -*- Mode: python; py-indent-offset: 4; indent-tabs-mode: nil; coding: utf-8; -*-
+
+top = '../..'
+
+def build(bld):
+    for file in bld.path.ant_glob('*.cpp'):
+        name = file.change_ext('').path_from(bld.path.get_bld())
+        bld.program(
+            name=f'integ-test-{name}',
+            target=name,
+            source=[file],
+            use='tests-common',
+            install_path=None)

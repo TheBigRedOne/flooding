@@ -1,0 +1,26 @@
+; "transport" specifies the default transport connection used by the client-side face to communicate
+; with a (local or remote) NDN forwarder. The value must be a Face URI with a Unix or TCP scheme.
+;
+; For example:
+;   unix:///tmp/nfd/nfd.sock
+;   tcp://192.0.2.1
+;   tcp4://example.com:6363
+;   tcp6://[2001:db8::1]:6363
+;
+; The default value of this field is platform-dependent, being "unix:///run/nfd/nfd.sock" on Linux
+; and "unix:///var/run/nfd/nfd.sock" on other platforms.
+;
+;transport=unix:///var/run/nfd/nfd.sock
+
+; "pib" determines which Public Information Base (PIB) should used by default in applications.
+; Currently, the only supported value for "pib" is:
+;   - "pib-sqlite3"     (default if not specified)
+;
+;pib=pib-sqlite3
+
+; "tpm" determines which Trusted Platform Module (TPM) should used by default in applications.
+; The supported values for "tpm" are:
+;   - "tpm-file"         (default if not specified)
+;   - "tpm-osxkeychain"
+;
+;tpm=tpm-file
