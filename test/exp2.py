@@ -76,18 +76,17 @@ if __name__ == '__main__':
     consumer = ndn.net['consumer']
     producer = ndn.net['producer']
 
-    # CRITICAL: Wait for a few more seconds after NLSR convergence before
-    # starting the applications. This ensures that when the producer app calls
-    # 'nlsrc advertise', the NLSR daemon is fully ready to accept commands.
-    info("Giving NLSR an extra 5 seconds to be fully ready for control commands...\n")
+    # Wait for a few seconds to ensure NLSR is ready for control commands
+    info("Giving NLSR an extra 5 seconds to be fully ready...\n")
     sleep(5)
 
     # --- Start Data Collection ---
     info("Starting tcpdump on consumer and producer...\n")
     consumer_pcap_path = os.path.join(EXP_DIR, "consumer_capture.pcap")
     producer_pcap_path = os.path.join(EXP_DIR, "producer_capture.pcap")
-    consumer.cmd(f"tcpdump -i any -w {consumer_pcap_path} &")
-    producer.cmd(f"tcpdump -i any -w {producer_pcap_path} &")
+    # Capture on the primary '-eth0' interface for reliability
+    consumer.cmd(f"tcpdump -i consumer-eth0 -w {consumer_pcap_path} &")
+    producer.cmd(f"tcpdump -i producer-eth0 -w {producer_pcap_path} &")
 
     # --- Start Applications ---
     info("Starting producer and consumer applications in 'baseline' mode...\n")

@@ -146,26 +146,11 @@ public:
   void
   run()
   {
-    // The order of operations is critical for stability in this environment.
-    // 1. First, register the interest filter with the local NFD.
-    // This ensures that the local forwarder knows what to do with incoming interests
-    // before we announce the prefix to the wider network.
+    // Register prefix with a success callback to advertise it via NLSR
     m_face.setInterestFilter("/example/LiveStream",
-                             std::bind(&Producer::onInterest, this, _1, _2),
-                             [] (const auto&, const auto& reason) {
-                               std::cerr << "ERROR: Failed to register prefix: " << reason << std::endl;
-                             });
-
-    // Give the face a moment to process the registration.
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-    // 2. Second, explicitly advertise the prefix via NLSR.
-    // Now that the local NFD is ready, we can safely tell the network to send interests.
-    if (std::system("nlsrc advertise /example/LiveStream") != 0) {
-        std::cerr << "ERROR: Failed to advertise prefix with nlsrc." << std::endl;
-        m_face.shutdown();
-        return;
-    }
+                             std::bind(&Producer::onInterest, this, _2), // Use _2 to ignore the InterestFilter param
+                             std::bind(&Producer::onRegisterSuccess, this, _1),
+                             std::bind(&Producer::onRegisterFailed, this, _1, _2));
 
     // In solution mode, start listening for real network events.
     if (m_mode == "solution") {
@@ -182,6 +167,25 @@ public:
   }
 
 private:
+  void
+  onRegisterSuccess(const Name& prefix)
+  {
+    std::cout << "Successfully registered prefix: " << prefix << std::endl;
+    // Now that the local filter is confirmed, advertise the prefix to the network.
+    if (std::system("nlsrc advertise /example/LiveStream") != 0) {
+      std::cerr << "ERROR: Failed to advertise prefix with nlsrc after registration." << std::endl;
+      m_face.shutdown();
+    }
+  }
+
+  void
+  onRegisterFailed(const Name& prefix, const std::string& reason)
+  {
+    std::cerr << "ERROR: Failed to register prefix '" << prefix 
+              << "' with reason: " << reason << std::endl;
+    m_face.shutdown();
+  }
+
   // This callback is triggered by the NetlinkListener
   void
   onMobilityEvent()
@@ -191,7 +195,7 @@ private:
   }
 
   void
-  onInterest(const InterestFilter&, const Interest& interest)
+  onInterest(const Interest& interest)
   {
     std::cout << ">> I: " << interest << std::endl;
 
@@ -202,25 +206,16 @@ private:
     if (m_mode == "solution" && m_hasMoved) {
       std::cout << "Attaching OptoFlood MetaInfo to Data packet due to mobility event." << std::endl;
 
-      // This is the correct way for this ndn-cxx version, based on compiler feedback.
-      // 1. Create a parent Block that will represent the entire MetaInfo
+      // Construct a MetaInfo block with the custom mobility flag
       Block metaBlock(tlv::MetaInfo);
-
-      // 2. Create the specific TLV block for our flag
       Block mobilityFlagBlock(TLV_MOBILITY_FLAG);
-      
-      // 3. Add our flag block as a child to the parent MetaInfo block
       metaBlock.push_back(mobilityFlagBlock);
-
-      // Here you can add other TLV fields as needed. For example:
-      // Block floodIdBlock(TLV_FLOOD_ID);
-      // floodIdBlock.assign( ... content ... );
-      // metaBlock.push_back(floodIdBlock);
       
-      // 4. Construct the final MetaInfo object from our prepared parent Block
+      // Add other TLV fields to metaBlock here if needed
+
       data->setMetaInfo(MetaInfo(metaBlock));
       
-      // Reset the flag after processing. This is a simplification.
+      // Reset the flag after processing
       m_hasMoved = false; 
     }
 

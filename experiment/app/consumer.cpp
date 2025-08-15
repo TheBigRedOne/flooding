@@ -19,9 +19,8 @@ public:
   run()
   {
     // Load the trust schema for validation
-    // This is crucial for security and is based on the provided trust-schema.conf
     try {
-      m_validator.load("trust-schema.conf");
+      m_validator.load("/home/vagrant/mini-ndn/flooding/trust-schema.conf");
     }
     catch (const security::ValidationError& e) {
       std::cerr << "ERROR: Failed to load trust schema: " << e << std::endl;
@@ -38,7 +37,7 @@ private:
   void
   sendInterest()
   {
-    // If there's a failed request, prioritize retransmitting it.
+    // Prioritize retransmitting failed requests
     if (!m_retransmissionQueue.empty()) {
       auto name = m_retransmissionQueue.front();
       m_retransmissionQueue.pop();
@@ -51,7 +50,7 @@ private:
       return;
     }
     
-    // Otherwise, send a new Interest for the next sequence number.
+    // Otherwise, send a new Interest for the next sequence number
     Name interestName("/example/LiveStream");
     interestName.appendVersion(m_sequenceNo);
 
@@ -82,17 +81,15 @@ private:
   {
     std::cout << "<< D: " << data << std::endl;
 
-    // Validate the received data packet
     m_validator.validate(data,
                        [this] (const Data&) {
                          std::cout << "Data validated successfully" << std::endl;
-                         // Schedule the next interest immediately after successful validation
-                         // This maintains the 33ms request interval.
+                         // Schedule the next interest to maintain the request interval
                          m_scheduler.schedule(33_ms, [this] { this->sendInterest(); });
                        },
                        [this] (const Data&, const security::ValidationError& error) {
                          std::cerr << "ERROR: Data validation failed: " << error << std::endl;
-                         // Even on validation failure, we continue to request the next packet.
+                         // Also schedule the next interest on validation failure
                          m_scheduler.schedule(33_ms, [this] { this->sendInterest(); });
                        });
   }
@@ -106,8 +103,7 @@ private:
     // Add the failed interest to the retransmission queue
     m_retransmissionQueue.push(interest.getName());
 
-    // Immediately schedule the next interest cycle. The retransmission will be handled
-    // by the check at the beginning of sendInterest.
+    // Schedule the next interest cycle
     m_scheduler.schedule(33_ms, [this] { this->sendInterest(); });
   }
 
@@ -119,7 +115,7 @@ private:
     // Add the failed interest to the retransmission queue
     m_retransmissionQueue.push(interest.getName());
 
-    // Immediately schedule the next interest cycle.
+    // Schedule the next interest cycle
     m_scheduler.schedule(33_ms, [this] { this->sendInterest(); });
   }
 
