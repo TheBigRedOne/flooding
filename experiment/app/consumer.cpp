@@ -8,6 +8,9 @@
 #include <boost/asio/io_context.hpp>
 #include <iostream>
 #include <queue>
+#include <map>
+#include <chrono>
+#include <unistd.h>
 
 namespace ndn {
 namespace examples {
@@ -37,12 +40,16 @@ private:
   void
   sendInterest()
   {
+    auto timestamp = std::chrono::system_clock::now().time_since_epoch().count();
+    
     // Prioritize retransmitting failed requests
     if (!m_retransmissionQueue.empty()) {
       auto name = m_retransmissionQueue.front();
       m_retransmissionQueue.pop();
 
-      std::cout << "Retransmitting interest for: " << name << std::endl;
+      std::cout << "[" << timestamp << "] RETRANS: Retransmitting Interest"
+                << " Name: " << name 
+                << " Queue size: " << m_retransmissionQueue.size() << std::endl;
       expressInterest(name);
       
       // Schedule the next retransmission check
@@ -54,6 +61,7 @@ private:
     Name interestName("/example/LiveStream");
     interestName.appendVersion(m_sequenceNo);
 
+    std::cout << "[" << timestamp << "] INTEREST: Sending new Interest #" << m_sequenceNo << std::endl;
     expressInterest(interestName);
     
     // Increment sequence number for the next new interest
@@ -63,12 +71,19 @@ private:
   void
   expressInterest(const Name& name)
   {
-    std::cout << ">> I: " << name << std::endl;
+    auto timestamp = std::chrono::system_clock::now().time_since_epoch().count();
+    m_interestsSent++;
+    
+    std::cout << "[" << timestamp << "] SEND: Interest #" << m_interestsSent 
+              << " Name: " << name << std::endl;
 
     Interest interest(name);
     interest.setCanBePrefix(false);
     interest.setMustBeFresh(true);
     interest.setInterestLifetime(6_s); // As per .tex description
+    
+    // Record send time for latency calculation
+    m_sendTimeMap[name] = timestamp;
 
     m_face.expressInterest(interest,
                            bind(&Consumer::onData, this, _1, _2),
@@ -77,18 +92,35 @@ private:
   }
   
   void
-  onData(const Interest&, const Data& data)
+  onData(const Interest& interest, const Data& data)
   {
-    std::cout << "<< D: " << data << std::endl;
+    auto recvTimestamp = std::chrono::system_clock::now().time_since_epoch().count();
+    m_dataReceived++;
+    
+    // Calculate round-trip time
+    auto sendTime = m_sendTimeMap.find(interest.getName());
+    if (sendTime != m_sendTimeMap.end()) {
+      auto rtt = recvTimestamp - sendTime->second;
+      std::cout << "[" << recvTimestamp << "] DATA: Received #" << m_dataReceived 
+                << " Name: " << data.getName()
+                << " Size: " << data.wireEncode().size() << " bytes"
+                << " RTT: " << rtt << " ns (" << rtt/1000000.0 << " ms)" << std::endl;
+      m_sendTimeMap.erase(sendTime);
+    } else {
+      std::cout << "[" << recvTimestamp << "] DATA: Received #" << m_dataReceived 
+                << " Name: " << data.getName()
+                << " Size: " << data.wireEncode().size() << " bytes"
+                << " (RTT unavailable)" << std::endl;
+    }
 
     m_validator.validate(data,
-                       [this] (const Data&) {
-                         std::cout << "Data validated successfully" << std::endl;
+                       [this, recvTimestamp] (const Data&) {
+                         std::cout << "[" << recvTimestamp << "] VALIDATE: Data signature verified" << std::endl;
                          // Schedule the next interest to maintain the request interval
                          m_scheduler.schedule(33_ms, [this] { this->sendInterest(); });
                        },
-                       [this] (const Data&, const security::ValidationError& error) {
-                         std::cerr << "ERROR: Data validation failed: " << error << std::endl;
+                       [this, recvTimestamp] (const Data&, const security::ValidationError& error) {
+                         std::cerr << "[" << recvTimestamp << "] ERROR: Data validation failed: " << error << std::endl;
                          // Also schedule the next interest on validation failure
                          m_scheduler.schedule(33_ms, [this] { this->sendInterest(); });
                        });
@@ -97,11 +129,20 @@ private:
   void
   onNack(const Interest& interest, const lp::Nack& nack)
   {
-    std::cerr << "ERROR: Received Nack for " << interest.getName() 
-              << " with reason " << nack.getReason() << std::endl;
+    auto timestamp = std::chrono::system_clock::now().time_since_epoch().count();
+    m_nacksReceived++;
+    
+    std::cerr << "[" << timestamp << "] NACK: Received NACK #" << m_nacksReceived
+              << " Name: " << interest.getName() 
+              << " Reason: " << nack.getReason() << std::endl;
+    
+    // Remove from send time map
+    m_sendTimeMap.erase(interest.getName());
     
     // Add the failed interest to the retransmission queue
     m_retransmissionQueue.push(interest.getName());
+    std::cout << "[" << timestamp << "] NACK: Added to retransmission queue"
+              << " Queue size: " << m_retransmissionQueue.size() + 1 << std::endl;
 
     // Schedule the next interest cycle
     m_scheduler.schedule(33_ms, [this] { this->sendInterest(); });
@@ -110,13 +151,32 @@ private:
   void
   onTimeout(const Interest& interest)
   {
-    std::cerr << "ERROR: Timeout for " << interest.getName() << std::endl;
+    auto timestamp = std::chrono::system_clock::now().time_since_epoch().count();
+    m_timeouts++;
+    
+    std::cerr << "[" << timestamp << "] TIMEOUT: Interest timeout #" << m_timeouts
+              << " Name: " << interest.getName() << std::endl;
+    
+    // Remove from send time map
+    m_sendTimeMap.erase(interest.getName());
 
     // Add the failed interest to the retransmission queue
     m_retransmissionQueue.push(interest.getName());
+    std::cout << "[" << timestamp << "] TIMEOUT: Added to retransmission queue"
+              << " Queue size: " << m_retransmissionQueue.size() + 1 << std::endl;
 
     // Schedule the next interest cycle
     m_scheduler.schedule(33_ms, [this] { this->sendInterest(); });
+    
+    // Log statistics periodically
+    if (m_timeouts % 10 == 0) {
+      std::cout << "[" << timestamp << "] STATS:"
+                << " Sent: " << m_interestsSent
+                << " Received: " << m_dataReceived
+                << " NACKs: " << m_nacksReceived
+                << " Timeouts: " << m_timeouts
+                << " Success rate: " << (m_dataReceived * 100.0 / m_interestsSent) << "%" << std::endl;
+    }
   }
 
 private:
@@ -127,6 +187,15 @@ private:
 
   uint64_t m_sequenceNo = 0;
   std::queue<Name> m_retransmissionQueue;
+  
+  // Statistics for experiment analysis
+  uint64_t m_interestsSent = 0;
+  uint64_t m_dataReceived = 0;
+  uint64_t m_nacksReceived = 0;
+  uint64_t m_timeouts = 0;
+  
+  // Map to track RTT for each Interest
+  std::map<Name, uint64_t> m_sendTimeMap;
 };
 
 } // namespace examples
@@ -135,12 +204,24 @@ private:
 int
 main(int argc, char** argv)
 {
+  auto startTime = std::chrono::system_clock::now().time_since_epoch().count();
+  
+  std::cout << "[" << startTime << "] STARTUP: Consumer application starting" << std::endl;
+  std::cout << "[" << startTime << "] STARTUP: Process ID: " << getpid() << std::endl;
+  std::cout << "[" << startTime << "] STARTUP: Video stream simulation: 30 fps (33ms intervals)" << std::endl;
+  
   try {
     ndn::examples::Consumer consumer;
+    std::cout << "[" << startTime << "] STARTUP: Consumer initialized, starting Interest generation" << std::endl;
     consumer.run();
   }
   catch (const std::exception& e) {
-    std::cerr << "ERROR: Exception: " << e.what() << std::endl;
+    auto errorTime = std::chrono::system_clock::now().time_since_epoch().count();
+    std::cerr << "[" << errorTime << "] FATAL: Exception in consumer: " << e.what() << std::endl;
+    return 1;
   }
+  
+  auto endTime = std::chrono::system_clock::now().time_since_epoch().count();
+  std::cout << "[" << endTime << "] SHUTDOWN: Consumer application terminated" << std::endl;
   return 0;
 }

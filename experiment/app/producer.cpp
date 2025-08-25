@@ -14,8 +14,11 @@
 #include <string>
 #include <string_view>
 #include <cstdlib> // For std::system
+#include <cstring> // For strerror
+#include <cerrno>  // For errno
 #include <chrono>
 #include <thread>
+#include <iomanip>
 
 // Linux headers for Netlink
 #include <asm/types.h>
@@ -88,7 +91,22 @@ private:
   handleEvent(const boost::system::error_code& error)
   {
     if (error) {
-      std::cerr << "Netlink socket error: " << error.message() << std::endl;
+      std::cerr << "[" << std::chrono::system_clock::now().time_since_epoch().count() 
+                << "] ERROR: Netlink socket error: " << error.message() 
+                << " (code: " << error.value() << ")" << std::endl;
+      
+      // Attempt to recover from recoverable errors
+      if (error == boost::asio::error::operation_aborted) {
+        std::cerr << "[" << std::chrono::system_clock::now().time_since_epoch().count() 
+                  << "] INFO: Netlink listener shutting down gracefully" << std::endl;
+        return;
+      }
+      
+      // For other errors, try to restart monitoring after a delay
+      std::cerr << "[" << std::chrono::system_clock::now().time_since_epoch().count() 
+                << "] INFO: Attempting to restart Netlink monitoring in 1 second" << std::endl;
+      std::this_thread::sleep_for(std::chrono::seconds(1));
+      waitForEvent();
       return;
     }
 
@@ -99,7 +117,21 @@ private:
 
     ssize_t len = recvmsg(m_netlinkSocket.native_handle(), &msg, 0);
     if (len < 0) {
-      std::cerr << "Netlink recvmsg failed" << std::endl;
+      int err = errno;
+      std::cerr << "[" << std::chrono::system_clock::now().time_since_epoch().count() 
+                << "] ERROR: Netlink recvmsg failed: " << strerror(err) 
+                << " (errno: " << err << ")" << std::endl;
+      
+      // Handle specific error cases
+      if (err == EAGAIN || err == EWOULDBLOCK) {
+        // No data available, continue waiting
+        waitForEvent();
+      } else if (err == ENOBUFS) {
+        // Buffer overflow, log and continue
+        std::cerr << "[" << std::chrono::system_clock::now().time_since_epoch().count() 
+                  << "] WARNING: Netlink buffer overflow, some events may be lost" << std::endl;
+        waitForEvent();
+      }
       return;
     }
 
@@ -113,7 +145,14 @@ private:
           for (; RTA_OK(rta, rta_len); rta = RTA_NEXT(rta, rta_len)) {
             if (rta->rta_type == IFLA_IFNAME) {
                 std::string ifname(static_cast<char*>(RTA_DATA(rta)));
-                std::cout << "<<<<< MOBILITY EVENT DETECTED: Interface '" << ifname << "' is UP >>>>>" << std::endl;
+                auto now = std::chrono::system_clock::now();
+                auto timestamp = now.time_since_epoch().count();
+                
+                std::cout << "[" << timestamp << "] MOBILITY: Interface state change detected" << std::endl;
+                std::cout << "[" << timestamp << "] MOBILITY: Interface '" << ifname 
+                          << "' is UP (flags: 0x" << std::hex << ifi->ifi_flags << std::dec << ")" << std::endl;
+                std::cout << "[" << timestamp << "] MOBILITY: Triggering mobility event handler" << std::endl;
+                
                 m_callback(); // Trigger the producer's mobility logic
                 break;
             }
@@ -170,19 +209,28 @@ private:
   void
   onRegisterSuccess(const Name& prefix)
   {
-    std::cout << "Successfully registered prefix: " << prefix << std::endl;
+    auto timestamp = std::chrono::system_clock::now().time_since_epoch().count();
+    std::cout << "[" << timestamp << "] PREFIX: Successfully registered prefix: " << prefix << std::endl;
+    
     // Now that the local filter is confirmed, advertise the prefix to the network.
-    if (std::system("nlsrc advertise /example/LiveStream") != 0) {
-      std::cerr << "ERROR: Failed to advertise prefix with nlsrc after registration." << std::endl;
+    std::cout << "[" << timestamp << "] PREFIX: Advertising prefix via NLSR" << std::endl;
+    int ret = std::system("nlsrc advertise /example/LiveStream");
+    if (ret != 0) {
+      std::cerr << "[" << timestamp << "] ERROR: Failed to advertise prefix with nlsrc (exit code: " 
+                << ret << ")" << std::endl;
       m_face.shutdown();
+    } else {
+      std::cout << "[" << timestamp << "] PREFIX: Successfully advertised prefix via NLSR" << std::endl;
     }
   }
 
   void
   onRegisterFailed(const Name& prefix, const std::string& reason)
   {
-    std::cerr << "ERROR: Failed to register prefix '" << prefix 
+    auto timestamp = std::chrono::system_clock::now().time_since_epoch().count();
+    std::cerr << "[" << timestamp << "] ERROR: Failed to register prefix '" << prefix 
               << "' with reason: " << reason << std::endl;
+    std::cerr << "[" << timestamp << "] ERROR: Shutting down face due to registration failure" << std::endl;
     m_face.shutdown();
   }
 
@@ -190,38 +238,61 @@ private:
   void
   onMobilityEvent()
   {
-    std::cout << "<<<<< MOBILITY EVENT DETECTED via Netlink >>>>>" << std::endl;
+    auto timestamp = std::chrono::system_clock::now().time_since_epoch().count();
+    std::cout << "[" << timestamp << "] MOBILITY: Producer mobility event triggered" << std::endl;
+    std::cout << "[" << timestamp << "] MOBILITY: Setting mobility flag for subsequent Data packets" << std::endl;
     m_hasMoved = true;
+    m_mobilityEventCount++;
+    std::cout << "[" << timestamp << "] MOBILITY: Total mobility events: " << m_mobilityEventCount << std::endl;
   }
 
   void
   onInterest(const Interest& interest)
   {
-    std::cout << ">> I: " << interest << std::endl;
+    auto timestamp = std::chrono::system_clock::now().time_since_epoch().count();
+    m_interestCount++;
+    
+    std::cout << "[" << timestamp << "] INTEREST: Received #" << m_interestCount 
+              << " Name: " << interest.getName() 
+              << " CanBePrefix: " << interest.getCanBePrefix()
+              << " MustBeFresh: " << interest.getMustBeFresh() << std::endl;
 
     auto data = make_shared<Data>(interest.getName());
     data->setFreshnessPeriod(10_s);
     data->setContent(std::string_view("OptoFlood Test Data"));
 
     if (m_mode == "solution" && m_hasMoved) {
-      std::cout << "Attaching OptoFlood MetaInfo to Data packet due to mobility event." << std::endl;
+      std::cout << "[" << timestamp << "] DATA: Attaching OptoFlood mobility markers" << std::endl;
+      std::cout << "[" << timestamp << "] DATA: Adding TLV_MOBILITY_FLAG to MetaInfo" << std::endl;
 
       // Construct a MetaInfo block with the custom mobility flag
       Block metaBlock(tlv::MetaInfo);
       Block mobilityFlagBlock(TLV_MOBILITY_FLAG);
       metaBlock.push_back(mobilityFlagBlock);
       
-      // Add other TLV fields to metaBlock here if needed
+      // Log additional OptoFlood fields if they were to be added
+      std::cout << "[" << timestamp << "] DATA: Mobility packet marked (event #" 
+                << m_mobilityEventCount << ")" << std::endl;
 
       data->setMetaInfo(MetaInfo(metaBlock));
       
       // Reset the flag after processing
       m_hasMoved = false; 
+      std::cout << "[" << timestamp << "] DATA: Mobility flag cleared for producer" << std::endl;
     }
 
     m_keyChain.sign(*data);
-    std::cout << "<< D: " << *data << std::endl;
+    
+    auto sendTimestamp = std::chrono::system_clock::now().time_since_epoch().count();
+    std::cout << "[" << sendTimestamp << "] DATA: Sending response"
+              << " Size: " << data->wireEncode().size() << " bytes"
+              << " Name: " << data->getName() << std::endl;
+              
     m_face.put(*data);
+    m_dataCount++;
+    
+    std::cout << "[" << sendTimestamp << "] STATS: Total Interests: " << m_interestCount 
+              << " Total Data sent: " << m_dataCount << std::endl;
   }
 
 private:
@@ -231,6 +302,11 @@ private:
   bool m_hasMoved;
   std::string m_mode;
   NetlinkListener m_netlinkListener;
+  
+  // Statistics counters for experiment analysis
+  uint64_t m_interestCount = 0;
+  uint64_t m_dataCount = 0;
+  uint64_t m_mobilityEventCount = 0;
 };
 
 } // namespace examples
@@ -239,23 +315,33 @@ private:
 int
 main(int argc, char** argv)
 {
+  auto startTime = std::chrono::system_clock::now().time_since_epoch().count();
+  
   std::string mode = "baseline"; // Default to baseline mode
   if (argc == 3 && std::string(argv[1]) == "--mode") {
     mode = argv[2];
     if (mode != "baseline" && mode != "solution") {
-      std::cerr << "ERROR: mode must be 'baseline' or 'solution'" << std::endl;
+      std::cerr << "[" << startTime << "] ERROR: mode must be 'baseline' or 'solution'" << std::endl;
       return 1;
     }
   }
 
-  std::cout << "Running Producer in '" << mode << "' mode." << std::endl;
+  std::cout << "[" << startTime << "] STARTUP: Producer application starting" << std::endl;
+  std::cout << "[" << startTime << "] STARTUP: Running in '" << mode << "' mode" << std::endl;
+  std::cout << "[" << startTime << "] STARTUP: Process ID: " << getpid() << std::endl;
 
   try {
     ndn::examples::Producer producer(mode);
+    std::cout << "[" << startTime << "] STARTUP: Producer initialized, starting event loop" << std::endl;
     producer.run();
   }
   catch (const std::exception& e) {
-    std::cerr << "ERROR: Exception: " << e.what() << std::endl;
+    auto errorTime = std::chrono::system_clock::now().time_since_epoch().count();
+    std::cerr << "[" << errorTime << "] FATAL: Exception in producer: " << e.what() << std::endl;
+    return 1;
   }
+  
+  auto endTime = std::chrono::system_clock::now().time_since_epoch().count();
+  std::cout << "[" << endTime << "] SHUTDOWN: Producer application terminated" << std::endl;
   return 0;
 }
