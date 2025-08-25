@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2025 Regents of the University of California.
+ * Copyright (c) 2013-2023 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -24,11 +24,8 @@
 
 #include "ndn-cxx/name.hpp"
 #include "ndn-cxx/encoding/nfd-constants.hpp"
-#include "ndn-cxx/mgmt/control-parameters-base.hpp"
+#include "ndn-cxx/mgmt/control-parameters.hpp"
 #include "ndn-cxx/util/time.hpp"
-
-#include <array>
-#include <bitset>
 
 namespace ndn::nfd {
 
@@ -55,7 +52,7 @@ enum ControlParameterField {
   CONTROL_PARAMETER_UBOUND,
 };
 
-inline constexpr std::array CONTROL_PARAMETER_FIELD = {
+inline constexpr std::string_view CONTROL_PARAMETER_FIELD[CONTROL_PARAMETER_UBOUND] = {
   "Name"sv,
   "FaceId"sv,
   "Uri"sv,
@@ -80,7 +77,7 @@ inline constexpr std::array CONTROL_PARAMETER_FIELD = {
  * \sa https://redmine.named-data.net/projects/nfd/wiki/ControlCommand#ControlParameters
  * \details This type is copyable because it's an abstraction of a TLV type.
  */
-class ControlParameters : public mgmt::ControlParametersBase
+class ControlParameters : public mgmt::ControlParameters
 {
 public:
   class Error : public tlv::Error
@@ -123,7 +120,7 @@ public: // getters & setters
   {
     m_wire.reset();
     m_name = name;
-    m_hasFields.set(CONTROL_PARAMETER_NAME);
+    m_hasFields[CONTROL_PARAMETER_NAME] = true;
     return *this;
   }
 
@@ -131,7 +128,7 @@ public: // getters & setters
   unsetName()
   {
     m_wire.reset();
-    m_hasFields.reset(CONTROL_PARAMETER_NAME);
+    m_hasFields[CONTROL_PARAMETER_NAME] = false;
     return *this;
   }
 
@@ -153,7 +150,7 @@ public: // getters & setters
   {
     m_wire.reset();
     m_faceId = faceId;
-    m_hasFields.set(CONTROL_PARAMETER_FACE_ID);
+    m_hasFields[CONTROL_PARAMETER_FACE_ID] = true;
     return *this;
   }
 
@@ -161,7 +158,7 @@ public: // getters & setters
   unsetFaceId()
   {
     m_wire.reset();
-    m_hasFields.reset(CONTROL_PARAMETER_FACE_ID);
+    m_hasFields[CONTROL_PARAMETER_FACE_ID] = false;
     return *this;
   }
 
@@ -183,7 +180,7 @@ public: // getters & setters
   {
     m_wire.reset();
     m_uri = uri;
-    m_hasFields.set(CONTROL_PARAMETER_URI);
+    m_hasFields[CONTROL_PARAMETER_URI] = true;
     return *this;
   }
 
@@ -191,7 +188,7 @@ public: // getters & setters
   unsetUri()
   {
     m_wire.reset();
-    m_hasFields.reset(CONTROL_PARAMETER_URI);
+    m_hasFields[CONTROL_PARAMETER_URI] = false;
     return *this;
   }
 
@@ -213,7 +210,7 @@ public: // getters & setters
   {
     m_wire.reset();
     m_localUri = localUri;
-    m_hasFields.set(CONTROL_PARAMETER_LOCAL_URI);
+    m_hasFields[CONTROL_PARAMETER_LOCAL_URI] = true;
     return *this;
   }
 
@@ -221,7 +218,7 @@ public: // getters & setters
   unsetLocalUri()
   {
     m_wire.reset();
-    m_hasFields.reset(CONTROL_PARAMETER_LOCAL_URI);
+    m_hasFields[CONTROL_PARAMETER_LOCAL_URI] = false;
     return *this;
   }
 
@@ -243,7 +240,7 @@ public: // getters & setters
   {
     m_wire.reset();
     m_origin = origin;
-    m_hasFields.set(CONTROL_PARAMETER_ORIGIN);
+    m_hasFields[CONTROL_PARAMETER_ORIGIN] = true;
     return *this;
   }
 
@@ -251,7 +248,7 @@ public: // getters & setters
   unsetOrigin()
   {
     m_wire.reset();
-    m_hasFields.reset(CONTROL_PARAMETER_ORIGIN);
+    m_hasFields[CONTROL_PARAMETER_ORIGIN] = false;
     return *this;
   }
 
@@ -273,7 +270,7 @@ public: // getters & setters
   {
     m_wire.reset();
     m_cost = cost;
-    m_hasFields.set(CONTROL_PARAMETER_COST);
+    m_hasFields[CONTROL_PARAMETER_COST] = true;
     return *this;
   }
 
@@ -281,7 +278,7 @@ public: // getters & setters
   unsetCost()
   {
     m_wire.reset();
-    m_hasFields.reset(CONTROL_PARAMETER_COST);
+    m_hasFields[CONTROL_PARAMETER_COST] = false;
     return *this;
   }
 
@@ -303,7 +300,7 @@ public: // getters & setters
   {
     m_wire.reset();
     m_capacity = capacity;
-    m_hasFields.set(CONTROL_PARAMETER_CAPACITY);
+    m_hasFields[CONTROL_PARAMETER_CAPACITY] = true;
     return *this;
   }
 
@@ -311,7 +308,7 @@ public: // getters & setters
   unsetCapacity()
   {
     m_wire.reset();
-    m_hasFields.reset(CONTROL_PARAMETER_CAPACITY);
+    m_hasFields[CONTROL_PARAMETER_CAPACITY] = false;
     return *this;
   }
 
@@ -333,7 +330,7 @@ public: // getters & setters
   {
     m_wire.reset();
     m_count = count;
-    m_hasFields.set(CONTROL_PARAMETER_COUNT);
+    m_hasFields[CONTROL_PARAMETER_COUNT] = true;
     return *this;
   }
 
@@ -341,7 +338,7 @@ public: // getters & setters
   unsetCount()
   {
     m_wire.reset();
-    m_hasFields.reset(CONTROL_PARAMETER_COUNT);
+    m_hasFields[CONTROL_PARAMETER_COUNT] = false;
     return *this;
   }
 
@@ -363,7 +360,7 @@ public: // getters & setters
   {
     m_wire.reset();
     m_flags = flags;
-    m_hasFields.set(CONTROL_PARAMETER_FLAGS);
+    m_hasFields[CONTROL_PARAMETER_FLAGS] = true;
     return *this;
   }
 
@@ -371,7 +368,7 @@ public: // getters & setters
   unsetFlags()
   {
     m_wire.reset();
-    m_hasFields.reset(CONTROL_PARAMETER_FLAGS);
+    m_hasFields[CONTROL_PARAMETER_FLAGS] = false;
     return *this;
   }
 
@@ -393,7 +390,7 @@ public: // getters & setters
   {
     m_wire.reset();
     m_mask = mask;
-    m_hasFields.set(CONTROL_PARAMETER_MASK);
+    m_hasFields[CONTROL_PARAMETER_MASK] = true;
     return *this;
   }
 
@@ -401,7 +398,7 @@ public: // getters & setters
   unsetMask()
   {
     m_wire.reset();
-    m_hasFields.reset(CONTROL_PARAMETER_MASK);
+    m_hasFields[CONTROL_PARAMETER_MASK] = false;
     return *this;
   }
 
@@ -423,7 +420,7 @@ public: // getters & setters
   {
     m_wire.reset();
     m_strategy = strategy;
-    m_hasFields.set(CONTROL_PARAMETER_STRATEGY);
+    m_hasFields[CONTROL_PARAMETER_STRATEGY] = true;
     return *this;
   }
 
@@ -431,7 +428,7 @@ public: // getters & setters
   unsetStrategy()
   {
     m_wire.reset();
-    m_hasFields.reset(CONTROL_PARAMETER_STRATEGY);
+    m_hasFields[CONTROL_PARAMETER_STRATEGY] = false;
     return *this;
   }
 
@@ -453,7 +450,7 @@ public: // getters & setters
   {
     m_wire.reset();
     m_expirationPeriod = expirationPeriod;
-    m_hasFields.set(CONTROL_PARAMETER_EXPIRATION_PERIOD);
+    m_hasFields[CONTROL_PARAMETER_EXPIRATION_PERIOD] = true;
     return *this;
   }
 
@@ -461,7 +458,7 @@ public: // getters & setters
   unsetExpirationPeriod()
   {
     m_wire.reset();
-    m_hasFields.reset(CONTROL_PARAMETER_EXPIRATION_PERIOD);
+    m_hasFields[CONTROL_PARAMETER_EXPIRATION_PERIOD] = false;
     return *this;
   }
 
@@ -483,7 +480,7 @@ public: // getters & setters
   {
     m_wire.reset();
     m_facePersistency = persistency;
-    m_hasFields.set(CONTROL_PARAMETER_FACE_PERSISTENCY);
+    m_hasFields[CONTROL_PARAMETER_FACE_PERSISTENCY] = true;
     return *this;
   }
 
@@ -491,7 +488,7 @@ public: // getters & setters
   unsetFacePersistency()
   {
     m_wire.reset();
-    m_hasFields.reset(CONTROL_PARAMETER_FACE_PERSISTENCY);
+    m_hasFields[CONTROL_PARAMETER_FACE_PERSISTENCY] = false;
     return *this;
   }
 
@@ -513,7 +510,7 @@ public: // getters & setters
   {
     m_wire.reset();
     m_baseCongestionMarkingInterval = interval;
-    m_hasFields.set(CONTROL_PARAMETER_BASE_CONGESTION_MARKING_INTERVAL);
+    m_hasFields[CONTROL_PARAMETER_BASE_CONGESTION_MARKING_INTERVAL] = true;
     return *this;
   }
 
@@ -521,7 +518,7 @@ public: // getters & setters
   unsetBaseCongestionMarkingInterval()
   {
     m_wire.reset();
-    m_hasFields.reset(CONTROL_PARAMETER_BASE_CONGESTION_MARKING_INTERVAL);
+    m_hasFields[CONTROL_PARAMETER_BASE_CONGESTION_MARKING_INTERVAL] = false;
     return *this;
   }
 
@@ -547,7 +544,7 @@ public: // getters & setters
   {
     m_wire.reset();
     m_defaultCongestionThreshold = threshold;
-    m_hasFields.set(CONTROL_PARAMETER_DEFAULT_CONGESTION_THRESHOLD);
+    m_hasFields[CONTROL_PARAMETER_DEFAULT_CONGESTION_THRESHOLD] = true;
     return *this;
   }
 
@@ -555,7 +552,7 @@ public: // getters & setters
   unsetDefaultCongestionThreshold()
   {
     m_wire.reset();
-    m_hasFields.reset(CONTROL_PARAMETER_DEFAULT_CONGESTION_THRESHOLD);
+    m_hasFields[CONTROL_PARAMETER_DEFAULT_CONGESTION_THRESHOLD] = false;
     return *this;
   }
 
@@ -585,7 +582,7 @@ public: // getters & setters
   {
     m_wire.reset();
     m_mtu = mtu;
-    m_hasFields.set(CONTROL_PARAMETER_MTU);
+    m_hasFields[CONTROL_PARAMETER_MTU] = true;
     return *this;
   }
 
@@ -593,12 +590,12 @@ public: // getters & setters
   unsetMtu()
   {
     m_wire.reset();
-    m_hasFields.reset(CONTROL_PARAMETER_MTU);
+    m_hasFields[CONTROL_PARAMETER_MTU] = false;
     return *this;
   }
 
-  auto
-  getPresentFields() const noexcept
+  const std::vector<bool>&
+  getPresentFields() const
   {
     return m_hasFields;
   }
@@ -635,8 +632,8 @@ public: // Flags and Mask helpers
   ControlParameters&
   unsetFlagBit(size_t bit);
 
-private:
-  std::bitset<CONTROL_PARAMETER_UBOUND> m_hasFields;
+private: // fields
+  std::vector<bool>   m_hasFields;
 
   Name                m_name;
   uint64_t            m_faceId;
@@ -655,6 +652,7 @@ private:
   uint64_t            m_defaultCongestionThreshold;
   uint64_t            m_mtu;
 
+private:
   mutable Block m_wire;
 };
 

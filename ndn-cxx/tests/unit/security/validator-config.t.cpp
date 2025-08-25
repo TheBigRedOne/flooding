@@ -51,27 +51,28 @@ class ValidatorConfigFixture : public KeyChainFixture
 {
 public:
   ValidatorConfigFixture()
-    : path(std::filesystem::path(UNIT_TESTS_TMPDIR) / "security" / "validator-config")
+    : path(boost::filesystem::path(UNIT_TESTS_TMPDIR) / "security" / "validator-config")
     , validator(make_unique<security::CertificateFetcherOffline>())
   {
-    std::filesystem::create_directories(path);
+    boost::filesystem::create_directories(path);
     config = R"CONF(
         trust-anchor
         {
           type any
         }
       )CONF";
-    configFile = path / "config.conf";
-    std::ofstream(configFile) << config;
+    configFile = (this->path / "config.conf").string();
+    std::ofstream f(configFile.c_str());
+    f << config;
   }
 
   ~ValidatorConfigFixture()
   {
-    std::filesystem::remove_all(path);
+    boost::filesystem::remove_all(path);
   }
 
 public:
-  const std::filesystem::path path;
+  const boost::filesystem::path path;
   std::string config;
   std::string configFile;
   ValidatorConfig validator;

@@ -4,6 +4,7 @@
 #include <ndn-cxx/interest.hpp>
 #include <ndn-cxx/security/validator-config.hpp>
 #include <ndn-cxx/util/scheduler.hpp>
+#include <ndn-cxx/optoflood.hpp>
 
 #include <boost/asio/io_context.hpp>
 #include <iostream>
@@ -18,6 +19,11 @@ namespace examples {
 class Consumer : noncopyable
 {
 public:
+  Consumer(const std::string& mode = "baseline")
+    : m_mode(mode)
+  {
+  }
+
   void
   run()
   {
@@ -32,6 +38,8 @@ public:
 
     // Schedule the first Interest request
     sendInterest();
+
+    std::cout << "[Consumer] Running in " << m_mode << " mode" << std::endl;
 
     m_ioCtx.run();
   }
@@ -82,6 +90,18 @@ private:
     interest.setMustBeFresh(true);
     interest.setInterestLifetime(6_s); // As per .tex description
     
+    // Check if we should enable Interest flooding (OptoFlood solution mode)
+    if (m_mode == "solution" && shouldEnableFlooding()) {
+      std::cout << "[" << timestamp << "] OPTOFLOOD: Enabling Interest flooding due to consecutive failures" << std::endl;
+      
+      // Add OptoFlood parameters for controlled flooding
+      auto params = optoflood::makeInterestFloodingParameters(std::nullopt, 3); // 3-hop limit
+      interest.setApplicationParameters(params);
+      
+      // Reset failure counter after triggering flooding
+      m_consecutiveFailures = 0;
+    }
+    
     // Record send time for latency calculation
     m_sendTimeMap[name] = timestamp;
 
@@ -113,6 +133,9 @@ private:
                 << " (RTT unavailable)" << std::endl;
     }
 
+    // Reset consecutive failures on successful data reception
+    m_consecutiveFailures = 0;
+
     m_validator.validate(data,
                        [this, recvTimestamp] (const Data&) {
                          std::cout << "[" << recvTimestamp << "] VALIDATE: Data signature verified" << std::endl;
@@ -131,10 +154,12 @@ private:
   {
     auto timestamp = std::chrono::system_clock::now().time_since_epoch().count();
     m_nacksReceived++;
+    m_consecutiveFailures++;
     
     std::cerr << "[" << timestamp << "] NACK: Received NACK #" << m_nacksReceived
               << " Name: " << interest.getName() 
-              << " Reason: " << nack.getReason() << std::endl;
+              << " Reason: " << nack.getReason()
+              << " Consecutive failures: " << m_consecutiveFailures << std::endl;
     
     // Remove from send time map
     m_sendTimeMap.erase(interest.getName());
@@ -153,9 +178,11 @@ private:
   {
     auto timestamp = std::chrono::system_clock::now().time_since_epoch().count();
     m_timeouts++;
+    m_consecutiveFailures++;
     
     std::cerr << "[" << timestamp << "] TIMEOUT: Interest timeout #" << m_timeouts
-              << " Name: " << interest.getName() << std::endl;
+              << " Name: " << interest.getName()
+              << " Consecutive failures: " << m_consecutiveFailures << std::endl;
     
     // Remove from send time map
     m_sendTimeMap.erase(interest.getName());
@@ -175,8 +202,16 @@ private:
                 << " Received: " << m_dataReceived
                 << " NACKs: " << m_nacksReceived
                 << " Timeouts: " << m_timeouts
-                << " Success rate: " << (m_dataReceived * 100.0 / m_interestsSent) << "%" << std::endl;
+                << " Success rate: " << (m_dataReceived * 100.0 / m_interestsSent) << "%"
+                << " OptoFlood mode: " << m_mode << std::endl;
     }
+  }
+  
+  bool
+  shouldEnableFlooding() const
+  {
+    // Enable flooding after 3 consecutive failures (timeout or NACK)
+    return m_consecutiveFailures >= 3;
   }
 
 private:
@@ -196,6 +231,10 @@ private:
   
   // Map to track RTT for each Interest
   std::map<Name, uint64_t> m_sendTimeMap;
+  
+  // OptoFlood support
+  std::string m_mode;
+  uint32_t m_consecutiveFailures = 0;
 };
 
 } // namespace examples
@@ -206,12 +245,22 @@ main(int argc, char** argv)
 {
   auto startTime = std::chrono::system_clock::now().time_since_epoch().count();
   
+  std::string mode = "baseline"; // Default to baseline mode
+  if (argc == 3 && std::string(argv[1]) == "--mode") {
+    mode = argv[2];
+    if (mode != "baseline" && mode != "solution") {
+      std::cerr << "[" << startTime << "] ERROR: mode must be 'baseline' or 'solution'" << std::endl;
+      return 1;
+    }
+  }
+  
   std::cout << "[" << startTime << "] STARTUP: Consumer application starting" << std::endl;
   std::cout << "[" << startTime << "] STARTUP: Process ID: " << getpid() << std::endl;
+  std::cout << "[" << startTime << "] STARTUP: Running in '" << mode << "' mode" << std::endl;
   std::cout << "[" << startTime << "] STARTUP: Video stream simulation: 30 fps (33ms intervals)" << std::endl;
   
   try {
-    ndn::examples::Consumer consumer;
+    ndn::examples::Consumer consumer(mode);
     std::cout << "[" << startTime << "] STARTUP: Consumer initialized, starting Interest generation" << std::endl;
     consumer.run();
   }

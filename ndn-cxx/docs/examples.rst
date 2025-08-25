@@ -1,7 +1,7 @@
 Trivial applications
 ====================
 
-.. important::
+.. note::
 
     To successfully run the following examples, please make sure that NFD is properly
     configured and running.  For more information about NFD, refer to `NFD's official

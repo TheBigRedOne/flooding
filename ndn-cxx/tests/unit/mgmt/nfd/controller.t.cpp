@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2025 Regents of the University of California.
+ * Copyright (c) 2013-2023 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -20,7 +20,6 @@
  */
 
 #include "ndn-cxx/mgmt/nfd/controller.hpp"
-#include "ndn-cxx/mgmt/nfd/control-command.hpp"
 #include "ndn-cxx/mgmt/nfd/control-response.hpp"
 
 #include "tests/test-common.hpp"
@@ -88,7 +87,8 @@ BOOST_AUTO_TEST_CASE(Success)
   // 6 components: /localhost/nfd/faces/create/<parameters>/params-sha256=...
   BOOST_REQUIRE_EQUAL(requestInterest.getName().size(), 6);
   ControlParameters requestParams(requestInterest.getName()[4].blockFromValue());
-  BOOST_CHECK_NO_THROW(FaceCreateCommand::validateRequest(requestParams));
+  FaceCreateCommand command;
+  BOOST_CHECK_NO_THROW(command.validateRequest(requestParams));
   BOOST_CHECK_EQUAL(requestParams.getUri(), parameters.getUri());
 
   ControlParameters responseBody = makeFaceCreateResponse();
@@ -131,25 +131,22 @@ BOOST_AUTO_TEST_CASE(OptionsPrefix)
   this->advanceClocks(1_ms);
 
   BOOST_REQUIRE_EQUAL(face.sentInterests.size(), 1);
-  const Interest& request = face.sentInterests[0];
+  const Interest& requestInterest = face.sentInterests[0];
 
-  BOOST_CHECK(Name("/localhop/net/example/router1/nfd/rib/register").isPrefixOf(request.getName()));
-  BOOST_CHECK(request.isSigned());
-  BOOST_CHECK(request.isParametersDigestValid());
+  FaceCreateCommand command;
+  BOOST_CHECK(Name("/localhop/net/example/router1/nfd/rib/register").isPrefixOf(requestInterest.getName()));
+  BOOST_CHECK(requestInterest.isSigned());
+  BOOST_CHECK(requestInterest.isParametersDigestValid());
 }
 
 BOOST_AUTO_TEST_CASE(InvalidRequest)
 {
-  ControlParameters p1;
-  p1.setName("/should-not-have-this-field");
+  ControlParameters parameters;
+  parameters.setName("ndn:/should-not-have-this-field");
   // Uri is missing
-  BOOST_CHECK_THROW(controller.start<FaceCreateCommand>(p1, succeedCallback, commandFailCallback),
-                    ArgumentError);
 
-  RibAnnounceParameters p2;
-  // PrefixAnnouncement not signed
-  BOOST_CHECK_THROW(controller.start<RibAnnounceCommand>(p2, succeedCallback, commandFailCallback),
-                    ArgumentError);
+  BOOST_CHECK_THROW(controller.start<FaceCreateCommand>(parameters, succeedCallback, commandFailCallback),
+                    ControlCommand::ArgumentError);
 }
 
 BOOST_AUTO_TEST_CASE(ValidationFailure)

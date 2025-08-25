@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2025 Regents of the University of California.
+ * Copyright (c) 2013-2018 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -28,14 +28,21 @@ uint64_t
 PacketBase::getCongestionMark() const
 {
   auto mark = this->getTag<lp::CongestionMarkTag>();
-  return mark ? *mark : 0;
+
+  if (mark == nullptr) {
+    return 0;
+  }
+  else {
+    return *mark;
+  }
 }
 
 void
 PacketBase::setCongestionMark(uint64_t mark)
 {
   if (mark != 0) {
-    this->setTag(make_shared<lp::CongestionMarkTag>(mark));
+    auto tag = make_shared<lp::CongestionMarkTag>(mark);
+    this->setTag(std::move(tag));
   }
   else {
     this->removeTag<lp::CongestionMarkTag>();

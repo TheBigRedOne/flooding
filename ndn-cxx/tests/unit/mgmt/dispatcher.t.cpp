@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2025 Regents of the University of California.
+ * Copyright (c) 2013-2024 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -20,7 +20,7 @@
  */
 
 #include "ndn-cxx/mgmt/dispatcher.hpp"
-#include "ndn-cxx/mgmt/nfd/control-command.hpp"
+#include "ndn-cxx/mgmt/nfd/control-parameters.hpp"
 #include "ndn-cxx/util/dummy-client-face.hpp"
 
 #include "tests/test-common.hpp"
@@ -32,13 +32,21 @@ using namespace ndn::mgmt;
 
 class DispatcherFixture : public IoKeyChainFixture
 {
-protected:
-  DummyClientFace face{m_io, m_keyChain, {true, true}};
-  Dispatcher dispatcher{face, m_keyChain};
-  InMemoryStorageFifo& storage{dispatcher.m_storage};
+public:
+  DispatcherFixture()
+    : face(m_io, m_keyChain, {true, true})
+    , dispatcher(face, m_keyChain, security::SigningInfo())
+    , storage(dispatcher.m_storage)
+  {
+  }
+
+public:
+  DummyClientFace face;
+  mgmt::Dispatcher dispatcher;
+  InMemoryStorageFifo& storage;
 };
 
-class VoidParameters : public ControlParametersBase
+class VoidParameters : public mgmt::ControlParameters
 {
 public:
   explicit
@@ -64,7 +72,7 @@ public:
 static Authorization
 makeTestAuthorization()
 {
-  return [] (const Name&, const Interest& interest, const ControlParametersBase*,
+  return [] (const Name&, const Interest& interest, const ControlParameters*,
              AcceptContinuation accept, RejectContinuation reject) {
     if (interest.getName()[-1] == name::Component("valid")) {
       accept("");
@@ -85,39 +93,46 @@ BOOST_FIXTURE_TEST_SUITE(TestDispatcher, DispatcherFixture)
 
 BOOST_AUTO_TEST_CASE(Basic)
 {
-  auto nop = [] (auto&&...) {};
-  auto tautology = [] (auto&&...) { return true; };
+  BOOST_CHECK_NO_THROW(dispatcher
+                         .addControlCommand<VoidParameters>("test/1", makeAcceptAllAuthorization(),
+                                                            std::bind([] { return true; }),
+                                                            std::bind([]{})));
+  BOOST_CHECK_NO_THROW(dispatcher
+                         .addControlCommand<VoidParameters>("test/2", makeAcceptAllAuthorization(),
+                                                            std::bind([] { return true; }),
+                                                            std::bind([]{})));
 
-  BOOST_CHECK_NO_THROW(dispatcher
-                       .addControlCommand<VoidParameters>("test/1", makeAcceptAllAuthorization(),
-                                                          tautology, nop));
-  BOOST_CHECK_NO_THROW(dispatcher
-                       .addControlCommand<VoidParameters>("test/2", makeAcceptAllAuthorization(),
-                                                          tautology, nop));
   BOOST_CHECK_THROW(dispatcher
-                    .addControlCommand<VoidParameters>("test", makeAcceptAllAuthorization(),
-                                                       tautology, nop),
+                      .addControlCommand<VoidParameters>("test", makeAcceptAllAuthorization(),
+                                                         std::bind([] { return true; }),
+                                                         std::bind([]{})),
                     std::out_of_range);
 
-  BOOST_CHECK_NO_THROW(dispatcher.addStatusDataset("status/1", makeAcceptAllAuthorization(), nop));
-  BOOST_CHECK_NO_THROW(dispatcher.addStatusDataset("status/2", makeAcceptAllAuthorization(), nop));
-  BOOST_CHECK_THROW(dispatcher.addStatusDataset("status", makeAcceptAllAuthorization(), nop),
+  BOOST_CHECK_NO_THROW(dispatcher.addStatusDataset("status/1",
+                                                   makeAcceptAllAuthorization(), std::bind([]{})));
+  BOOST_CHECK_NO_THROW(dispatcher.addStatusDataset("status/2",
+                                                   makeAcceptAllAuthorization(), std::bind([]{})));
+  BOOST_CHECK_THROW(dispatcher.addStatusDataset("status",
+                                                makeAcceptAllAuthorization(), std::bind([]{})),
                     std::out_of_range);
 
   BOOST_CHECK_NO_THROW(dispatcher.addNotificationStream("stream/1"));
   BOOST_CHECK_NO_THROW(dispatcher.addNotificationStream("stream/2"));
   BOOST_CHECK_THROW(dispatcher.addNotificationStream("stream"), std::out_of_range);
 
+
   BOOST_CHECK_NO_THROW(dispatcher.addTopPrefix("/root/1"));
   BOOST_CHECK_NO_THROW(dispatcher.addTopPrefix("/root/2"));
   BOOST_CHECK_THROW(dispatcher.addTopPrefix("/root"), std::out_of_range);
 
   BOOST_CHECK_THROW(dispatcher
-                    .addControlCommand<VoidParameters>("test/3", makeAcceptAllAuthorization(),
-                                                       tautology, nop),
+                      .addControlCommand<VoidParameters>("test/3", makeAcceptAllAuthorization(),
+                                                         std::bind([] { return true; }),
+                                                         std::bind([]{})),
                     std::domain_error);
 
-  BOOST_CHECK_THROW(dispatcher.addStatusDataset("status/3", makeAcceptAllAuthorization(), nop),
+  BOOST_CHECK_THROW(dispatcher.addStatusDataset("status/3",
+                                                makeAcceptAllAuthorization(), std::bind([]{})),
                     std::domain_error);
 
   BOOST_CHECK_THROW(dispatcher.addNotificationStream("stream/3"), std::domain_error);
@@ -128,13 +143,13 @@ BOOST_AUTO_TEST_CASE(AddRemoveTopPrefix)
   std::map<std::string, size_t> nCallbackCalled;
   dispatcher
     .addControlCommand<VoidParameters>("test/1", makeAcceptAllAuthorization(),
-                                       [] (auto&&...) { return true; },
-                                       [&nCallbackCalled] (auto&&...) { ++nCallbackCalled["test/1"]; });
+                                       std::bind([] { return true; }),
+                                       std::bind([&nCallbackCalled] { ++nCallbackCalled["test/1"]; }));
 
   dispatcher
     .addControlCommand<VoidParameters>("test/2", makeAcceptAllAuthorization(),
-                                       [] (auto&&...) { return true; },
-                                       [&nCallbackCalled] (auto&&...) { ++nCallbackCalled["test/2"]; });
+                                       std::bind([] { return true; }),
+                                       std::bind([&nCallbackCalled] { ++nCallbackCalled["test/2"]; }));
 
   face.receive(*makeInterest("/root/1/test/1/%80%00"));
   advanceClocks(1_ms);
@@ -183,17 +198,18 @@ BOOST_AUTO_TEST_CASE(AddRemoveTopPrefix)
   BOOST_CHECK_EQUAL(nCallbackCalled["test/1"], 4);
 }
 
-BOOST_AUTO_TEST_CASE(ControlCommandOld,
-  * ut::description("test old-style ControlCommand registration"))
+BOOST_AUTO_TEST_CASE(ControlCommand)
 {
   size_t nCallbackCalled = 0;
-  auto handler = [&nCallbackCalled] (auto&&...) { ++nCallbackCalled; };
-  dispatcher.addControlCommand<VoidParameters>("test", makeTestAuthorization(),
-                                               [] (auto&&...) { return true; }, std::move(handler));
+  dispatcher
+    .addControlCommand<VoidParameters>("test",
+                                       makeTestAuthorization(),
+                                       std::bind([] { return true; }),
+                                       std::bind([&nCallbackCalled] { ++nCallbackCalled; }));
 
   dispatcher.addTopPrefix("/root");
   advanceClocks(1_ms);
-  BOOST_REQUIRE_EQUAL(face.sentData.size(), 0);
+  face.sentData.clear();
 
   face.receive(*makeInterest("/root/test/%80%00")); // returns 403
   face.receive(*makeInterest("/root/test/%80%00/invalid")); // returns 403
@@ -202,7 +218,7 @@ BOOST_AUTO_TEST_CASE(ControlCommandOld,
   face.receive(*makeInterest("/root/test/.../valid"));  // silently ignored (wrong format)
   advanceClocks(1_ms, 20);
   BOOST_CHECK_EQUAL(nCallbackCalled, 0);
-  BOOST_REQUIRE_EQUAL(face.sentData.size(), 2);
+  BOOST_CHECK_EQUAL(face.sentData.size(), 2);
 
   BOOST_CHECK_EQUAL(face.sentData[0].getContentType(), tlv::ContentType_Blob);
   BOOST_CHECK_EQUAL(ControlResponse(face.sentData[0].getContent().blockFromValue()).getCode(), 403);
@@ -214,98 +230,7 @@ BOOST_AUTO_TEST_CASE(ControlCommandOld,
   BOOST_CHECK_EQUAL(nCallbackCalled, 1);
 }
 
-BOOST_AUTO_TEST_CASE(ControlCommandNew,
-  * ut::description("test new-style ControlCommand registration"))
-{
-  size_t nHandlerCalled = 0;
-  auto handler = [&nHandlerCalled] (auto&&...) { ++nHandlerCalled; };
-
-  // test addControlCommand()
-  dispatcher.addControlCommand<nfd::FaceCreateCommand>(makeAcceptAllAuthorization(), handler);
-  dispatcher.addControlCommand<nfd::FaceUpdateCommand>(makeAcceptAllAuthorization(), handler);
-  dispatcher.addControlCommand<nfd::FaceDestroyCommand>(makeAcceptAllAuthorization(), handler);
-  dispatcher.addControlCommand<nfd::FibAddNextHopCommand>(makeAcceptAllAuthorization(), handler);
-  dispatcher.addControlCommand<nfd::FibRemoveNextHopCommand>(makeAcceptAllAuthorization(), handler);
-  dispatcher.addControlCommand<nfd::CsConfigCommand>(makeAcceptAllAuthorization(), handler);
-  dispatcher.addControlCommand<nfd::CsEraseCommand>(makeAcceptAllAuthorization(), handler);
-  dispatcher.addControlCommand<nfd::StrategyChoiceSetCommand>(makeAcceptAllAuthorization(), handler);
-  dispatcher.addControlCommand<nfd::StrategyChoiceUnsetCommand>(makeAcceptAllAuthorization(), handler);
-  dispatcher.addControlCommand<nfd::RibRegisterCommand>(makeAcceptAllAuthorization(), handler);
-  dispatcher.addControlCommand<nfd::RibUnregisterCommand>(makeAcceptAllAuthorization(), handler);
-  dispatcher.addControlCommand<nfd::RibAnnounceCommand>(makeAcceptAllAuthorization(), handler);
-
-  BOOST_CHECK_THROW(dispatcher.addControlCommand<nfd::CsConfigCommand>(makeAcceptAllAuthorization(),
-                                                                       [] (auto&&...) {}),
-                    std::out_of_range);
-
-  dispatcher.addTopPrefix("/root");
-  advanceClocks(1_ms);
-  BOOST_REQUIRE_EQUAL(face.sentData.size(), 0);
-
-  BOOST_CHECK_THROW(dispatcher.addControlCommand<nfd::CsConfigCommand>(makeAcceptAllAuthorization(),
-                                                                       [] (auto&&...) {}),
-                    std::domain_error);
-
-  // we pick FaceDestroyCommand as an example for the following tests
-
-  // malformed request (missing ControlParameters) => silently ignored
-  auto baseName = Name("/root").append(nfd::FaceDestroyCommand::getName());
-  auto interest = makeInterest(baseName);
-  face.receive(*interest);
-  advanceClocks(1_ms);
-  BOOST_CHECK_EQUAL(nHandlerCalled, 0);
-  BOOST_CHECK_EQUAL(face.sentData.size(), 0);
-
-  // ControlParameters present but invalid (missing required field) => reply with error 400
-  nfd::ControlParameters params;
-  interest->setName(Name(baseName).append(params.wireEncode()));
-  face.receive(*interest);
-  advanceClocks(1_ms);
-  BOOST_CHECK_EQUAL(nHandlerCalled, 0);
-  BOOST_REQUIRE_EQUAL(face.sentData.size(), 1);
-  BOOST_CHECK_EQUAL(face.sentData[0].getContentType(), tlv::ContentType_Blob);
-  BOOST_CHECK_EQUAL(ControlResponse(face.sentData[0].getContent().blockFromValue()).getCode(), 400);
-
-  // valid request
-  params.setFaceId(42);
-  interest->setName(Name(baseName).append(params.wireEncode()));
-  face.receive(*interest);
-  advanceClocks(1_ms);
-  BOOST_CHECK_EQUAL(nHandlerCalled, 1);
-  BOOST_CHECK_EQUAL(face.sentData.size(), 1);
-}
-
-BOOST_AUTO_TEST_CASE(ControlCommandResponse)
-{
-  auto handler = [] (const Name& prefix, const Interest& interest,
-                     const ControlParametersBase&, const CommandContinuation& done) {
-    BOOST_CHECK_EQUAL(prefix, "/root");
-    BOOST_CHECK_EQUAL(interest.getName().getPrefix(3),
-                      Name("/root").append(nfd::CsConfigCommand::getName()));
-    done(ControlResponse(42, "the answer"));
-  };
-
-  // use CsConfigCommand as an example
-  dispatcher.addControlCommand<nfd::CsConfigCommand>(makeAcceptAllAuthorization(), handler);
-  dispatcher.addTopPrefix("/root");
-  advanceClocks(1_ms);
-  BOOST_REQUIRE_EQUAL(face.sentData.size(), 0);
-
-  nfd::ControlParameters params;
-  auto interest = makeInterest(Name("/root")
-                               .append(nfd::CsConfigCommand::getName())
-                               .append(params.wireEncode()));
-  face.receive(*interest);
-  advanceClocks(1_ms, 10);
-
-  BOOST_REQUIRE_EQUAL(face.sentData.size(), 1);
-  BOOST_CHECK_EQUAL(face.sentData[0].getContentType(), tlv::ContentType_Blob);
-  ControlResponse resp(face.sentData[0].getContent().blockFromValue());
-  BOOST_CHECK_EQUAL(resp.getCode(), 42);
-  BOOST_CHECK_EQUAL(resp.getText(), "the answer");
-}
-
-class StatefulParameters : public ControlParametersBase
+class StatefulParameters : public mgmt::ControlParameters
 {
 public:
   explicit
@@ -341,18 +266,20 @@ BOOST_AUTO_TEST_CASE(ControlCommandAsyncAuthorization,
   * ut::description("test for bug #4059"))
 {
   AcceptContinuation authorizationAccept;
-  auto authorization = [&authorizationAccept] (const Name&, const Interest&, const ControlParametersBase*,
-                                               AcceptContinuation accept, RejectContinuation) {
-    authorizationAccept = std::move(accept);
-  };
+  auto authorization =
+    [&authorizationAccept] (const Name&, const Interest&, const ControlParameters*,
+                            AcceptContinuation accept, RejectContinuation) {
+      authorizationAccept = std::move(accept);
+    };
 
-  auto validateParameters = [] (const ControlParametersBase& params) {
-    return dynamic_cast<const StatefulParameters&>(params).check();
-  };
+  auto validateParameters =
+    [] (const ControlParameters& params) {
+      return dynamic_cast<const StatefulParameters&>(params).check();
+    };
 
   size_t nCallbackCalled = 0;
   dispatcher.addControlCommand<StatefulParameters>("test", authorization, validateParameters,
-                                                   [&nCallbackCalled] (auto&&...) { ++nCallbackCalled; });
+                                                   std::bind([&nCallbackCalled] { ++nCallbackCalled; }));
 
   dispatcher.addTopPrefix("/root");
   advanceClocks(1_ms);

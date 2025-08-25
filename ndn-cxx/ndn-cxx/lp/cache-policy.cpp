@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2025 Regents of the University of California.
+ * Copyright (c) 2013-2023 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -35,6 +35,11 @@ operator<<(std::ostream& os, CachePolicyType policy)
   default:
     return os << "None";
   }
+}
+
+CachePolicy::CachePolicy()
+  : m_policy(CachePolicyType::NONE)
+{
 }
 
 CachePolicy::CachePolicy(const Block& block)
@@ -77,6 +82,7 @@ CachePolicy::wireEncode() const
   wireEncode(buffer);
 
   m_wire = buffer.block();
+
   return m_wire;
 }
 
@@ -86,20 +92,23 @@ CachePolicy::wireDecode(const Block& wire)
   if (wire.type() != tlv::CachePolicy) {
     NDN_THROW(Error("CachePolicy", wire.type()));
   }
+
   m_wire = wire;
   m_wire.parse();
 
-  m_policy = CachePolicyType::NONE;
-
   auto it = m_wire.elements_begin();
-  if (it != m_wire.elements_end() && it->type() == tlv::CachePolicyType) {
+  if (it == m_wire.elements_end()) {
+    NDN_THROW(Error("Empty CachePolicy"));
+  }
+
+  if (it->type() == tlv::CachePolicyType) {
     m_policy = readNonNegativeIntegerAs<CachePolicyType>(*it);
     if (getPolicy() == CachePolicyType::NONE) {
-      NDN_THROW(Error("Unknown CachePolicyType " + std::to_string(to_underlying(m_policy))));
+      NDN_THROW(Error("Unknown CachePolicyType"));
     }
   }
   else {
-    NDN_THROW(Error("CachePolicyType is missing or out of order"));
+    NDN_THROW(Error("CachePolicyType", it->type()));
   }
 }
 

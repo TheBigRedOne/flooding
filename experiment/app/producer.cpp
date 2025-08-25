@@ -6,6 +6,7 @@
 #include <ndn-cxx/meta-info.hpp>
 #include <ndn-cxx/encoding/block.hpp>
 #include <ndn-cxx/encoding/tlv.hpp>
+#include <ndn-cxx/optoflood.hpp>
 
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/posix/stream_descriptor.hpp>
@@ -28,11 +29,7 @@
 #include <unistd.h>
 
 
-// Custom TLV type numbers for OptoFlood.
-const uint32_t TLV_MOBILITY_FLAG = 201;
-const uint32_t TLV_FLOOD_ID = 202;
-const uint32_t TLV_NEW_FACE_SEQ = 203;
-const uint32_t TLV_TRACE_HINT = 204;
+// OptoFlood TLV types are now defined in ndn-cxx/optoflood.hpp
 
 namespace ndn {
 namespace examples {
@@ -265,17 +262,30 @@ private:
       std::cout << "[" << timestamp << "] DATA: Attaching OptoFlood mobility markers" << std::endl;
       std::cout << "[" << timestamp << "] DATA: Adding TLV_MOBILITY_FLAG to MetaInfo" << std::endl;
 
-      // Construct a MetaInfo block with the custom mobility flag
-      Block metaBlock(tlv::MetaInfo);
-      Block mobilityFlagBlock(TLV_MOBILITY_FLAG);
-      metaBlock.push_back(mobilityFlagBlock);
+      // Use OptoFlood API to create mobility-related blocks
+      MetaInfo metaInfo = data->getMetaInfo();
       
-      // Log additional OptoFlood fields if they were to be added
-      std::cout << "[" << timestamp << "] DATA: Mobility packet marked (event #" 
-                << m_mobilityEventCount << ")" << std::endl;
+      // Add MobilityFlag
+      metaInfo.addAppMetaInfo(optoflood::makeMobilityFlagBlock());
+      
+      // Add FloodID (using timestamp as unique ID)
+      uint64_t floodId = static_cast<uint64_t>(timestamp);
+      metaInfo.addAppMetaInfo(optoflood::makeFloodIdBlock(floodId));
+      
+      // Add NewFaceSeq (using mobility event count as sequence)
+      metaInfo.addAppMetaInfo(optoflood::makeNewFaceSeqBlock(m_mobilityEventCount));
+      
+      // Add TraceHint (simple implementation: store last PoA identifier)
+      std::vector<uint8_t> traceHint = {0x01, 0x02}; // Placeholder for actual PoA info
+      metaInfo.addAppMetaInfo(optoflood::makeTraceHintBlock(traceHint));
+      
+      data->setMetaInfo(metaInfo);
+      
+      // Log additional OptoFlood fields
+      std::cout << "[" << timestamp << "] DATA: Mobility packet marked"
+                << " FloodID: " << floodId
+                << " NewFaceSeq: " << m_mobilityEventCount << std::endl;
 
-      data->setMetaInfo(MetaInfo(metaBlock));
-      
       // Reset the flag after processing
       m_hasMoved = false; 
       std::cout << "[" << timestamp << "] DATA: Mobility flag cleared for producer" << std::endl;

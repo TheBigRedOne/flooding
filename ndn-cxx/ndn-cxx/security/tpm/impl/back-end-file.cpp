@@ -30,14 +30,19 @@
 #include "ndn-cxx/security/transform/stream-sink.hpp"
 
 #include <cstdlib>
-#include <filesystem>
 #include <fstream>
+#include <sys/stat.h>
 
+#if BOOST_VERSION >= 107200
+#include <boost/filesystem/exception.hpp>
+#endif
+#include <boost/filesystem/operations.hpp>
+#include <boost/filesystem/path.hpp>
 #include <boost/lexical_cast.hpp>
 
 namespace ndn::security::tpm {
 
-namespace fs = std::filesystem;
+namespace fs = boost::filesystem;
 using ndn::security::transform::PrivateKey;
 
 class BackEndFile::Impl
@@ -50,12 +55,12 @@ public:
       m_keystorePath = fs::path(dir);
     }
 #ifdef NDN_CXX_WITH_TESTS
-    else if (const char* testHome = std::getenv("TEST_HOME"); testHome != nullptr) {
-      m_keystorePath = fs::path(testHome) / ".ndn";
+    else if (std::getenv("TEST_HOME") != nullptr) {
+      m_keystorePath = fs::path(std::getenv("TEST_HOME")) / ".ndn";
     }
 #endif
-    else if (const char* home = std::getenv("HOME"); home != nullptr) {
-      m_keystorePath = fs::path(home) / ".ndn";
+    else if (std::getenv("HOME") != nullptr) {
+      m_keystorePath = fs::path(std::getenv("HOME")) / ".ndn";
     }
     else {
       m_keystorePath = fs::current_path() / ".ndn";
@@ -206,7 +211,7 @@ BackEndFile::doImportKey(const Name& keyName, shared_ptr<transform::PrivateKey> 
 unique_ptr<PrivateKey>
 BackEndFile::loadKey(const Name& keyName) const
 {
-  std::ifstream is(m_impl->toFileName(keyName));
+  std::ifstream is(m_impl->toFileName(keyName).string());
   auto key = make_unique<PrivateKey>();
   key->loadPkcs1Base64(is);
   return key;
@@ -215,10 +220,12 @@ BackEndFile::loadKey(const Name& keyName) const
 void
 BackEndFile::saveKey(const Name& keyName, const PrivateKey& key)
 {
-  auto fileName = m_impl->toFileName(keyName);
+  std::string fileName = m_impl->toFileName(keyName).string();
   std::ofstream os(fileName);
   key.savePkcs1Base64(os);
-  fs::permissions(fileName, fs::perms::owner_read);
+
+  // set file permission
+  ::chmod(fileName.data(), 0000400);
 }
 
 } // namespace ndn::security::tpm

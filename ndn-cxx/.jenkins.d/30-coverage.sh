@@ -1,46 +1,32 @@
 #!/usr/bin/env bash
-set -eo pipefail
+set -exo pipefail
 
-[[ $JOB_NAME == *code-coverage ]] || exit 0
+if [[ $JOB_NAME == *"code-coverage" ]]; then
+    # Generate an XML report (Cobertura format) and a detailed HTML report using gcovr
+    # Note: trailing slashes are important in the paths below. Do not remove them!
+    gcovr --object-directory build \
+          --filter ndn-cxx/ \
+          --exclude ndn-cxx/detail/nonstd/ \
+          --exclude-throw-branches \
+          --exclude-unreachable-branches \
+          --cobertura build/coverage.xml \
+          --html-details build/gcovr/ \
+          --print-summary
 
-export FORCE_COLOR=1
-export UV_NO_MANAGED_PYTHON=1
+    # Generate a detailed HTML report using lcov
+    lcov --quiet \
+         --capture \
+         --directory . \
+         --exclude "$PWD/ndn-cxx/detail/nonstd/*" \
+         --exclude "$PWD/tests/*" \
+         --no-external \
+         --rc lcov_branch_coverage=1 \
+         --output-file build/coverage.info
 
-set -x
-
-# Generate a detailed HTML report and an XML report in Cobertura format using gcovr
-# Note: trailing slashes are important in the paths below. Do not remove them!
-uvx --from 'git+https://github.com/gcovr/gcovr@99b82e7' gcovr \
-    --decisions \
-    --filter ndn-cxx/ \
-    --exclude ndn-cxx/detail/nonstd/ \
-    --exclude-throw-branches \
-    --exclude-unreachable-branches \
-    --cobertura build/coverage.xml \
-    --html-details build/gcovr/ \
-    --txt-summary \
-    build
-
-# Generate a detailed HTML report using lcov
-lcov \
-    --quiet \
-    --capture \
-    --directory . \
-    --include "$PWD/ndn-cxx/*" \
-    --exclude "$PWD/ndn-cxx/detail/nonstd/*" \
-    --branch-coverage \
-    --rc no_exception_branch=1 \
-    --ignore-errors inconsistent,mismatch,mismatch \
-    --output-file build/coverage.info
-
-genhtml \
-    --quiet \
-    --branch-coverage \
-    --demangle-cpp \
-    --legend \
-    --missed \
-    --show-proportion \
-    --title "ndn-cxx $(cat VERSION.info)" \
-    --ignore-errors inconsistent,inconsistent \
-    --output-directory build/lcov \
-    build/coverage.info
+    genhtml --branch-coverage \
+            --demangle-cpp \
+            --legend \
+            --output-directory build/lcov \
+            --title "ndn-cxx unit tests" \
+            build/coverage.info
+fi

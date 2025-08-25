@@ -1,0 +1,42 @@
+name: Docker
+on:
+  push:
+    tags:
+      - 'NFD-[0-9]+*'
+  schedule:
+    # twice a month
+    - cron: '20 8 5,20 * *'
+  workflow_dispatch:
+
+permissions:
+  attestations: write
+  id-token: write
+  packages: write
+
+jobs:
+  nfd-build:
+    uses: named-data/actions/.github/workflows/docker-image.yml@v1
+    with:
+      name: nfd-build
+      target: build
+  nfd:
+    needs: nfd-build
+    uses: named-data/actions/.github/workflows/docker-image.yml@v1
+    with:
+      name: nfd
+      target: nfd
+      contexts: build=docker-image://${{ needs.nfd-build.outputs.image }}
+  nfd-autoreg:
+    needs: nfd-build
+    uses: named-data/actions/.github/workflows/docker-image.yml@v1
+    with:
+      name: nfd-autoreg
+      target: nfd-autoreg
+      contexts: build=docker-image://${{ needs.nfd-build.outputs.image }}
+  nfd-status-http-server:
+    needs: nfd-build
+    uses: named-data/actions/.github/workflows/docker-image.yml@v1
+    with:
+      name: nfd-status-http-server
+      target: nfd-status-http-server
+      contexts: build=docker-image://${{ needs.nfd-build.outputs.image }}

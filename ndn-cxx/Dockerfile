@@ -8,6 +8,7 @@ RUN apt-get install -Uy --no-install-recommends \
         git \
         libboost-chrono-dev \
         libboost-dev \
+        libboost-filesystem-dev \
         libboost-log-dev \
         libboost-program-options-dev \
         libboost-stacktrace-dev \

@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2025 Regents of the University of California.
+ * Copyright (c) 2013-2023 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -43,26 +43,27 @@ Controller::~Controller()
 }
 
 void
-Controller::sendCommandRequest(Interest& interest,
-                               const security::SigningInfo& signingInfo,
-                               ResponseParametersValidator checkResponse,
-                               CommandSuccessCallback onSuccess,
-                               const CommandFailureCallback& onFailure)
+Controller::startCommand(const shared_ptr<ControlCommand>& command,
+                         const ControlParameters& parameters,
+                         const CommandSuccessCallback& onSuccess,
+                         const CommandFailureCallback& onFailure,
+                         const CommandOptions& options)
 {
-  BOOST_ASSERT(checkResponse);
-
-  m_signer.makeSignedInterest(interest, signingInfo);
+  Interest interest;
+  interest.setName(command->getRequestName(options.getPrefix(), parameters));
+  interest.setInterestLifetime(options.getTimeout());
+  m_signer.makeSignedInterest(interest, options.getSigningInfo());
 
   m_face.expressInterest(interest,
-    [=, check = std::move(checkResponse), success = std::move(onSuccess)] (const auto&, const Data& d) {
-      processCommandResponse(d, std::move(check), std::move(success), onFailure);
+    [=] (const Interest&, const Data& data) {
+      processCommandResponse(data, command, onSuccess, onFailure);
     },
-    [onFailure] (const Interest&, const lp::Nack& nack) {
+    [=] (const Interest&, const lp::Nack& nack) {
       if (onFailure)
         onFailure(ControlResponse(Controller::ERROR_NACK,
                                   "received Nack: " + boost::lexical_cast<std::string>(nack.getReason())));
     },
-    [onFailure] (const Interest&) {
+    [=] (const Interest&) {
       if (onFailure)
         onFailure(ControlResponse(Controller::ERROR_TIMEOUT, "request timed out"));
     });
@@ -70,15 +71,15 @@ Controller::sendCommandRequest(Interest& interest,
 
 void
 Controller::processCommandResponse(const Data& data,
-                                   ResponseParametersValidator checkResponse,
-                                   CommandSuccessCallback onSuccess,
+                                   const shared_ptr<ControlCommand>& command,
+                                   const CommandSuccessCallback& onSuccess,
                                    const CommandFailureCallback& onFailure)
 {
   m_validator.validate(data,
-    [check = std::move(checkResponse), success = std::move(onSuccess), onFailure] (const Data& d) {
-      processValidatedCommandResponse(d, check, success, onFailure);
+    [=] (const Data& d) {
+      processValidatedCommandResponse(d, command, onSuccess, onFailure);
     },
-    [onFailure] (const Data&, const auto& error) {
+    [=] (const Data&, const auto& error) {
       if (onFailure)
         onFailure(ControlResponse(ERROR_VALIDATION, boost::lexical_cast<std::string>(error)));
     }
@@ -87,7 +88,7 @@ Controller::processCommandResponse(const Data& data,
 
 void
 Controller::processValidatedCommandResponse(const Data& data,
-                                            const ResponseParametersValidator& checkResponse,
+                                            const shared_ptr<ControlCommand>& command,
                                             const CommandSuccessCallback& onSuccess,
                                             const CommandFailureCallback& onFailure)
 {
@@ -118,9 +119,9 @@ Controller::processValidatedCommandResponse(const Data& data,
   }
 
   try {
-    checkResponse(parameters);
+    command->validateResponse(parameters);
   }
-  catch (const std::invalid_argument& e) {
+  catch (const ControlCommand::ArgumentError& e) {
     if (onFailure)
       onFailure(ControlResponse(ERROR_SERVER, "Invalid response: "s + e.what()));
     return;

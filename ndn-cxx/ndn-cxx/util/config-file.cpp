@@ -21,8 +21,8 @@
 
 #include "ndn-cxx/util/config-file.hpp"
 
+#include <boost/filesystem/operations.hpp>
 #include <boost/property_tree/ini_parser.hpp>
-#include <cstdlib>
 
 namespace ndn {
 
@@ -40,10 +40,10 @@ ConfigFile::~ConfigFile()
   close();
 }
 
-std::filesystem::path
+boost::filesystem::path
 ConfigFile::findConfigFile()
 {
-  using namespace std::filesystem;
+  using namespace boost::filesystem;
 
 #ifdef NDN_CXX_WITH_TESTS
   if (std::getenv("TEST_HOME")) {
@@ -86,7 +86,7 @@ ConfigFile::open()
     return false;
   }
 
-  m_input.open(m_path);
+  m_input.open(m_path.c_str());
   if (!m_input.good() || !m_input.is_open()) {
     return false;
   }

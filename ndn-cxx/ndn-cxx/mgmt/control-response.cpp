@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2025 Regents of the University of California.
+ * Copyright (c) 2013-2023 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -87,31 +87,26 @@ ControlResponse::wireDecode(const Block& wire)
   if (wire.type() != tlv::nfd::ControlResponse) {
     NDN_THROW(Error("ControlResponse", wire.type()));
   }
-
-  *this = {};
   m_wire = wire;
   m_wire.parse();
 
-  auto it = m_wire.elements_begin();
-  if (it != m_wire.elements_end() && it->type() == tlv::nfd::StatusCode) {
-    m_code = readNonNegativeIntegerAs<uint32_t>(*it);
-    ++it;
+  auto val = m_wire.elements_begin();
+  if (val == m_wire.elements_end() || val->type() != tlv::nfd::StatusCode) {
+    NDN_THROW(Error("missing StatusCode sub-element"));
   }
-  else {
-    NDN_THROW(Error("StatusCode is missing or out of order"));
-  }
+  m_code = readNonNegativeIntegerAs<uint32_t>(*val);
+  ++val;
 
-  if (it != m_wire.elements_end() && it->type() == tlv::nfd::StatusText) {
-    m_text = readString(*it);
-    ++it;
+  if (val == m_wire.elements_end() || val->type() != tlv::nfd::StatusText) {
+    NDN_THROW(Error("missing StatusText sub-element"));
   }
-  else {
-    NDN_THROW(Error("StatusText is missing or out of order"));
-  }
+  m_text = readString(*val);
+  ++val;
 
-  if (it != m_wire.elements_end()) {
-    m_body = *it;
-  }
+  if (val != m_wire.elements_end())
+    m_body = *val;
+  else
+    m_body = {};
 }
 
 } // namespace ndn::mgmt

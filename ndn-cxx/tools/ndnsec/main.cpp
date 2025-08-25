@@ -26,7 +26,7 @@
 #include "ndn-cxx/version.hpp"
 
 #include <boost/exception/diagnostic_information.hpp>
-#include <filesystem>
+#include <boost/filesystem/path.hpp>
 #include <iostream>
 
 NDN_LOG_INIT(ndnsec);
@@ -54,7 +54,8 @@ Run 'ndnsec COMMAND --help' for more information on a command.
 int
 main(int argc, char* argv[])
 {
-  std::string basename = std::filesystem::path(argv[0]).filename();
+  boost::filesystem::path p(argv[0]);
+  std::string basename(p.filename().string());
   std::string command;
   if (basename.rfind("ndnsec-", 0) == 0) {
     command = basename.substr(std::strlen("ndnsec-"));

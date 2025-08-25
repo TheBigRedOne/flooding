@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2025 Regents of the University of California.
+ * Copyright (c) 2013-2023 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -84,28 +84,32 @@ ValidityPeriod::wireEncode() const
   wireEncode(buffer);
 
   m_wire = buffer.block();
+  m_wire.parse();
+
   return m_wire;
 }
 
 void
 ValidityPeriod::wireDecode(const Block& wire)
 {
-  if (wire.type() != tlv::ValidityPeriod) {
-    NDN_THROW(Error("ValidityPeriod", wire.type()));
+  if (!wire.hasWire()) {
+    NDN_THROW(Error("The supplied block does not contain wire format"));
   }
+
   m_wire = wire;
   m_wire.parse();
 
-  if (m_wire.elements_size() != 2) {
-    NDN_THROW(Error("ValidityPeriod does not have two sub-elements"));
-  }
+  if (m_wire.type() != tlv::ValidityPeriod)
+    NDN_THROW(Error("ValidityPeriod", m_wire.type()));
+
+  if (m_wire.elements_size() != 2)
+    NDN_THROW(Error("ValidityPeriod does not have two sub-TLVs"));
+
   if (m_wire.elements()[NOT_BEFORE_OFFSET].type() != tlv::NotBefore ||
-      m_wire.elements()[NOT_BEFORE_OFFSET].value_size() != ISO_DATETIME_SIZE) {
-    NDN_THROW(Error("Missing or invalid NotBefore field"));
-  }
-  if (m_wire.elements()[NOT_AFTER_OFFSET].type() != tlv::NotAfter ||
+      m_wire.elements()[NOT_BEFORE_OFFSET].value_size() != ISO_DATETIME_SIZE ||
+      m_wire.elements()[NOT_AFTER_OFFSET].type() != tlv::NotAfter ||
       m_wire.elements()[NOT_AFTER_OFFSET].value_size() != ISO_DATETIME_SIZE) {
-    NDN_THROW(Error("Missing or invalid NotAfter field"));
+    NDN_THROW(Error("Invalid NotBefore or NotAfter field"));
   }
 
   try {
@@ -113,7 +117,7 @@ ValidityPeriod::wireDecode(const Block& wire)
     m_notAfter = decodeTimePoint(m_wire.elements()[NOT_AFTER_OFFSET]);
   }
   catch (const std::bad_cast&) {
-    NDN_THROW(Error("Invalid date format in NotBefore or NotAfter field"));
+    NDN_THROW(Error("Invalid date format in NOT-BEFORE or NOT-AFTER field"));
   }
 }
 

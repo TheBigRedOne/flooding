@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2024 Regents of the University of California.
+ * Copyright (c) 2013-2023 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -25,8 +25,7 @@
 #include "tests/boost-test.hpp"
 #include "tests/unit/security/pib/pib-data-fixture.hpp"
 
-#include <filesystem>
-
+#include <boost/filesystem.hpp>
 #include <boost/mp11/list.hpp>
 
 namespace ndn::tests {
@@ -47,14 +46,14 @@ class PibSqlite3Fixture : public PibDataFixture
 public:
   ~PibSqlite3Fixture()
   {
-    std::filesystem::remove_all(m_path);
+    boost::filesystem::remove_all(m_path);
   }
 
 private:
-  const std::filesystem::path m_path{std::filesystem::path(UNIT_TESTS_TMPDIR) / "TestPibImpl"};
+  const boost::filesystem::path m_path{boost::filesystem::path(UNIT_TESTS_TMPDIR) / "TestPibImpl"};
 
 public:
-  PibSqlite3 pib{m_path};
+  PibSqlite3 pib{m_path.string()};
 };
 
 using PibImpls = boost::mp11::mp_list<PibMemoryFixture, PibSqlite3Fixture>;

@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2024 Regents of the University of California.
+ * Copyright (c) 2013-2023 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -23,8 +23,7 @@
 
 #include "ndn-cxx/util/io.hpp"
 
-#include <filesystem>
-#include <system_error>
+#include <boost/filesystem/operations.hpp>
 
 namespace ndn::tests {
 
@@ -37,9 +36,9 @@ KeyChainFixture::KeyChainFixture()
 
 KeyChainFixture::~KeyChainFixture()
 {
-  std::error_code ec;
+  boost::system::error_code ec;
   for (const auto& certFile : m_certFiles) {
-    std::filesystem::remove(certFile, ec); // ignore error
+    boost::filesystem::remove(certFile, ec); // ignore error
   }
 }
 
