@@ -12,7 +12,7 @@ namespace ndn {
 			Consumer()
 				: m_scheduler(m_face.getIoContext())
 			{
-				m_validator.load("/home/vagrant/mini-ndn/flooding/experiments/tools/trust-schema.conf");
+				m_validator.load("/home/vagrant/mini-ndn/flooding/trust-schema.conf");
 			}
 
 			void run()
@@ -37,7 +37,7 @@ namespace ndn {
 					std::bind(&Consumer::onTimeout, this, std::placeholders::_1));
 
 				// Schedule the next interest
-				m_scheduler.schedule(ndn::time::milliseconds(20), [this] { sendInterest(); });
+				m_scheduler.schedule(ndn::time::milliseconds(1000), [this] { sendInterest(); });
 			}
 
 			void onData(const Interest&, const Data& data)

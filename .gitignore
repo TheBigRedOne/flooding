@@ -3,6 +3,7 @@
 
 ## Ignore Visual Studio specific files
 .vs/
+.vscode/
 
 ## User-specific files
 *.user

@@ -12,12 +12,9 @@ namespace ndn {
 		public:
 			void run()
 			{
-				// Automatically advertise prefix using system call
-				std::system("nlsrc advertise /example/LiveStream");
-
 				m_face.setInterestFilter("/example/LiveStream",
 					std::bind(&Producer::onInterest, this, std::placeholders::_2),
-					nullptr,
+					std::bind(&Producer::onRegisterSuccess, this, std::placeholders::_1),
 					std::bind(&Producer::onRegisterFailed, this, std::placeholders::_1, std::placeholders::_2));
 
 				std::cout << "Producer running, waiting for Interests...\n";
@@ -42,6 +39,19 @@ namespace ndn {
 
 				std::cout << "<< D: " << *data << std::endl;
 				m_face.put(*data);
+			}
+
+			void onRegisterSuccess(const Name& prefix)
+			{
+				std::cout << "Successfully registered prefix " << prefix << std::endl;
+				std::string command = "nlsrc advertise " + prefix.toUri();
+				int res = std::system(command.c_str());
+				if (res == 0) {
+					std::cout << "Successfully advertised prefix " << prefix << std::endl;
+				}
+				else {
+					std::cerr << "ERROR: failed to advertise prefix " << prefix << std::endl;
+				}
 			}
 
 			void onRegisterFailed(const Name& prefix, const std::string& reason)
