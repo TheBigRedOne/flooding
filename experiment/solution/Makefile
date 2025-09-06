@@ -1,77 +1,49 @@
-# Solution Test Makefile
+# Makefile for the SOLUTION experiment, to be run inside the VM.
 
-# Base paths
-BASE_DIR := $(shell pwd)
-RESULTS_DIR := $(BASE_DIR)/results
-TOOLS_DIR := $(BASE_DIR)/../tools
+# --- Variables ---
+PCAP_FILE := results/consumer_capture.pcap
+CSV_FILE  := results/consumer_capture.csv
 
-# Executable names and sources
-CONSUMER_SRC := consumer_mp.cpp
-CONSUMER_EXEC := $(BASE_DIR)/consumer
-PRODUCER_SRC := producer_mp.cpp
-PRODUCER_EXEC := $(BASE_DIR)/producer
+CXX      := g++
+# CRITICAL: Add -DSOLUTION_ENABLED to activate solution-specific code via preprocessor macros.
+CXXFLAGS := -std=c++17 -g -O2 -DSOLUTION_ENABLED
+LDFLAGS  := $(shell pkg-config --cflags --libs libndn-cxx boost_system)
 
-# Logs and output files
-CONSUMER_LOG := $(RESULTS_DIR)/consumer.log
-PRODUCER_LOG := $(RESULTS_DIR)/producer.log
-PCAP_FILE := $(RESULTS_DIR)/consumer_capture.pcap
-PCAP_CSV := $(RESULTS_DIR)/consumer_capture.csv
-THROUGHPUT_CSV := $(RESULTS_DIR)/consumer_capture_throughput.csv
-THROUGHPUT_PDF := $(RESULTS_DIR)/consumer_capture_throughput.pdf
+APP_DIR  := ../app
+TOOL_DIR := ../tool
 
-# Key file and trust schema
-CERT_FILE := example-trust-anchor.cert
-TRUST_SCHEMA := $(TOOLS_DIR)/trust-schema.conf
+# --- Targets ---
 
-# Main targets
-all: $(PCAP_FILE) $(THROUGHPUT_CSV) $(THROUGHPUT_PDF)
+# The main target to run the full experiment and get all result files.
+all: results/latency_timeseries.pdf results/loss_ratio.txt results/overhead_interests.txt
 
-# Ensure results directory exists
-$(RESULTS_DIR):
-	mkdir -p $@
+# The final plots/data depend on the CSV file, which in turn depends on the PCAP file.
+results/latency_timeseries.pdf results/loss_ratio.txt results/overhead_interests.txt: $(CSV_FILE)
+	# Generate plots and metrics from the CSV data
+	python3 $(TOOL_DIR)/plot_latency.py --input $(CSV_FILE) --output-dir results --handoff-times "60, 120"
+	python3 $(TOOL_DIR)/plot_loss.py --input $(CSV_FILE) --output-dir results
+	python3 $(TOOL_DIR)/plot_overhead.py --input $(CSV_FILE) --output-dir results --handoff-times "60, 120"
 
-# Build the consumer executable
-$(CONSUMER_EXEC): $(CONSUMER_SRC)
-	g++ -std=c++17 -o $@ $< $$(pkg-config --cflags --libs libndn-cxx)
+# Convert PCAP to CSV using tshark
+$(CSV_FILE): $(PCAP_FILE)
+	tshark -r $< -T fields -e frame.time_epoch -e ndn.type -e ndn.name -E separator=, -E header=y > $@
 
-# Build the producer executable
-$(PRODUCER_EXEC): $(PRODUCER_SRC)
-	g++ -std=c++17 -o $@ $< $$(pkg-config --cflags --libs libndn-cxx)
+# The PCAP result depends on the experiment script and the compiled apps.
+$(PCAP_FILE): $(TOOL_DIR)/exp.py producer consumer
+	mkdir -p results
+	# Run the experiment script using sudo in 'solution' mode.
+	sudo python3 $(TOOL_DIR)/exp.py --mode solution --interval 60
 
-# Generate the key and cert
-$(CERT_FILE): $(TRUST_SCHEMA)
-	ndnsec key-gen /example && \
-	ndnsec cert-dump -i /example > $@ && \
-	ndnsec key-gen /example/LiveStream && \
-	ndnsec sign-req /example/LiveStream | ndnsec cert-gen -s /example -i example | ndnsec cert-install -
-	cp $< .
+# Recipe to compile the producer.
+producer: $(APP_DIR)/producer.cpp
+	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS)
 
-# Generate the PCAP file
-$(PCAP_FILE): $(CONSUMER_EXEC) $(PRODUCER_EXEC) $(CERT_FILE) | $(RESULTS_DIR)
-	env EXPERIMENT_DIR=$(BASE_DIR) sudo -E python $(TOOLS_DIR)/exp.py
-	cp consumer_capture.pcap $@
+# Recipe to compile the consumer.
+consumer: $(APP_DIR)/consumer.cpp
+	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS)
 
-# Generate the CSV file from PCAP
-$(PCAP_CSV): $(PCAP_FILE) | $(RESULTS_DIR)
-	tshark -r $< -T fields -e frame.time_epoch -e frame.len -E header=y -E separator=, -E quote=d > $@
-
-# Generate the throughput CSV
-$(THROUGHPUT_CSV): $(PCAP_CSV) | $(RESULTS_DIR)
-	python $(TOOLS_DIR)/throughput_calculation.py $<
-
-# Generate the throughput PDF
-$(THROUGHPUT_PDF): $(THROUGHPUT_CSV) | $(RESULTS_DIR)
-	python $(TOOLS_DIR)/plot_throughput.py $<
-
-# Cleanup intermediate files
+# A target to clean up all generated files.
 clean:
-	rm -f $(CONSUMER_LOG) $(PRODUCER_LOG) $(PCAP_FILE) $(PCAP_CSV) $(THROUGHPUT_CSV) $(THROUGHPUT_PDF)
-	rm -f $(CONSUMER_EXEC) $(PRODUCER_EXEC) $(CERT_FILE)
+	rm -rf producer consumer results
 
-# Cleanup all generated files, including results directory
-deep-clean: clean
-	rm -rf $(RESULTS_DIR)
-
-.PHONY: all clean deep-clean
-.DELETE_ON_ERROR:
-.NOTINTERMEDIATE: $(PCAP_CSV) $(THROUGHPUT_CSV)
+.PHONY: all clean

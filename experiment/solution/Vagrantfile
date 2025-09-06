@@ -25,12 +25,16 @@ Vagrant.configure("2") do |config|
   end
 
    # Explicitly transfer host files to VM
-  config.vm.provision "file", source: "../solution", destination: "/home/vagrant/mini-ndn/flooding/experiments/solution"
-  config.vm.provision "file", source: "../tools", destination: "/home/vagrant/mini-ndn/flooding/experiments/tools"
+  config.vm.provision "file", source: "../../experiment/app", destination: "/home/vagrant/mini-ndn/flooding/experiment/app"
+  config.vm.provision "file", source: "../../experiment/tool", destination: "/home/vagrant/mini-ndn/flooding/experiment/tool"
+  config.vm.provision "file", source: "Makefile", destination: "/home/vagrant/mini-ndn/flooding/experiment/solution/Makefile"
 
   config.vm.provision "shell", inline: <<-SHELL
-    mkdir -p /home/vagrant/mini-ndn/flooding/experiments/solution
-    mkdir -p /home/vagrant/mini-ndn/flooding/experiments/tools
+    mkdir -p /home/vagrant/mini-ndn/flooding/experiment/solution
+    mkdir -p /home/vagrant/mini-ndn/flooding/experiment/app
+    mkdir -p /home/vagrant/mini-ndn/flooding/experiment/tool
+    # Ensure vagrant user owns all experiment files
+    chown -R vagrant:vagrant /home/vagrant/mini-ndn/flooding/experiment
   SHELL
 
 end

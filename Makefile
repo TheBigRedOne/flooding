@@ -3,35 +3,36 @@ PROVIDER ?= virtualbox
 # Master Control Makefile
 
 # Results from experiments
-BASELINE_PDF := results/baseline/consumer_capture_throughput.pdf
-SOLUTION_PDF := results/solution/consumer_capture_throughput.pdf
+BASELINE_LATENCY_PDF := results/baseline/latency_timeseries.pdf
+SOLUTION_LATENCY_PDF := results/solution/latency_timeseries.pdf
 
 # Paper dependencies and output
 MAIN_TEX := paper/OptoFlood.tex
-BASELINE_FIGURE := paper/figures/baseline_throughput.pdf
-SOLUTION_FIGURE := paper/figures/solution_throughput.pdf
+BASELINE_FIGURE := paper/figures/baseline_latency.pdf
+SOLUTION_FIGURE := paper/figures/solution_latency.pdf
 PAPER_PDF := paper/OptoFlood.pdf
 STATIC_FIGURES := paper/figures/NLSR_Work_Flow.png \
                   paper/figures/Producer_Mobility_Problems.png \
                   paper/figures/Topology.png
 ALL_FIGURES := $(STATIC_FIGURES) $(BASELINE_FIGURE) $(SOLUTION_FIGURE)
 
-# Experiment source files
-BASELINE_SRCS := experiments/baseline/Vagrantfile \
-                experiments/baseline/Makefile \
-                experiments/baseline/consumer.cpp \
-                experiments/baseline/producer.cpp
+# Common application source files
+APP_SRCS := experiment/app/producer.cpp \
+            experiment/app/consumer.cpp \
+            experiment/app/trust-schema.conf
 
-SOLUTION_SRCS := experiments/solution/Vagrantfile \
-                experiments/solution/Makefile \
-                experiments/solution/consumer_mp.cpp \
-                experiments/solution/producer_mp.cpp
+# Experiment-specific source files
+BASELINE_SRCS := experiment/baseline/Vagrantfile \
+                experiment/baseline/Makefile
+                
+SOLUTION_SRCS := experiment/solution/Vagrantfile \
+                experiment/solution/Makefile
 
 # Common tools used by both experiments
-TOOLS_SRCS := experiments/tools/exp.py \
-             experiments/tools/plot_throughput.py \
-             experiments/tools/throughput_calculation.py \
-             experiments/tools/trust-schema.conf
+TOOLS_SRCS := experiment/tool/exp.py \
+             experiment/tool/plot_latency.py \
+             experiment/tool/plot_loss.py \
+             experiment/tool/plot_overhead.py
 
 # Main target
 all: $(PAPER_PDF)
@@ -93,25 +94,25 @@ RSYNC_BASELINE = rsync -avH -e "ssh -F .ssh_config_baseline"
 RSYNC_SOLUTION = rsync -avH -e "ssh -F .ssh_config_solution"
 
 # Baseline experiment results
-$(BASELINE_PDF): $(BASELINE_SRCS) $(TOOLS_SRCS) .ssh_config_baseline | results/baseline
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiments/baseline vagrant up
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiments/baseline vagrant ssh -c 'cd /home/vagrant/mini-ndn/flooding/experiments/baseline && make all'
-	$(RSYNC_BASELINE) baseline:/home/vagrant/mini-ndn/flooding/experiments/baseline/results/ results/baseline
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiments/baseline vagrant halt -f || true
+$(BASELINE_LATENCY_PDF): $(APP_SRCS) $(BASELINE_SRCS) $(TOOLS_SRCS) .ssh_config_baseline | results/baseline
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant up
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant ssh -c 'cd /home/vagrant/mini-ndn/flooding/experiment/baseline && make all'
+	$(RSYNC_BASELINE) baseline:/home/vagrant/mini-ndn/flooding/experiment/baseline/results/ results/baseline
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant halt -f || true
 
 # Solution experiment results
-$(SOLUTION_PDF): $(SOLUTION_SRCS) $(TOOLS_SRCS) .ssh_config_solution | results/solution
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiments/solution vagrant up
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiments/solution vagrant ssh -c 'cd /home/vagrant/mini-ndn/flooding/experiments/solution && make all'
-	$(RSYNC_SOLUTION) solution:/home/vagrant/mini-ndn/flooding/experiments/solution/results/ results/solution; \
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiments/solution vagrant halt -f || true
+$(SOLUTION_LATENCY_PDF): $(APP_SRCS) $(SOLUTION_SRCS) $(TOOLS_SRCS) .ssh_config_solution | results/solution
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant up
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant ssh -c 'cd /home/vagrant/mini-ndn/flooding/experiment/solution && make all'
+	$(RSYNC_SOLUTION) solution:/home/vagrant/mini-ndn/flooding/experiment/solution/results/ results/solution;
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant halt -f || true
 
 # Copy baseline figure to paper figures directory
-$(BASELINE_FIGURE): $(BASELINE_PDF) | paper/figures
+$(BASELINE_FIGURE): $(BASELINE_LATENCY_PDF) | paper/figures
 	cp $< $@
 
 # Copy solution figure to paper figures directory
-$(SOLUTION_FIGURE): $(SOLUTION_PDF) | paper/figures
+$(SOLUTION_FIGURE): $(SOLUTION_LATENCY_PDF) | paper/figures
 	cp $< $@
 
 # Generate the paper
@@ -125,8 +126,8 @@ clean: clean-ssh-config
 
 deep-clean: clean
 	rm -rf $(BASELINE_FIGURE) $(SOLUTION_FIGURE) $(PAPER_PDF)
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiments/baseline vagrant destroy -f
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiments/solution vagrant destroy -f
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant destroy -f
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant destroy -f
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=boxes/baseline vagrant destroy -f
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=boxes/solution vagrant destroy -f
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=boxes/initial  vagrant destroy -f
