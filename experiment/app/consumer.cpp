@@ -4,7 +4,9 @@
 #include <ndn-cxx/interest.hpp>
 #include <ndn-cxx/security/validator-config.hpp>
 #include <ndn-cxx/util/scheduler.hpp>
+#ifdef SOLUTION_ENABLED
 #include <ndn-cxx/optoflood.hpp>
+#endif
 
 #include <boost/asio/io_context.hpp>
 #include <iostream>
@@ -91,6 +93,7 @@ private:
     interest.setInterestLifetime(6_s); // As per .tex description
     
     // Check if we should enable Interest flooding (OptoFlood solution mode)
+#ifdef SOLUTION_ENABLED
     if (m_mode == "solution" && shouldEnableFlooding()) {
       std::cout << "[" << timestamp << "] OPTOFLOOD: Enabling Interest flooding due to consecutive failures" << std::endl;
       
@@ -101,6 +104,7 @@ private:
       // Reset failure counter after triggering flooding
       m_consecutiveFailures = 0;
     }
+#endif
     
     // Record send time for latency calculation
     m_sendTimeMap[name] = timestamp;

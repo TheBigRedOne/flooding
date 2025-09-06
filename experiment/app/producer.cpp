@@ -6,7 +6,9 @@
 #include <ndn-cxx/meta-info.hpp>
 #include <ndn-cxx/encoding/block.hpp>
 #include <ndn-cxx/encoding/tlv.hpp>
+#ifdef SOLUTION_ENABLED
 #include <ndn-cxx/optoflood.hpp>
+#endif
 
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/posix/stream_descriptor.hpp>
@@ -258,6 +260,7 @@ private:
     data->setFreshnessPeriod(10_s);
     data->setContent(std::string_view("OptoFlood Test Data"));
 
+#ifdef SOLUTION_ENABLED
     if (m_mode == "solution" && m_hasMoved) {
       std::cout << "[" << timestamp << "] DATA: Attaching OptoFlood mobility markers" << std::endl;
       std::cout << "[" << timestamp << "] DATA: Adding TLV_MOBILITY_FLAG to MetaInfo" << std::endl;
@@ -290,6 +293,7 @@ private:
       m_hasMoved = false; 
       std::cout << "[" << timestamp << "] DATA: Mobility flag cleared for producer" << std::endl;
     }
+#endif
 
     m_keyChain.sign(*data);
     
