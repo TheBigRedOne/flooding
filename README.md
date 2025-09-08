@@ -1,13 +1,29 @@
-Please use Vagrant 2.4.0 or later. You will also need a virtualization provider:
-- For VirtualBox (default): VirtualBox 7.1 or later.
-- For KVM: A working KVM/libvirt setup configured for Vagrant.
+This project uses Vagrant to create reproducible experiment environments.
 
-To run the full experiment and build the paper:
+## Prerequisites
 
-- Using the default VirtualBox provider: "make all
-- Using KVM/libvirt: "make kvm all"
-- Using VirtualBox explicitly: "make vb all"
+- Vagrant 2.4.0 or later.
+- A virtualization provider:
+  - **VirtualBox (default):** VirtualBox 7.0 or later.
+  - **KVM:** A working KVM/libvirt setup.
+- `tshark` (Wireshark command-line tools) installed on the host machine for PCAP processing if run locally. The VMs provisioned by Vagrant do not require this.
 
-This will download the repository, build necessary virtual machine images (boxes) if they don't exist for the selected provider, run experiments, and generate the paper.
+## Quick Start
 
-Caution: If you run the project in an external environment of Ubuntu 24.04, it is likely that mini-ndn is not installed correctly, even though the internal environment we set in Vagrantfile to create a box and run experiments is Ubuntu 22.04.
+To run the full workflow (build VMs, run baseline and solution experiments, analyze data, and build the paper PDF), execute:
+
+```bash
+# Using the default VirtualBox provider
+make all
+
+# Using KVM/libvirt
+make kvm all
+```
+
+This command automates the entire process. It will:
+1.  Build the necessary Vagrant base images (`.box` files) if they don't exist.
+2.  Provision temporary VMs for the `baseline` and `solution` experiments.
+3.  Compile the C++ applications and run the mobility simulation inside each VM.
+4.  Analyze the resulting packet captures (`.pcap` files) to generate plots and metrics.
+5.  Copy the final figures into the `paper/` directory.
+6.  Compile the LaTeX source to produce `paper/OptoFlood.pdf`.
