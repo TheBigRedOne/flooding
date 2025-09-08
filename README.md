@@ -6,7 +6,7 @@ This project uses Vagrant to create reproducible experiment environments.
 - A virtualization provider:
   - **VirtualBox (default):** VirtualBox 7.0 or later.
   - **KVM:** A working KVM/libvirt setup.
-- `tshark` (Wireshark command-line tools) installed on the host machine for PCAP processing if run locally. The VMs provisioned by Vagrant do not require this.
+
 
 ## Quick Start
 
@@ -27,3 +27,14 @@ This command automates the entire process. It will:
 4.  Analyze the resulting packet captures (`.pcap` files) to generate plots and metrics.
 5.  Copy the final figures into the `paper/` directory.
 6.  Compile the LaTeX source to produce `paper/OptoFlood.pdf`.
+
+## Cleaning Up
+
+- To remove all experiment results, generated figures, and the paper PDF:
+  ```bash
+  make clean
+  ```
+- To perform a deep clean, which includes all of the above plus destroying all Vagrant VMs and removing the cached `.box` files:
+  ```bash
+  make deep-clean
+  ```
