@@ -34,6 +34,9 @@ Vagrant.configure("2") do |config|
 
   config.vm.provider :libvirt do |lv|
     lv.driver = "kvm"
+    require 'etc'
+    dirname = __dir__.split('/')[-2..-1].join('-')
+    lv.default_prefix = "#{Etc.getpwuid.uid}-#{dirname}-"
     lv.cpus   = common_cpus
     lv.memory = common_memory
   end

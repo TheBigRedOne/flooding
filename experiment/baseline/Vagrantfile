@@ -1,7 +1,7 @@
 # Baseline Experiment Vagrantfile
 
 Vagrant.configure("2") do |config|
-  baseline_box_path = ENV['ACTUAL_BASELINE_BOX_PATH'] || "boxes/baseline/baseline.box"
+  baseline_box_path = ENV['ACTUAL_BASELINE_BOX_PATH'] || "box/baseline/baseline.box"
   config.vm.box = baseline_box_path
 
   config.vm.network "private_network", type: "dhcp"
@@ -19,6 +19,9 @@ Vagrant.configure("2") do |config|
 
   config.vm.provider :libvirt do |lv|
     lv.driver = "kvm"
+    require 'etc'
+    dirname = __dir__.split('/')[-2..-1].join('-')
+    lv.default_prefix = "#{Etc.getpwuid.uid}-#{dirname}-"
     lv.cpus   = common_cpus
     lv.memory = common_memory
   end
