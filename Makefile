@@ -51,41 +51,41 @@ paper/figures:
 	mkdir $@
 
 # Boxes check
-boxes/initial/initial.$(PROVIDER).box: boxes/initial/Vagrantfile
+box/initial/initial.$(PROVIDER).box: box/initial/Vagrantfile
 	-rm -f $@
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=boxes/initial vagrant up
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=boxes/initial vagrant package --output $@
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=boxes/initial vagrant halt
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=boxes/initial vagrant destroy -f
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/initial vagrant up
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/initial vagrant package --output $@
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/initial vagrant halt
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/initial vagrant destroy -f
 
-boxes/baseline/baseline.$(PROVIDER).box: boxes/baseline/Vagrantfile boxes/initial/initial.$(PROVIDER).box
+box/baseline/baseline.$(PROVIDER).box: box/baseline/Vagrantfile box/initial/initial.$(PROVIDER).box
 	-rm -f $@
-	ACTUAL_INITIAL_BOX_PATH="boxes/initial/initial.$(PROVIDER).box" \
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=boxes/baseline vagrant up
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=boxes/baseline vagrant package --output $@
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=boxes/baseline vagrant halt
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=boxes/baseline vagrant destroy -f
+	ACTUAL_INITIAL_BOX_PATH="box/initial/initial.$(PROVIDER).box" \
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/baseline vagrant up
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/baseline vagrant package --output $@
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/baseline vagrant halt
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/baseline vagrant destroy -f
 
-boxes/solution/solution.$(PROVIDER).box: boxes/solution/Vagrantfile boxes/initial/initial.$(PROVIDER).box
+box/solution/solution.$(PROVIDER).box: box/solution/Vagrantfile box/initial/initial.$(PROVIDER).box
 	-rm -f $@
-	ACTUAL_INITIAL_BOX_PATH="boxes/initial/initial.$(PROVIDER).box" \
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=boxes/solution vagrant up
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=boxes/solution vagrant package --output $@
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=boxes/solution vagrant halt
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=boxes/solution vagrant destroy -f
+	ACTUAL_INITIAL_BOX_PATH="box/initial/initial.$(PROVIDER).box" \
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/solution vagrant up
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/solution vagrant package --output $@
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/solution vagrant halt
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/solution vagrant destroy -f
 
 # Updated build-boxes target to reflect provider-specific boxes
-build-boxes: boxes/baseline/baseline.$(PROVIDER).box boxes/solution/solution.$(PROVIDER).box
+build-boxes: box/baseline/baseline.$(PROVIDER).box box/solution/solution.$(PROVIDER).box
 
 # SSH config file for baseline experiment
-.ssh_config_baseline: experiment/baseline/Vagrantfile boxes/baseline/baseline.$(PROVIDER).box
-	ACTUAL_BASELINE_BOX_PATH="boxes/baseline/baseline.$(PROVIDER).box" \
+.ssh_config_baseline: experiment/baseline/Vagrantfile box/baseline/baseline.$(PROVIDER).box
+	ACTUAL_BASELINE_BOX_PATH="box/baseline/baseline.$(PROVIDER).box" \
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant up
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant ssh-config --host baseline > .ssh_config_baseline
 
 # SSH config file for solution experiment
-.ssh_config_solution: experiment/solution/Vagrantfile boxes/solution/solution.$(PROVIDER).box
-	ACTUAL_SOLUTION_BOX_PATH="boxes/solution/solution.$(PROVIDER).box" \
+.ssh_config_solution: experiment/solution/Vagrantfile box/solution/solution.$(PROVIDER).box
+	ACTUAL_SOLUTION_BOX_PATH="box/solution/solution.$(PROVIDER).box" \
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant up
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant ssh-config --host solution > .ssh_config_solution
 
@@ -128,15 +128,15 @@ deep-clean: clean
 	rm -rf $(BASELINE_FIGURE) $(SOLUTION_FIGURE) $(PAPER_PDF)
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant destroy -f
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant destroy -f
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=boxes/baseline vagrant destroy -f
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=boxes/solution vagrant destroy -f
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=boxes/initial  vagrant destroy -f
-	vagrant box remove boxes/baseline/baseline.$(PROVIDER).box || true
-	vagrant box remove boxes/solution/solution.$(PROVIDER).box || true
-	vagrant box remove boxes/initial/initial.$(PROVIDER).box || true
-	rm -f boxes/baseline/baseline.$(PROVIDER).box
-	rm -f boxes/solution/solution.$(PROVIDER).box
-	rm -f boxes/initial/initial.$(PROVIDER).box
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/baseline vagrant destroy -f
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/solution vagrant destroy -f
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/initial  vagrant destroy -f
+	vagrant box remove box/baseline/baseline.$(PROVIDER).box || true
+	vagrant box remove box/solution/solution.$(PROVIDER).box || true
+	vagrant box remove box/initial/initial.$(PROVIDER).box || true
+	rm -f box/baseline/baseline.$(PROVIDER).box
+	rm -f box/solution/solution.$(PROVIDER).box
+	rm -f box/initial/initial.$(PROVIDER).box
 
 
 # Clean SSH config file
