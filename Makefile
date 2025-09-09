@@ -78,16 +78,16 @@ boxes/solution/solution.$(PROVIDER).box: boxes/solution/Vagrantfile boxes/initia
 build-boxes: boxes/baseline/baseline.$(PROVIDER).box boxes/solution/solution.$(PROVIDER).box
 
 # SSH config file for baseline experiment
-.ssh_config_baseline: experiments/baseline/Vagrantfile boxes/baseline/baseline.$(PROVIDER).box
+.ssh_config_baseline: experiment/baseline/Vagrantfile boxes/baseline/baseline.$(PROVIDER).box
 	ACTUAL_BASELINE_BOX_PATH="boxes/baseline/baseline.$(PROVIDER).box" \
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiments/baseline vagrant up
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiments/baseline vagrant ssh-config --host baseline > .ssh_config_baseline
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant up
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant ssh-config --host baseline > .ssh_config_baseline
 
 # SSH config file for solution experiment
-.ssh_config_solution: experiments/solution/Vagrantfile boxes/solution/solution.$(PROVIDER).box
+.ssh_config_solution: experiment/solution/Vagrantfile boxes/solution/solution.$(PROVIDER).box
 	ACTUAL_SOLUTION_BOX_PATH="boxes/solution/solution.$(PROVIDER).box" \
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiments/solution vagrant up
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiments/solution vagrant ssh-config --host solution > .ssh_config_solution
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant up
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant ssh-config --host solution > .ssh_config_solution
 
 # Rsync commands
 RSYNC_BASELINE = rsync -avH -e "ssh -F .ssh_config_baseline"
