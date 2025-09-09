@@ -32,7 +32,7 @@ $(CSV_FILE): $(PCAP_FILE)
 $(PCAP_FILE): $(TOOL_DIR)/exp.py producer consumer
 	mkdir -p results
 	# Run the experiment script using sudo in 'solution' mode.
-	sudo python3 $(TOOL_DIR)/exp.py --mode solution --interval 60
+	sudo EXPERIMENT_DIR=$(shell pwd) python3 $(TOOL_DIR)/exp.py
 
 # Recipe to compile the producer.
 producer: $(APP_DIR)/producer.cpp
