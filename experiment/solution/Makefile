@@ -7,7 +7,7 @@ CSV_FILE  := results/consumer_capture.csv
 CXX      := g++
 # CRITICAL: Add -DSOLUTION_ENABLED to activate solution-specific code via preprocessor macros.
 CXXFLAGS := -std=c++17 -g -O2 -DSOLUTION_ENABLED
-LDFLAGS  := $(shell pkg-config --cflags --libs libndn-cxx boost_system)
+LDFLAGS  := $(shell pkg-config --cflags --libs libndn-cxx)
 
 APP_DIR  := ../app
 TOOL_DIR := ../tool

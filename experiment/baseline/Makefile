@@ -6,7 +6,7 @@ CSV_FILE  := results/consumer_capture.csv
 
 CXX      := g++
 CXXFLAGS := -std=c++17 -g -O2
-LDFLAGS  := $(shell pkg-config --cflags --libs libndn-cxx boost_system)
+LDFLAGS  := $(shell pkg-config --cflags --libs libndn-cxx)
 
 APP_DIR  := ../app
 TOOL_DIR := ../tool
