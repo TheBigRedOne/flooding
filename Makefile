@@ -124,13 +124,20 @@ clean: clean-ssh-config
 	rm -rf results
 	cd paper && $(MAKE) clean
 
-deep-clean: clean
+deep-clean:
+	@echo "Error: You must specify a provider for deep-clean."
+	@echo "Usage: make deep-clean-kvm  (for KVM/libvirt)"
+	@echo "   or: make deep-clean-vb   (for VirtualBox)"
+	@exit 1
+
+# Renamed target for actual implementation
+_deep-clean_provider: clean
 	rm -rf $(BASELINE_FIGURE) $(SOLUTION_FIGURE) $(PAPER_PDF)
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant destroy -f
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant destroy -f
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/baseline vagrant destroy -f
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/solution vagrant destroy -f
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/initial  vagrant destroy -f
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant destroy -f || true
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant destroy -f || true
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/baseline vagrant destroy -f || true
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/solution vagrant destroy -f || true
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/initial  vagrant destroy -f || true
 	vagrant box remove box/baseline/baseline.$(PROVIDER).box || true
 	vagrant box remove box/solution/solution.$(PROVIDER).box || true
 	vagrant box remove box/initial/initial.$(PROVIDER).box || true
@@ -152,7 +159,15 @@ vb:
 	@echo "Setting provider to VirtualBox"
 	@$(MAKE) PROVIDER=virtualbox $(filter-out $@,$(MAKECMDGOALS))
 
-.PHONY: all build-boxes clean deep-clean clean-ssh-config kvm vb
+deep-clean-kvm:
+	@echo "Deep cleaning using libvirt (KVM) provider..."
+	@$(MAKE) PROVIDER=libvirt _deep-clean_provider
+
+deep-clean-vb:
+	@echo "Deep cleaning using VirtualBox provider..."
+	@$(MAKE) PROVIDER=virtualbox _deep-clean_provider
+
+.PHONY: all build-boxes clean deep-clean _deep-clean_provider clean-ssh-config kvm vb deep-clean-kvm deep-clean-vb
 
 .DELETE_ON_ERROR:
 
