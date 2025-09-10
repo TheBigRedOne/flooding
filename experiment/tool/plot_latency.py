@@ -2,38 +2,23 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import argparse
-import re
 import os
-
-def parse_info_column(infos):
-    """Parses the 'Info' column from tshark CSV output into types and names."""
-    types = []
-    names = []
-    # Regex to capture packet type (Interest, Data, Nack) and the rest as the name
-    info_regex = re.compile(r'^(Interest|Data|Nack)\s+(.+)$')
-    for s in infos:
-        match = info_regex.match(str(s))
-        if match:
-            types.append(match.group(1).lower())
-            names.append(match.group(2).strip())
-        else:
-            types.append(None)
-            names.append(None)
-    return types, names
+import re
 
 def parse_seq_num(name):
     """Parses sequence number from an NDN name."""
-    # Matches /v=123 or segment number /123
+    if name is None:
+        return None
     match = re.search(r'(?:/v=|\/)(\d+)$', name)
     if match:
         return int(match.group(1))
     return None
 
 def main():
-    parser = argparse.ArgumentParser(description="Analyze latency from NDN pcap CSV.")
+    parser = argparse.ArgumentParser(description="Analyze service disruption time from NDN pcap CSV.")
     parser.add_argument('--input', type=str, required=True, help='Input CSV file from tshark.')
-    parser.add_argument('--output-dir', type=str, default='.', help='Directory to save output plots.')
-    parser.add_argument('--handoff-times', type=str, help='Comma-separated list of handoff event times in seconds.')
+    parser.add_argument('--output-dir', type=str, default='.', help='Directory to save output files.')
+    parser.add_argument('--handoff-times', type=str, required=True, help='Comma-separated list of handoff event times in seconds.')
     args = parser.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
@@ -41,73 +26,78 @@ def main():
     
     try:
         df = pd.read_csv(args.input)
+        if df.empty:
+            raise pd.errors.EmptyDataError
     except (pd.errors.EmptyDataError, FileNotFoundError):
-        print(f"Warning: Input file {args.input} is empty or not found. Skipping.")
+        print(f"Warning: Input file {args.input} is empty or not found. Skipping analysis.")
+        # Create empty files to satisfy Makefile dependencies
+        open(os.path.join(args.output_dir, 'disruption_times.pdf'), 'w').close()
+        open(os.path.join(args.output_dir, 'disruption_metrics.txt'), 'w').close()
         return
 
-    # Create a clean DataFrame from the raw tshark output
-    types, names = parse_info_column(df['Info'])
-    clean_df = pd.DataFrame({
-        'time': pd.to_numeric(df['Time'], errors='coerce'),
-        'type': types,
-        'name': names
-    }).dropna()
+    df.rename(columns={'frame.time_epoch': 'time', 'ndn.type': 'type', 'ndn.name': 'name'}, inplace=True)
+    df = df.dropna()
 
-    clean_df['seq'] = clean_df['name'].apply(parse_seq_num)
-    clean_df = clean_df.dropna(subset=['seq'])
-    clean_df['seq'] = clean_df['seq'].astype(int)
+    # The tshark dissector outputs numeric types for ndn.type (5 for Interest, 6 for Data)
+    type_map = {5: 'interest', 6: 'data'}
+    df['type'] = pd.to_numeric(df['type'], errors='coerce').map(type_map)
+    df = df.dropna(subset=['type'])
 
-    interests = clean_df[clean_df['type'] == 'interest'].drop_duplicates(subset=['seq'], keep='first').set_index('seq')['time']
-    datas = clean_df[clean_df['type'] == 'data'].drop_duplicates(subset=['seq'], keep='first').set_index('seq')['time']
+    # Get experiment start time (time of the first packet)
+    start_time = df['time'].min()
     
-    rtt_df = pd.concat([interests, datas], axis=1, keys=['interest_time', 'data_time']).dropna()
-    rtt_df['rtt_ms'] = (rtt_df['data_time'] - rtt_df['interest_time']) * 1000.0
-    
-    rtt_df = rtt_df[(rtt_df['rtt_ms'] >= 0) & (rtt_df['rtt_ms'] < 10000)] # RTT < 10s
+    handoffs_relative = [float(t.strip()) for t in args.handoff_times.split(',')]
+    handoffs_absolute = [start_time + t for t in handoffs_relative]
 
-    if rtt_df.empty:
-        print("Warning: No matching Interest/Data pairs found. Cannot generate latency plots.")
+    all_data_times = np.sort(df[df['type'] == 'data']['time'].unique())
+    disruption_times = []
+
+    for t_h in handoffs_absolute:
+        # Find the timestamp of the last data packet received *before* or at the handoff time
+        data_before_indices = np.where(all_data_times <= t_h)[0]
+        if len(data_before_indices) == 0:
+            print(f"Warning: No data packets found before handoff at {t_h - start_time:.2f}s. Cannot calculate disruption.")
+            continue
+        last_data_time_before = all_data_times[data_before_indices[-1]]
+
+        # Find the timestamp of the first data packet received *after* the handoff time
+        data_after_indices = np.where(all_data_times > t_h)[0]
+        if len(data_after_indices) == 0:
+            print(f"Warning: No data packets found after handoff at {t_h - start_time:.2f}s. Cannot calculate disruption.")
+            continue
+        first_data_time_after = all_data_times[data_after_indices[0]]
+        
+        disruption = (first_data_time_after - last_data_time_before) * 1000  # in ms
+        disruption_times.append(disruption)
+
+    if not disruption_times:
+        print("Warning: Could not calculate any disruption times. No plots generated.")
+        open(os.path.join(args.output_dir, 'disruption_times.pdf'), 'w').close()
+        open(os.path.join(args.output_dir, 'disruption_metrics.txt'), 'w').close()
         return
 
-    start_time = clean_df['time'].min()
-    rtt_df['relative_time'] = rtt_df['data_time'] - start_time
-
-    # --- Plot Latency Time-Series ---
-    fig, ax = plt.subplots(figsize=(12, 6))
-    ax.plot(rtt_df['relative_time'], rtt_df['rtt_ms'], marker='o', linestyle='-', markersize=2, alpha=0.7, label='Segment RTT')
-    
-    if args.handoff_times:
-        handoffs = [float(t.strip()) for t in args.handoff_times.split(',')]
-        for i, t in enumerate(handoffs):
-            label = f'Handoff at {t}s' if i == 0 else None
-            ax.axvline(x=t, color='r', linestyle='--', label=label)
-
-    ax.set_xlabel('Time (seconds)')
-    ax.set_ylabel('End-to-End Latency (ms)')
-    ax.set_title('Segment Latency Over Time')
-    ax.legend()
-    ax.set_yscale('log')
-    ax.set_ylim(bottom=1)
-    fig.tight_layout()
-    plt.savefig(os.path.join(args.output_dir, 'latency_timeseries.pdf'))
-    plt.close(fig)
-
-    # --- Plot Latency CDF ---
+    # --- (R1) Service disruption time (K1) ---
+    # Bar plot of per-handoff disruption times
     fig, ax = plt.subplots(figsize=(10, 6))
-    sorted_rtt = np.sort(rtt_df['rtt_ms'])
-    yvals = np.arange(1, len(sorted_rtt) + 1) / len(sorted_rtt)
-    ax.plot(sorted_rtt, yvals, marker='.', markersize=4, linestyle='none', label='RTT CDF')
-    
-    ax.set_xlabel('End-to-End Latency (ms)')
-    ax.set_ylabel('Cumulative Probability')
-    ax.set_title('Latency CDF')
-    ax.legend()
-    ax.set_xscale('log')
-    ax.grid(True, which="both", ls="--")
+    handoff_labels = [f'Handoff {i+1}' for i in range(len(disruption_times))]
+    ax.bar(handoff_labels, disruption_times, color='skyblue')
+    ax.set_ylabel('Service Disruption Time (ms)')
+    ax.set_title('Per-Handoff Service Disruption Time')
+    ax.grid(axis='y', linestyle='--', alpha=0.7)
     fig.tight_layout()
-    plt.savefig(os.path.join(args.output_dir, 'latency_cdf.pdf'))
+    plt.savefig(os.path.join(args.output_dir, 'disruption_times.pdf'))
     plt.close(fig)
-    print(f"Generated latency plots in {args.output_dir}")
+
+    # Median and 90th percentile
+    median_disruption = np.median(disruption_times)
+    p90_disruption = np.percentile(disruption_times, 90)
+
+    metrics_file = os.path.join(args.output_dir, 'disruption_metrics.txt')
+    with open(metrics_file, 'w') as f:
+        f.write(f"Median Disruption Time: {median_disruption:.2f} ms\n")
+        f.write(f"90th Percentile Disruption Time: {p90_disruption:.2f} ms\n")
+    
+    print(f"Generated R1 (Service Disruption) plots and metrics in {args.output_dir}")
 
 if __name__ == '__main__':
     main()

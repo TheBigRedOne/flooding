@@ -17,6 +17,9 @@ $INSTALL_BASE = <<EOF
   sudo apt-get install -y tcpdump
   sudo apt-get install -y tshark
 
+  # --- Install Python Data Science Libraries ---
+  sudo pip3 install pandas matplotlib "numpy<2.0"
+
   # --- Install NDN Wireshark Dissector ---
   # Create a standard directory for the dissector
   sudo mkdir -p /usr/local/share/ndn-dissect-wireshark

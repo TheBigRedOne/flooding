@@ -84,14 +84,15 @@ if __name__ == '__main__':
     consumer = ndn.net['consumer']
 
     # 在consumer节点上启动tcpdump监听 enable tcpdump listening on consumer
-    consumer_pcap = os.path.join(experiment_dir, "consumer_capture.pcap")
-    consumer.cmd(f"tcpdump -i consumer-eth0 -w {consumer_pcap} &")
+    consumer_pcap = os.path.join(experiment_dir, "results", "consumer_capture.pcap")
+    tcpdump_log = os.path.join(experiment_dir, "results", "tcpdump.log")
+    consumer.cmd(f"tcpdump -i consumer-eth0 -w {consumer_pcap} &> {tcpdump_log} &")
 
     # 启动生产者和消费者应用程序 enbale applications
     producer_exec = os.path.join(experiment_dir, "producer")
     consumer_exec = os.path.join(experiment_dir, "consumer")
-    producer_log = os.path.join(experiment_dir, "producer.log")
-    consumer_log = os.path.join(experiment_dir, "consumer.log")
+    producer_log = os.path.join(experiment_dir, "results", "producer.log")
+    consumer_log = os.path.join(experiment_dir, "results", "consumer.log")
 
     producer.cmd(f"{producer_exec} &> {producer_log} &")
     consumer.cmd(f"{consumer_exec} &> {consumer_log} &")

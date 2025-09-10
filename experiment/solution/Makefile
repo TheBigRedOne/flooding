@@ -15,14 +15,18 @@ TOOL_DIR := ../tool
 # --- Targets ---
 
 # The main target to run the full experiment and get all result files.
-all: results/latency_timeseries.pdf results/loss_ratio.txt results/overhead_interests.txt
+all: results/disruption_times.pdf results/disruption_metrics.txt results/loss_ratio.txt results/overhead_interests.txt
 
 # The final plots/data depend on the CSV file, which in turn depends on the PCAP file.
-results/latency_timeseries.pdf results/loss_ratio.txt results/overhead_interests.txt: $(CSV_FILE)
-	# Generate plots and metrics from the CSV data
-	python3 $(TOOL_DIR)/plot_latency.py --input $(CSV_FILE) --output-dir results --handoff-times "60, 120"
-	python3 $(TOOL_DIR)/plot_loss.py --input $(CSV_FILE) --output-dir results
-	python3 $(TOOL_DIR)/plot_overhead.py --input $(CSV_FILE) --output-dir results --handoff-times "60, 120"
+results/disruption_times.pdf results/disruption_metrics.txt: $(CSV_FILE)
+	# Generate plots and metrics from the CSV data for R1
+	python3 $(TOOL_DIR)/plot_latency.py --input $(CSV_FILE) --output-dir results --handoff-times "120, 240"
+
+results/loss_ratio.txt: $(CSV_FILE)
+	python3 $(TOOL_DIR)/plot_loss.py --input $(CSV_FILE) --output-dir results --handoff-times "120, 240"
+
+results/overhead_interests.txt: $(CSV_FILE)
+	python3 $(TOOL_DIR)/plot_overhead.py --input $(CSV_FILE) --output-dir results --handoff-times "120, 240"
 
 # Convert PCAP to CSV using tshark
 $(CSV_FILE): $(PCAP_FILE)
