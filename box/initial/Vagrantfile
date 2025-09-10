@@ -15,7 +15,12 @@ $INSTALL_BASE = <<EOF
   sudo apt-get install -y libpcap-dev 
   sudo apt-get install -y libsystemd-dev
   sudo apt-get install -y tcpdump
-  sudo apt-get install -y tshark
+  
+  # --- Non-interactive tshark installation ---
+  # Pre-answer the wireshark-common configuration question to avoid interactive prompts
+  echo "wireshark-common wireshark-common/install-setuid boolean true" | sudo debconf-set-selections
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y tshark
+
   sudo apt-get install -y python3-venv
 
   # --- Install NDN Wireshark Dissector ---
