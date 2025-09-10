@@ -1,0 +1,10 @@
+name: Docs
+on:
+  push:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  man:
+    uses: named-data/actions/.github/workflows/docs-man.yml@v1

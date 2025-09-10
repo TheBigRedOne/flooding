@@ -15,6 +15,21 @@ $INSTALL_BASE = <<EOF
   sudo apt-get install -y libpcap-dev 
   sudo apt-get install -y libsystemd-dev
   sudo apt-get install -y tcpdump
+  sudo apt-get install -y tshark
+
+  # --- Install NDN Wireshark Dissector ---
+  # Create a standard directory for the dissector
+  sudo mkdir -p /usr/local/share/ndn-dissect-wireshark
+  # Copy the dissector from the synced folder to the standard location
+  sudo cp /vagrant/ndn-tools/tools/dissect-wireshark/ndn.lua /usr/local/share/ndn-dissect-wireshark/
+  # Find the global wireshark init.lua and append the dofile command to load our dissector
+  INIT_LUA_PATH=$(find /usr/share/wireshark -name "init.lua" | head -n 1)
+  if [ -f "$INIT_LUA_PATH" ]; then
+    echo 'dofile("/usr/local/share/ndn-dissect-wireshark/ndn.lua")' | sudo tee -a $INIT_LUA_PATH
+  else
+    echo "Wireshark init.lua not found, dissector not installed."
+  fi
+  # --- End Dissector Install ---
 
   # Set environment variables in .profile
   echo "export PATH=\$PATH:/usr/local/bin" >> /home/vagrant/.profile
@@ -25,6 +40,9 @@ EOF
 Vagrant.configure("2") do |config|
   config.vm.box = "bento/ubuntu-22.04"
   config.vm.box_version = "202309.08.0"
+
+  # Sync the project root directory to /vagrant in the VM
+  config.vm.synced_folder ".", "/vagrant"
 
   config.vm.network "private_network", type: "dhcp"
 
