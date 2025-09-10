@@ -16,9 +16,7 @@ $INSTALL_BASE = <<EOF
   sudo apt-get install -y libsystemd-dev
   sudo apt-get install -y tcpdump
   sudo apt-get install -y tshark
-
-  # --- Install Python Data Science Libraries ---
-  sudo pip3 install pandas matplotlib "numpy<2.0"
+  sudo apt-get install -y python3-venv
 
   # --- Install NDN Wireshark Dissector ---
   # Create a standard directory for the dissector
