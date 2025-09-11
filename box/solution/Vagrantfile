@@ -1,7 +1,7 @@
 # Solution Box Vagrantfile
 
 $INSTALL_BASE = <<EOF
-  export DEBIAN_FRONTEND=noninteractive
+  set -e -u -o pipefail
 
   # Clone and install mini-ndn
   git clone https://github.com/TheBigRedOne/mini-ndn.git /home/vagrant/mini-ndn
@@ -14,7 +14,22 @@ $INSTALL_BASE = <<EOF
   --nlsr=https://github.com/named-data/NLSR.git@NLSR-24.08 \
   --tools=https://github.com/named-data/ndn-tools.git@ndn-tools-24.07 \
   --traffic=https://github.com/named-data/ndn-traffic-generator.git@9bec15ac63ae2ac225c4e514daa9fc1366889d62 \
-  --infoedit=https://github.com/NDN-Routing/infoedit.git@cecfe583f5d2df974f5cbd50996f91b9d321be99
+  --infoedit=https://github.com/NDN-Routing/infoedit.git@cecfe583f5d2df974f5cbd50996f91b9d321be99 \
+  --jobs=4
+
+  # --- Install NDN Wireshark Dissector ---
+  # Create a standard directory for the dissector
+  sudo mkdir -p /usr/local/share/ndn-dissect-wireshark
+  # Copy the dissector from the synced folder to the standard location
+  sudo cp /vagrant/ndn-tools/tools/dissect-wireshark/ndn.lua /usr/local/share/ndn-dissect-wireshark/
+  # Find the global wireshark init.lua and append the dofile command to load our dissector
+  INIT_LUA_PATH=$(find /usr/share/wireshark -name "init.lua" | head -n 1)
+  if [ -f "$INIT_LUA_PATH" ]; then
+    echo 'dofile("/usr/local/share/ndn-dissect-wireshark/ndn.lua")' | sudo tee -a $INIT_LUA_PATH
+  else
+    echo "Wireshark init.lua not found, dissector not installed."
+  fi
+  # --- End Dissector Install ---
 
   # Set environment variables in .profile
   echo "export PATH=\$PATH:/usr/local/bin" >> /home/vagrant/.profile
@@ -28,6 +43,7 @@ Vagrant.configure("2") do |config|
 
   config.vm.network "private_network", type: "dhcp"
   
+  # The --jobs= parameter to ./install.sh (above) should match common_cpus
   common_cpus   = 4
   common_memory = 4096
 

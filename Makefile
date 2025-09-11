@@ -77,7 +77,7 @@ paper/figures:
 # Boxes check
 box/initial/initial.$(PROVIDER).box: box/initial/Vagrantfile
 	-rm -f $@
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/initial vagrant up
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/initial vagrant up --provision
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/initial vagrant package --output $@
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/initial vagrant halt
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/initial vagrant destroy -f
@@ -85,7 +85,7 @@ box/initial/initial.$(PROVIDER).box: box/initial/Vagrantfile
 box/baseline/baseline.$(PROVIDER).box: box/baseline/Vagrantfile box/initial/initial.$(PROVIDER).box
 	-rm -f $@
 	ACTUAL_INITIAL_BOX_PATH="box/initial/initial.$(PROVIDER).box" \
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/baseline vagrant up
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/baseline vagrant up --provision
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/baseline vagrant package --output $@
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/baseline vagrant halt
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/baseline vagrant destroy -f
@@ -93,7 +93,7 @@ box/baseline/baseline.$(PROVIDER).box: box/baseline/Vagrantfile box/initial/init
 box/solution/solution.$(PROVIDER).box: box/solution/Vagrantfile box/initial/initial.$(PROVIDER).box
 	-rm -f $@
 	ACTUAL_INITIAL_BOX_PATH="box/initial/initial.$(PROVIDER).box" \
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/solution vagrant up
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/solution vagrant up --provision
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/solution vagrant package --output $@
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/solution vagrant halt
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/solution vagrant destroy -f
