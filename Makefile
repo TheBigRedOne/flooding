@@ -3,13 +3,13 @@ PROVIDER ?= virtualbox
 # Master Control Makefile
 
 # Results from experiments
-BASELINE_LATENCY_PDF := results/baseline/latency_timeseries.pdf
-SOLUTION_LATENCY_PDF := results/solution/latency_timeseries.pdf
+BASELINE_LATENCY_PDF := results/baseline/disruption_times.pdf
+SOLUTION_LATENCY_PDF := results/solution/disruption_times.pdf
 
 # Paper dependencies and output
 MAIN_TEX := paper/OptoFlood.tex
-BASELINE_FIGURE := paper/figures/baseline_latency.pdf
-SOLUTION_FIGURE := paper/figures/solution_latency.pdf
+BASELINE_FIGURE := paper/figures/baseline_disruption.pdf
+SOLUTION_FIGURE := paper/figures/solution_disruption.pdf
 PAPER_PDF := paper/OptoFlood.pdf
 STATIC_FIGURES := paper/figures/NLSR_Work_Flow.png \
                   paper/figures/Producer_Mobility_Problems.png \
