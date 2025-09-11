@@ -96,14 +96,14 @@ RSYNC_SOLUTION = rsync -avH -e "ssh -F .ssh_config_solution"
 # Baseline experiment results
 $(BASELINE_LATENCY_PDF): $(APP_SRCS) $(BASELINE_SRCS) $(TOOLS_SRCS) .ssh_config_baseline | results/baseline
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant up
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant ssh -c 'cd /home/vagrant/mini-ndn/flooding/experiment/baseline && make all'
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant ssh -c 'cd /home/vagrant/mini-ndn/flooding/experiment/baseline && make clean && make all'
 	$(RSYNC_BASELINE) baseline:/home/vagrant/mini-ndn/flooding/experiment/baseline/results/ results/baseline
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant halt -f || true
 
 # Solution experiment results
 $(SOLUTION_LATENCY_PDF): $(APP_SRCS) $(SOLUTION_SRCS) $(TOOLS_SRCS) .ssh_config_solution | results/solution
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant up
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant ssh -c 'cd /home/vagrant/mini-ndn/flooding/experiment/solution && make all'
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant ssh -c 'cd /home/vagrant/mini-ndn/flooding/experiment/solution && make clean && make all'
 	$(RSYNC_SOLUTION) solution:/home/vagrant/mini-ndn/flooding/experiment/solution/results/ results/solution;
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant halt -f || true
 
