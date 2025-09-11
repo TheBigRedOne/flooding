@@ -21,13 +21,24 @@ SOLUTION_OVERHEAD_PDF := results/solution/overhead_timeseries.pdf
 # --- Paper Figure Dependencies ---
 # These variables link the experiment outputs to the figures in the paper.
 MAIN_TEX := paper/OptoFlood.tex
-BASELINE_FIGURE := paper/figures/baseline_disruption.pdf
-SOLUTION_FIGURE := paper/figures/solution_disruption.pdf
+
+# Define final figure paths for the paper
+BASELINE_DISRUPTION_FIGURE := paper/figures/baseline_disruption.pdf
+SOLUTION_DISRUPTION_FIGURE := paper/figures/solution_disruption.pdf
+BASELINE_LOSS_FIGURE       := paper/figures/baseline_loss.pdf
+SOLUTION_LOSS_FIGURE       := paper/figures/solution_loss.pdf
+BASELINE_OVERHEAD_FIGURE   := paper/figures/baseline_overhead.pdf
+SOLUTION_OVERHEAD_FIGURE   := paper/figures/solution_overhead.pdf
+
+# Group all figures needed for the paper
+BASELINE_PAPER_FIGURES := $(BASELINE_DISRUPTION_FIGURE) $(BASELINE_LOSS_FIGURE) $(BASELINE_OVERHEAD_FIGURE)
+SOLUTION_PAPER_FIGURES := $(SOLUTION_DISRUPTION_FIGURE) $(SOLUTION_LOSS_FIGURE) $(SOLUTION_OVERHEAD_FIGURE)
+
 PAPER_PDF := paper/OptoFlood.pdf
 STATIC_FIGURES := paper/figures/NLSR_Work_Flow.png \
                   paper/figures/Producer_Mobility_Problems.png \
                   paper/figures/Topology.png
-ALL_FIGURES := $(STATIC_FIGURES) $(BASELINE_FIGURE) $(SOLUTION_FIGURE)
+ALL_FIGURES := $(STATIC_FIGURES) $(BASELINE_PAPER_FIGURES) $(SOLUTION_PAPER_FIGURES)
 
 # Common application source files
 APP_SRCS := experiment/app/producer.cpp \
@@ -135,15 +146,26 @@ $(SOLUTION_RESULTS): $(APP_SRCS) $(SOLUTION_SRCS) $(TOOLS_SRCS) .ssh_config_solu
 	$(RSYNC_SOLUTION) solution:/home/vagrant/mini-ndn/flooding/experiment/solution/results/ results/solution;
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant halt -f || true
 
-# Copy baseline figure to paper figures directory
-# This target depends on ALL baseline results being present.
-$(BASELINE_FIGURE): $(BASELINE_RESULTS) | paper/figures
+# --- Copy Results to Paper Directory ---
+# These rules copy the final PDF results into the paper's figures directory.
+
+$(BASELINE_DISRUPTION_FIGURE): $(BASELINE_RESULTS) | paper/figures
 	cp $(BASELINE_DISRUPTION_PDF) $@
 
-# Copy solution figure to paper figures directory
-# This target depends on ALL solution results being present.
-$(SOLUTION_FIGURE): $(SOLUTION_RESULTS) | paper/figures
+$(BASELINE_LOSS_FIGURE): $(BASELINE_RESULTS) | paper/figures
+	cp $(BASELINE_LOSS_PDF) $@
+
+$(BASELINE_OVERHEAD_FIGURE): $(BASELINE_RESULTS) | paper/figures
+	cp $(BASELINE_OVERHEAD_PDF) $@
+
+$(SOLUTION_DISRUPTION_FIGURE): $(SOLUTION_RESULTS) | paper/figures
 	cp $(SOLUTION_DISRUPTION_PDF) $@
+
+$(SOLUTION_LOSS_FIGURE): $(SOLUTION_RESULTS) | paper/figures
+	cp $(SOLUTION_LOSS_PDF) $@
+
+$(SOLUTION_OVERHEAD_FIGURE): $(SOLUTION_RESULTS) | paper/figures
+	cp $(SOLUTION_OVERHEAD_PDF) $@
 
 # Generate the paper
 $(PAPER_PDF): $(MAIN_TEX) $(ALL_FIGURES) | paper
