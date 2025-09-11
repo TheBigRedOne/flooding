@@ -13,7 +13,7 @@ $INSTALL_BASE = <<EOF
   # Create a standard directory for the dissector
   sudo mkdir -p /usr/local/share/ndn-dissect-wireshark
   # Copy the dissector from the synced folder to the standard location
-  sudo cp /vagrant/ndn-tools/tools/dissect-wireshark/ndn.lua /usr/local/share/ndn-dissect-wireshark/
+  sudo cp /home/vagrant/mini-ndn/dl/ndn-tools/tools/dissect-wireshark/ndn.lua /usr/local/share/ndn-dissect-wireshark/
   # Find the global wireshark init.lua and append the dofile command to load our dissector
   INIT_LUA_PATH=$(find /usr/share/wireshark -name "init.lua" | head -n 1)
   if [ -f "$INIT_LUA_PATH" ]; then
