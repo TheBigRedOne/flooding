@@ -42,7 +42,7 @@ Vagrant.configure("2") do |config|
   config.vm.box_version = "202309.08.0"
 
   # Sync the project root directory (../../ from this file's location) to /vagrant in the VM
-  config.vm.synced_folder "../../", "/vagrant", type: "virtualbox"
+  config.vm.synced_folder "../../", "/vagrant", type: "rsync"
 
   config.vm.network "private_network", type: "dhcp"
 
@@ -51,6 +51,7 @@ Vagrant.configure("2") do |config|
 
   config.vm.provider :virtualbox do |vb|
     vb.name = "initial-virtualbox"
+    config.vm.synced_folder "../../", "/vagrant", type: "virtualbox"
     vb.cpus = common_cpus
     vb.memory = common_memory
     vb.customize ["modifyvm", :id, "--vram", "256"]
