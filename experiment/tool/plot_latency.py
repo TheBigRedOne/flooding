@@ -5,15 +5,6 @@ import argparse
 import os
 import re
 
-def parse_seq_num(name):
-    """Parses sequence number from an NDN name."""
-    if name is None:
-        return None
-    match = re.search(r'(?:/v=|\/)(\d+)$', name)
-    if match:
-        return int(match.group(1))
-    return None
-
 def main():
     parser = argparse.ArgumentParser(description="Analyze service disruption time from NDN pcap CSV.")
     parser.add_argument('--input', type=str, required=True, help='Input CSV file from tshark.')
@@ -30,19 +21,19 @@ def main():
             raise pd.errors.EmptyDataError
     except (pd.errors.EmptyDataError, FileNotFoundError):
         print(f"Warning: Input file {args.input} is empty or not found. Skipping analysis.")
-        # Create empty files to satisfy Makefile dependencies
         open(os.path.join(args.output_dir, 'disruption_times.pdf'), 'w').close()
         open(os.path.join(args.output_dir, 'disruption_metrics.txt'), 'w').close()
         return
 
     df.rename(columns={'frame.time_epoch': 'time', 'ndn.type': 'type', 'ndn.name': 'name'}, inplace=True)
-    df = df.dropna()
-
-    # The tshark dissector outputs numeric types for ndn.type (5 for Interest, 6 for Data)
-    type_map = {5: 'interest', 6: 'data'}
-    df['type'] = pd.to_numeric(df['type'], errors='coerce').map(type_map)
-    df = df.dropna(subset=['type'])
-
+    df = df.dropna().copy()
+    
+    # Filter out NLSR sync packets, which are not part of the experiment data
+    df = df[~df['name'].str.startswith('/localhop/ndn/nlsr/sync')]
+    
+    # Convert type to lowercase string
+    df['type'] = df['type'].str.lower()
+    
     # Get experiment start time (time of the first packet)
     start_time = df['time'].min()
     

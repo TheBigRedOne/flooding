@@ -39,7 +39,7 @@ results/overhead_interests.txt: $(CSV_FILE) | $(VENV_DIR)
 
 # Convert PCAP to CSV using tshark
 $(CSV_FILE): $(PCAP_FILE)
-	tshark -r $< -T fields -e frame.time_epoch -e ndn.type -e ndn.name -E separator=, -E header=y > $@
+	tshark -r $< -T fields -e frame.time_epoch -e ndn.type -e ndn.name -E separator=, -E header=y -E quote=d > $@
 
 # The PCAP result depends on the experiment script and the compiled apps.
 $(PCAP_FILE): $(TOOL_DIR)/exp.py producer consumer

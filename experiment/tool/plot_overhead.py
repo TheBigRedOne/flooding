@@ -1,19 +1,7 @@
 import pandas as pd
 import argparse
-import re
 import os
-
-def parse_info_column(infos):
-    """Parses the 'Info' column from tshark CSV output into types."""
-    types = []
-    info_regex = re.compile(r'^(Interest|Data|Nack)')
-    for s in infos:
-        match = info_regex.match(str(s))
-        if match:
-            types.append(match.group(1).lower())
-        else:
-            types.append(None)
-    return types
+import re
 
 def main():
     parser = argparse.ArgumentParser(description="Analyze control overhead from NDN pcap CSV.")
@@ -27,18 +15,26 @@ def main():
 
     try:
         df = pd.read_csv(args.input)
+        if df.empty:
+            raise pd.errors.EmptyDataError
     except (pd.errors.EmptyDataError, FileNotFoundError):
         print(f"Warning: Input file {args.input} is empty or not found. Skipping.")
+        # Create empty files to satisfy Makefile
+        open(os.path.join(args.output_dir, 'overhead_interests.txt'), 'w').close()
+        open(os.path.join(args.output_dir, 'overhead_nacks.txt'), 'w').close()
         return
         
-    types = parse_info_column(df['Info'])
-    clean_df = pd.DataFrame({
-        'time': pd.to_numeric(df['Time'], errors='coerce'),
-        'type': types
-    }).dropna()
+    df.rename(columns={'frame.time_epoch': 'time', 'ndn.type': 'type', 'ndn.name': 'name'}, inplace=True)
+    df = df.dropna().copy()
     
-    start_time = clean_df['time'].min()
-    clean_df['relative_time'] = clean_df['time'] - start_time
+    # Filter out NLSR sync packets, which are not part of the experiment data
+    df = df[~df['name'].str.startswith('/localhop/ndn/nlsr/sync')]
+    
+    # Convert type to lowercase string
+    df['type'] = df['type'].str.lower()
+    
+    start_time = df['time'].min()
+    df['relative_time'] = df['time'] - start_time
 
     interest_count = 0
     nack_count = 0
@@ -49,7 +45,7 @@ def main():
             window_start = t
             window_end = t + args.window
             
-            window_df = clean_df[(clean_df['relative_time'] >= window_start) & (clean_df['relative_time'] < window_end)]
+            window_df = df[(df['relative_time'] >= window_start) & (df['relative_time'] < window_end)]
             
             interest_count += (window_df['type'] == 'interest').sum()
             nack_count += (window_df['type'] == 'nack').sum()
