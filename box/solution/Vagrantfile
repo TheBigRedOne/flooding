@@ -1,7 +1,7 @@
 # Solution Box Vagrantfile
 
 $INSTALL_BASE = <<EOF
-  export DEBIAN_FRONTEND=noninteractive
+  set -e -u -o pipefail
 
   # Clone and install mini-ndn
   git clone https://github.com/TheBigRedOne/mini-ndn.git /home/vagrant/mini-ndn
