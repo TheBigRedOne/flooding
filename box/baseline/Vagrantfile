@@ -9,6 +9,20 @@ $INSTALL_BASE = <<EOF
   git checkout 73add71f860979426aef63136bf78ed525862e5c
   ./install.sh -y --release=2024-08
 
+  # --- Install NDN Wireshark Dissector ---
+  # Create a standard directory for the dissector
+  sudo mkdir -p /usr/local/share/ndn-dissect-wireshark
+  # Copy the dissector from the synced folder to the standard location
+  sudo cp /vagrant/ndn-tools/tools/dissect-wireshark/ndn.lua /usr/local/share/ndn-dissect-wireshark/
+  # Find the global wireshark init.lua and append the dofile command to load our dissector
+  INIT_LUA_PATH=$(find /usr/share/wireshark -name "init.lua" | head -n 1)
+  if [ -f "$INIT_LUA_PATH" ]; then
+    echo 'dofile("/usr/local/share/ndn-dissect-wireshark/ndn.lua")' | sudo tee -a $INIT_LUA_PATH
+  else
+    echo "Wireshark init.lua not found, dissector not installed."
+  fi
+  # --- End Dissector Install ---
+
   # Set environment variables in .profile
   echo "export PATH=\$PATH:/usr/local/bin" >> /home/vagrant/.profile
   echo "export LD_LIBRARY_PATH=\$LD_LIBRARY_PATH:/usr/local/lib64/" >> /home/vagrant/.profile
