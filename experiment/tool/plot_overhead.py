@@ -2,16 +2,19 @@ import pandas as pd
 import argparse
 import os
 import re
+import matplotlib.pyplot as plt
+import numpy as np
 
 def main():
-    parser = argparse.ArgumentParser(description="Analyze control overhead from NDN pcap CSV.")
+    parser = argparse.ArgumentParser(description="Analyze and plot flooding overhead from NDN pcap CSV.")
     parser.add_argument('--input', type=str, required=True, help='Input CSV file from tshark.')
-    parser.add_argument('--output-dir', type=str, default='.', help='Directory to save output plots.')
+    parser.add_argument('--output-dir', type=str, default='.', help='Directory to save output files.')
     parser.add_argument('--handoff-times', type=str, help='Comma-separated list of handoff event times in seconds.')
-    parser.add_argument('--window', type=int, default=5, help='Time window in seconds after a handoff to analyze.')
+    parser.add_argument('--window', type=int, default=10, help='Time window in seconds after a handoff for analysis.')
     args = parser.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
+    plt.style.use('seaborn-v0_8-whitegrid')
 
     try:
         df = pd.read_csv(args.input)
@@ -19,51 +22,63 @@ def main():
             raise pd.errors.EmptyDataError
     except (pd.errors.EmptyDataError, FileNotFoundError):
         print(f"Warning: Input file {args.input} is empty or not found. Skipping.")
-        # Create empty files to satisfy Makefile
-        open(os.path.join(args.output_dir, 'overhead_interests.txt'), 'w').close()
-        open(os.path.join(args.output_dir, 'overhead_nacks.txt'), 'w').close()
+        open(os.path.join(args.output_dir, 'overhead_timeseries.pdf'), 'w').close()
+        open(os.path.join(args.output_dir, 'overhead_total.txt'), 'w').close()
         return
         
     df.rename(columns={'frame.time_epoch': 'time', 'ndn.type': 'type', 'ndn.name': 'name'}, inplace=True)
     df = df.dropna().copy()
     
-    # Filter out NLSR sync packets, which are not part of the experiment data
-    df = df[~df['name'].str.startswith('/localhop/ndn/nlsr/sync')]
-    
-    # Convert type to lowercase string
+    # We are interested in ALL interests for overhead, including NLSR.
+    # But we should still filter for application-specific interests if needed.
+    # For now, let's assume any Interest is part of the overhead calculation.
     df['type'] = df['type'].str.lower()
+    interests_df = df[df['type'] == 'interest'].copy()
     
-    start_time = df['time'].min()
-    df['relative_time'] = df['time'] - start_time
+    if interests_df.empty:
+        print("Warning: No interest packets found. Cannot generate overhead plot.")
+        open(os.path.join(args.output_dir, 'overhead_timeseries.pdf'), 'w').close()
+        open(os.path.join(args.output_dir, 'overhead_total.txt'), 'w').close()
+        return
 
-    interest_count = 0
-    nack_count = 0
+    start_time = df['time'].min()
+    interests_df['relative_time'] = interests_df['time'] - start_time
+    
+    # --- (R3) Flooding overhead and scope (K3) ---
+    # Convert time to datetime objects for resampling
+    interests_df['timestamp'] = pd.to_datetime(interests_df['relative_time'], unit='s')
+    interests_df.set_index('timestamp', inplace=True)
+    
+    # Resample to get packets per second
+    packets_per_second = interests_df.resample('1S').size()
+    
+    # Time series plot of flooded packets per second
+    fig, ax = plt.subplots(figsize=(12, 6))
+    packets_per_second.plot(ax=ax, label='Interests per Second', color='crimson')
+    
+    total_overhead = len(interests_df)
 
     if args.handoff_times:
         handoffs = [float(t.strip()) for t in args.handoff_times.split(',')]
-        for t in handoffs:
-            window_start = t
-            window_end = t + args.window
-            
-            window_df = df[(df['relative_time'] >= window_start) & (df['relative_time'] < window_end)]
-            
-            interest_count += (window_df['type'] == 'interest').sum()
-            nack_count += (window_df['type'] == 'nack').sum()
-    else:
-        print("Warning: No handoff times provided. Cannot calculate overhead.")
+        for i, t in enumerate(handoffs):
+            label = f'Handoff Window' if i == 0 else None
+            ax.axvspan(t, t + args.window, color='orange', alpha=0.3, label=label)
+    
+    ax.set_xlabel('Time (seconds)')
+    ax.set_ylabel('Flooded Packets per Second')
+    ax.set_title('Flooding Overhead Over Time')
+    ax.legend()
+    ax.grid(True, which="both", ls="--")
+    fig.tight_layout()
+    plt.savefig(os.path.join(args.output_dir, 'overhead_timeseries.pdf'))
+    plt.close(fig)
 
-    interest_output_file = os.path.join(args.output_dir, 'overhead_interests.txt')
-    with open(interest_output_file, 'w') as f:
-        f.write(str(interest_count))
-        
-    nack_output_file = os.path.join(args.output_dir, 'overhead_nacks.txt')
-    with open(nack_output_file, 'w') as f:
-        f.write(str(nack_count))
+    # Save the total overhead count to a text file
+    total_output_file = os.path.join(args.output_dir, 'overhead_total.txt')
+    with open(total_output_file, 'w') as f:
+        f.write(f"Total Flooded Interests: {total_overhead}\n")
 
-    print(f"Control Overhead within {args.window}s windows after handoffs:")
-    print(f"  - Interests: {interest_count}")
-    print(f"  - Nacks: {nack_count}")
-    print(f"Results saved to {args.output_dir}")
+    print(f"Generated R3 (Flooding Overhead) plot and metrics in {args.output_dir}")
 
 if __name__ == '__main__':
     main()

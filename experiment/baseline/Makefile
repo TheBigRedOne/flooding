@@ -16,7 +16,7 @@ PYTHON   := $(VENV_DIR)/bin/python3
 # --- Targets ---
 
 # The main target to run the full experiment and get all result files.
-all: results/disruption_times.pdf results/disruption_metrics.txt results/loss_ratio.txt results/loss_comparison.pdf results/overhead_interests.txt
+all: results/disruption_times.pdf results/disruption_metrics.txt results/loss_ratio.txt results/loss_comparison.pdf results/overhead_timeseries.pdf results/overhead_total.txt
 
 # Define a target for the virtual environment setup.
 # It checks if the requirements have changed before reinstalling.
@@ -33,7 +33,7 @@ results/disruption_times.pdf results/disruption_metrics.txt: $(CSV_FILE) | $(VEN
 results/loss_ratio.txt results/loss_comparison.pdf: $(CSV_FILE) | $(VENV_DIR)
 	$(PYTHON) $(TOOL_DIR)/plot_loss.py --input $(CSV_FILE) --output-dir results --handoff-times "120, 240"
 
-results/overhead_interests.txt: $(CSV_FILE) | $(VENV_DIR)
+results/overhead_timeseries.pdf results/overhead_total.txt: $(CSV_FILE) | $(VENV_DIR)
 	$(PYTHON) $(TOOL_DIR)/plot_overhead.py --input $(CSV_FILE) --output-dir results --handoff-times "120, 240"
 
 
