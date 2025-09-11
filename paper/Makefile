@@ -10,16 +10,9 @@ BIN_DIR := bin
 LATEXMK := latexmk
 LATEXMK_FLAGS := -pdf -interaction=nonstopmode -output-directory=$(BIN_DIR)
 
-# Generated Figures
-DYNAMIC_FIGURES := $(FIGURES_DIR)/baseline_throughput.pdf \
-                   $(FIGURES_DIR)/solution_throughput.pdf
-
-# Static Figures
-STATIC_FIGURES := $(FIGURES_DIR)/NLSR_Work_Flow.png \
-                  $(FIGURES_DIR)/Producer_Mobility_Problems.png \
-                  $(FIGURES_DIR)/Topology.png
-
 # All Figures
+STATIC_FIGURES := $(wildcard $(FIGURES_DIR)/*.png)
+DYNAMIC_FIGURES := $(wildcard $(FIGURES_DIR)/*.pdf)
 ALL_FIGURES := $(STATIC_FIGURES) $(DYNAMIC_FIGURES)
 
 # Main Target
@@ -39,11 +32,12 @@ $(OUTPUT_PDF): $(MAIN_TEX) $(ALL_FIGURES) | $(BIN_DIR)
 clean:
 	@echo "Cleaning up intermediate files..."
 	$(LATEXMK) -c -output-directory=$(BIN_DIR)
+	rm -f $(OUTPUT_PDF)
 
 # Cleanup all generated files, but keep static figures
 deep-clean: clean
-	@echo "Removing all generated dynamic files..."
-	rm -f $(DYNAMIC_FIGURES) $(BIN_DIR)/* $(OUTPUT_PDF)
+	@echo "Removing all generated dynamic figures..."
+	rm -f $(DYNAMIC_FIGURES)
 
 .PHONY: all clean deep-clean
 .DELETE_ON_ERROR:
