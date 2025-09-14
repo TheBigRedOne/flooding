@@ -15,14 +15,20 @@
 #include <chrono>
 #include <unistd.h>
 
+#ifdef SOLUTION_ENABLED
+// In a real implementation, Interest flooding parameters would be more sophisticated.
+static constexpr uint8_t DEFAULT_FLOOD_HOP_LIMIT = 3;
+#endif
+
 namespace ndn {
 namespace examples {
 
 class Consumer : noncopyable
 {
 public:
-  Consumer(const std::string& mode = "baseline")
-    : m_mode(mode)
+  Consumer(const std::string& mode)
+    : m_face(m_ioContext)
+    , m_isSolution(mode == "solution")
   {
   }
 

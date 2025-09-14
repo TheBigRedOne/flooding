@@ -175,10 +175,18 @@ class Producer : noncopyable
 {
 public:
   Producer(const std::string& mode)
-    : m_mode(mode)
-    , m_hasMoved(false)
-    , m_netlinkListener(m_ioCtx, std::bind(&Producer::onMobilityEvent, this))
+    : m_face(m_ioContext)
+    , m_keyChain()
+    , m_isSolution(mode == "solution")
   {
+#ifdef IS_SOLUTION_ENABLED
+    if (m_isSolution) {
+      m_netlinkListener = std::make_unique<NetlinkListener>(
+        [this] { onLinkUp(); },
+        [this] { onLinkDown(); }
+      );
+    }
+#endif
   }
 
   void
@@ -191,9 +199,9 @@ public:
                              std::bind(&Producer::onRegisterFailed, this, _1, _2));
 
     // In solution mode, start listening for real network events.
-    if (m_mode == "solution") {
+    if (m_isSolution) {
       try {
-        m_netlinkListener.start();
+        m_netlinkListener->start();
         std::cout << "Netlink listener started for mobility detection." << std::endl;
       }
       catch (const std::exception& e) {
@@ -201,7 +209,7 @@ public:
       }
     }
 
-    m_ioCtx.run();
+    m_ioContext.run();
   }
 
 private:
@@ -261,7 +269,7 @@ private:
     data->setContent(std::string_view("OptoFlood Test Data"));
 
 #ifdef SOLUTION_ENABLED
-    if (m_mode == "solution" && m_hasMoved) {
+    if (m_isSolution && m_hasMoved) {
       std::cout << "[" << timestamp << "] DATA: Attaching OptoFlood mobility markers" << std::endl;
       std::cout << "[" << timestamp << "] DATA: Adding TLV_MOBILITY_FLAG to MetaInfo" << std::endl;
 
@@ -310,12 +318,29 @@ private:
   }
 
 private:
-  boost::asio::io_context m_ioCtx;
-  Face m_face{m_ioCtx};
+#ifdef IS_SOLUTION_ENABLED
+  void onLinkUp()
+  {
+    BOOST_LOG_TRIVIAL(info) << "Producer detected a link UP event. Marking next Data for flooding.";
+    m_hasMoved = true;
+  }
+  
+  void onLinkDown()
+  {
+    BOOST_LOG_TRIVIAL(info) << "Producer detected a link DOWN event.";
+    // No action needed on link down for now
+  }
+#endif
+
+private:
+  boost::asio::io_context m_ioContext;
+  Face m_face{m_ioContext};
   KeyChain m_keyChain;
-  bool m_hasMoved;
-  std::string m_mode;
-  NetlinkListener m_netlinkListener;
+  bool m_isSolution;
+#ifdef IS_SOLUTION_ENABLED
+  std::atomic<bool> m_hasMoved{false};
+  std::unique_ptr<NetlinkListener> m_netlinkListener;
+#endif
   
   // Statistics counters for experiment analysis
   uint64_t m_interestCount = 0;
