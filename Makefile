@@ -138,6 +138,7 @@ SOLUTION_RESULTS := $(SOLUTION_DISRUPTION_PDF) \
 
 # Baseline experiment results
 $(BASELINE_RESULTS): $(APP_SRCS) $(BASELINE_SRCS) $(TOOLS_SRCS) .ssh_config_baseline | results/baseline
+	ACTUAL_BASELINE_BOX_PATH="box/baseline/baseline.$(PROVIDER).box" \
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant up
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant ssh -c 'cd /home/vagrant/mini-ndn/flooding/experiment/baseline && make clean && make all'
 	$(RSYNC_BASELINE) baseline:/home/vagrant/mini-ndn/flooding/experiment/baseline/results/ results/baseline
@@ -145,6 +146,7 @@ $(BASELINE_RESULTS): $(APP_SRCS) $(BASELINE_SRCS) $(TOOLS_SRCS) .ssh_config_base
 
 # Solution experiment results
 $(SOLUTION_RESULTS): $(APP_SRCS) $(SOLUTION_SRCS) $(TOOLS_SRCS) .ssh_config_solution | results/solution
+	ACTUAL_SOLUTION_BOX_PATH="box/solution/solution.$(PROVIDER).box" \
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant up
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant ssh -c 'cd /home/vagrant/mini-ndn/flooding/experiment/solution && make clean && make all'
 	$(RSYNC_SOLUTION) solution:/home/vagrant/mini-ndn/flooding/experiment/solution/results/ results/solution;
