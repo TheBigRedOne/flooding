@@ -279,8 +279,8 @@ private:
       // Add NewFaceSeq (using mobility event count as sequence)
       metaInfo.addAppMetaInfo(optoflood::makeNewFaceSeqBlock(m_mobilityEventCount));
       
-      // Add TraceHint (simple implementation: store last PoA identifier)
-      std::vector<uint8_t> traceHint = {0x01, 0x02}; // Placeholder
+      // Add a placeholder TraceHint. In a full implementation, this would carry meaningful PoA info.
+      std::vector<uint8_t> traceHint = {0x01, 0x02};
       metaInfo.addAppMetaInfo(optoflood::makeTraceHintBlock(traceHint));
       
       data->setMetaInfo(metaInfo);

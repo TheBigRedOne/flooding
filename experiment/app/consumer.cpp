@@ -4,9 +4,6 @@
 #include <ndn-cxx/interest.hpp>
 #include <ndn-cxx/security/validator-config.hpp>
 #include <ndn-cxx/util/scheduler.hpp>
-#ifdef SOLUTION_ENABLED
-#include <ndn-cxx/optoflood.hpp>
-#endif
 
 #include <boost/asio/io_context.hpp>
 #include <iostream>
@@ -16,7 +13,8 @@
 #include <unistd.h>
 
 #ifdef SOLUTION_ENABLED
-// In a real implementation, Interest flooding parameters would be more sophisticated.
+#include <ndn-cxx/optoflood.hpp>
+// Defines the fixed hop limit for controlled Interest flooding.
 static constexpr uint8_t DEFAULT_FLOOD_HOP_LIMIT = 3;
 #endif
 
@@ -26,9 +24,10 @@ namespace examples {
 class Consumer : noncopyable
 {
 public:
-  Consumer(const std::string& mode)
+  Consumer()
     : m_face(m_ioContext)
-    , m_isSolution(mode == "solution")
+    , m_validator(m_face)
+    , m_scheduler(m_ioContext)
   {
   }
 
@@ -47,9 +46,7 @@ public:
     // Schedule the first Interest request
     sendInterest();
 
-    std::cout << "[Consumer] Running in " << m_mode << " mode" << std::endl;
-
-    m_ioCtx.run();
+    m_ioContext.run();
   }
 
 private:
@@ -98,13 +95,14 @@ private:
     interest.setMustBeFresh(true);
     interest.setInterestLifetime(6_s); // As per .tex description
     
-    // Check if we should enable Interest flooding (OptoFlood solution mode)
 #ifdef SOLUTION_ENABLED
-    if (m_mode == "solution" && shouldEnableFlooding()) {
+    // Check if we should enable Interest flooding (OptoFlood solution mode)
+    if (shouldEnableFlooding()) {
+      auto timestamp = std::chrono::system_clock::now().time_since_epoch().count();
       std::cout << "[" << timestamp << "] OPTOFLOOD: Enabling Interest flooding due to consecutive failures" << std::endl;
       
       // Add OptoFlood parameters for controlled flooding
-      auto params = optoflood::makeInterestFloodingParameters(std::nullopt, 3); // 3-hop limit
+      auto params = optoflood::makeInterestFloodingParameters(std::nullopt, DEFAULT_FLOOD_HOP_LIMIT);
       interest.setApplicationParameters(params);
       
       // Reset failure counter after triggering flooding
@@ -113,7 +111,7 @@ private:
 #endif
     
     // Record send time for latency calculation
-    m_sendTimeMap[name] = timestamp;
+    m_sendTimeMap[name] = std::chrono::system_clock::now().time_since_epoch().count();
 
     m_face.expressInterest(interest,
                            bind(&Consumer::onData, this, _1, _2),
@@ -144,7 +142,9 @@ private:
     }
 
     // Reset consecutive failures on successful data reception
+#ifdef SOLUTION_ENABLED
     m_consecutiveFailures = 0;
+#endif
 
     m_validator.validate(data,
                        [this, recvTimestamp] (const Data&) {
@@ -164,12 +164,17 @@ private:
   {
     auto timestamp = std::chrono::system_clock::now().time_since_epoch().count();
     m_nacksReceived++;
+#ifdef SOLUTION_ENABLED
     m_consecutiveFailures++;
+#endif
     
     std::cerr << "[" << timestamp << "] NACK: Received NACK #" << m_nacksReceived
               << " Name: " << interest.getName() 
               << " Reason: " << nack.getReason()
-              << " Consecutive failures: " << m_consecutiveFailures << std::endl;
+#ifdef SOLUTION_ENABLED
+              << " Consecutive failures: " << m_consecutiveFailures
+#endif
+              << std::endl;
     
     // Remove from send time map
     m_sendTimeMap.erase(interest.getName());
@@ -188,11 +193,16 @@ private:
   {
     auto timestamp = std::chrono::system_clock::now().time_since_epoch().count();
     m_timeouts++;
+#ifdef SOLUTION_ENABLED
     m_consecutiveFailures++;
+#endif
     
     std::cerr << "[" << timestamp << "] TIMEOUT: Interest timeout #" << m_timeouts
               << " Name: " << interest.getName()
-              << " Consecutive failures: " << m_consecutiveFailures << std::endl;
+#ifdef SOLUTION_ENABLED
+              << " Consecutive failures: " << m_consecutiveFailures
+#endif
+              << std::endl;
     
     // Remove from send time map
     m_sendTimeMap.erase(interest.getName());
@@ -213,22 +223,24 @@ private:
                 << " NACKs: " << m_nacksReceived
                 << " Timeouts: " << m_timeouts
                 << " Success rate: " << (m_dataReceived * 100.0 / m_interestsSent) << "%"
-                << " OptoFlood mode: " << m_mode << std::endl;
+                << std::endl;
     }
   }
   
+#ifdef SOLUTION_ENABLED
   bool
   shouldEnableFlooding() const
   {
     // Enable flooding after 3 consecutive failures (timeout or NACK)
     return m_consecutiveFailures >= 3;
   }
+#endif
 
 private:
-  boost::asio::io_context m_ioCtx;
-  Face m_face{m_ioCtx};
-  ValidatorConfig m_validator{m_face};
-  Scheduler m_scheduler{m_ioCtx};
+  boost::asio::io_context m_ioContext;
+  Face m_face;
+  ValidatorConfig m_validator;
+  Scheduler m_scheduler;
 
   uint64_t m_sequenceNo = 0;
   std::queue<Name> m_retransmissionQueue;
@@ -242,9 +254,10 @@ private:
   // Map to track RTT for each Interest
   std::map<Name, uint64_t> m_sendTimeMap;
   
+#ifdef SOLUTION_ENABLED
   // OptoFlood support
-  std::string m_mode;
   uint32_t m_consecutiveFailures = 0;
+#endif
 };
 
 } // namespace examples
@@ -255,22 +268,12 @@ main(int argc, char** argv)
 {
   auto startTime = std::chrono::system_clock::now().time_since_epoch().count();
   
-  std::string mode = "baseline"; // Default to baseline mode
-  if (argc == 3 && std::string(argv[1]) == "--mode") {
-    mode = argv[2];
-    if (mode != "baseline" && mode != "solution") {
-      std::cerr << "[" << startTime << "] ERROR: mode must be 'baseline' or 'solution'" << std::endl;
-      return 1;
-    }
-  }
-  
   std::cout << "[" << startTime << "] STARTUP: Consumer application starting" << std::endl;
   std::cout << "[" << startTime << "] STARTUP: Process ID: " << getpid() << std::endl;
-  std::cout << "[" << startTime << "] STARTUP: Running in '" << mode << "' mode" << std::endl;
   std::cout << "[" << startTime << "] STARTUP: Video stream simulation: 30 fps (33ms intervals)" << std::endl;
   
   try {
-    ndn::examples::Consumer consumer(mode);
+    ndn::examples::Consumer consumer;
     std::cout << "[" << startTime << "] STARTUP: Consumer initialized, starting Interest generation" << std::endl;
     consumer.run();
   }
