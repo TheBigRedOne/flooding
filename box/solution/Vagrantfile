@@ -38,7 +38,7 @@ $INSTALL_BASE = <<EOF
 EOF
 
 Vagrant.configure("2") do |config|
-  initial_box_path = ENV['ACTUAL_INITIAL_BOX_PATH'] || "box/solution/solution.box"
+  initial_box_path = ENV['ACTUAL_INITIAL_BOX_PATH'] || "box/initial/initial.box"
   config.vm.box = initial_box_path
 
   # Sync the project root directory to /vagrant in the VM
