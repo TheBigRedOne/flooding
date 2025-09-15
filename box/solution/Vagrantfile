@@ -4,7 +4,7 @@ $INSTALL_BASE = <<EOF
   set -e -u -o pipefail
 
   # Clone and install mini-ndn
-  git clone https://github.com/TheBigRedOne/mini-ndn.git /home/vagrant/mini-ndn
+  git clone https://github.com/named-data/mini-ndn.git /home/vagrant/mini-ndn
   cd /home/vagrant/mini-ndn
   git checkout 73add71f860979426aef63136bf78ed525862e5c
   ./install.sh -y
