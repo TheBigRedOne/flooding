@@ -6,9 +6,6 @@
 #include <ndn-cxx/meta-info.hpp>
 #include <ndn-cxx/encoding/block.hpp>
 #include <ndn-cxx/encoding/tlv.hpp>
-#ifdef SOLUTION_ENABLED
-#include <ndn-cxx/optoflood.hpp>
-#endif
 
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/posix/stream_descriptor.hpp>
@@ -23,19 +20,22 @@
 #include <thread>
 #include <iomanip>
 
+#ifdef SOLUTION_ENABLED
+#include <ndn-cxx/optoflood.hpp>
 // Linux headers for Netlink
 #include <asm/types.h>
 #include <sys/socket.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 #include <unistd.h>
-
+#endif
 
 // OptoFlood TLV types are now defined in ndn-cxx/optoflood.hpp
 
 namespace ndn {
 namespace examples {
 
+#ifdef SOLUTION_ENABLED
 /**
  * @brief A helper class to listen for network interface changes using Netlink.
  * This class encapsulates the logic for creating a Netlink socket and integrating
@@ -72,7 +72,6 @@ public:
       throw std::runtime_error("Failed to bind Netlink socket");
     }
 
-    // Assign the raw socket to the asio descriptor
     m_netlinkSocket.assign(sock);
     waitForEvent();
   }
@@ -94,7 +93,6 @@ private:
                 << "] ERROR: Netlink socket error: " << error.message() 
                 << " (code: " << error.value() << ")" << std::endl;
       
-      // Attempt to recover from recoverable errors
       if (error == boost::asio::error::operation_aborted) {
         std::cerr << "[" << std::chrono::system_clock::now().time_since_epoch().count() 
                   << "] INFO: Netlink listener shutting down gracefully" << std::endl;
@@ -152,14 +150,13 @@ private:
                           << "' is UP (flags: 0x" << std::hex << ifi->ifi_flags << std::dec << ")" << std::endl;
                 std::cout << "[" << timestamp << "] MOBILITY: Triggering mobility event handler" << std::endl;
                 
-                m_callback(); // Trigger the producer's mobility logic
+                m_callback();
                 break;
             }
           }
         }
       }
     }
-
     // Reschedule the wait for the next event
     waitForEvent();
   }
@@ -169,23 +166,20 @@ private:
   MobilityCallback m_callback;
   boost::asio::posix::stream_descriptor m_netlinkSocket;
 };
+#endif
 
 
 class Producer : noncopyable
 {
 public:
-  Producer(const std::string& mode)
+  Producer()
     : m_face(m_ioContext)
     , m_keyChain()
-    , m_isSolution(mode == "solution")
   {
-#ifdef IS_SOLUTION_ENABLED
-    if (m_isSolution) {
-      m_netlinkListener = std::make_unique<NetlinkListener>(
-        [this] { onLinkUp(); },
-        [this] { onLinkDown(); }
-      );
-    }
+#ifdef SOLUTION_ENABLED
+    m_netlinkListener = std::make_unique<NetlinkListener>(
+      m_ioContext, [this] { this->onMobilityEvent(); }
+    );
 #endif
   }
 
@@ -194,21 +188,19 @@ public:
   {
     // Register prefix with a success callback to advertise it via NLSR
     m_face.setInterestFilter("/example/LiveStream",
-                             std::bind(&Producer::onInterest, this, _2), // Use _2 to ignore the InterestFilter param
+                             std::bind(&Producer::onInterest, this, _2),
                              std::bind(&Producer::onRegisterSuccess, this, _1),
                              std::bind(&Producer::onRegisterFailed, this, _1, _2));
-
+#ifdef SOLUTION_ENABLED
     // In solution mode, start listening for real network events.
-    if (m_isSolution) {
-      try {
-        m_netlinkListener->start();
-        std::cout << "Netlink listener started for mobility detection." << std::endl;
-      }
-      catch (const std::exception& e) {
-        std::cerr << "ERROR: Failed to start Netlink listener: " << e.what() << std::endl;
-      }
+    try {
+      m_netlinkListener->start();
+      std::cout << "Netlink listener started for mobility detection." << std::endl;
     }
-
+    catch (const std::exception& e) {
+      std::cerr << "ERROR: Failed to start Netlink listener: " << e.what() << std::endl;
+    }
+#endif
     m_ioContext.run();
   }
 
@@ -241,6 +233,7 @@ private:
     m_face.shutdown();
   }
 
+#ifdef SOLUTION_ENABLED
   // This callback is triggered by the NetlinkListener
   void
   onMobilityEvent()
@@ -252,6 +245,7 @@ private:
     m_mobilityEventCount++;
     std::cout << "[" << timestamp << "] MOBILITY: Total mobility events: " << m_mobilityEventCount << std::endl;
   }
+#endif
 
   void
   onInterest(const Interest& interest)
@@ -269,9 +263,8 @@ private:
     data->setContent(std::string_view("OptoFlood Test Data"));
 
 #ifdef SOLUTION_ENABLED
-    if (m_isSolution && m_hasMoved) {
+    if (m_hasMoved) {
       std::cout << "[" << timestamp << "] DATA: Attaching OptoFlood mobility markers" << std::endl;
-      std::cout << "[" << timestamp << "] DATA: Adding TLV_MOBILITY_FLAG to MetaInfo" << std::endl;
 
       // Use OptoFlood API to create mobility-related blocks
       MetaInfo metaInfo = data->getMetaInfo();
@@ -287,7 +280,7 @@ private:
       metaInfo.addAppMetaInfo(optoflood::makeNewFaceSeqBlock(m_mobilityEventCount));
       
       // Add TraceHint (simple implementation: store last PoA identifier)
-      std::vector<uint8_t> traceHint = {0x01, 0x02}; // Placeholder for actual PoA info
+      std::vector<uint8_t> traceHint = {0x01, 0x02}; // Placeholder
       metaInfo.addAppMetaInfo(optoflood::makeTraceHintBlock(traceHint));
       
       data->setMetaInfo(metaInfo);
@@ -318,26 +311,11 @@ private:
   }
 
 private:
-#ifdef IS_SOLUTION_ENABLED
-  void onLinkUp()
-  {
-    BOOST_LOG_TRIVIAL(info) << "Producer detected a link UP event. Marking next Data for flooding.";
-    m_hasMoved = true;
-  }
-  
-  void onLinkDown()
-  {
-    BOOST_LOG_TRIVIAL(info) << "Producer detected a link DOWN event.";
-    // No action needed on link down for now
-  }
-#endif
-
-private:
   boost::asio::io_context m_ioContext;
   Face m_face{m_ioContext};
   KeyChain m_keyChain;
-  bool m_isSolution;
-#ifdef IS_SOLUTION_ENABLED
+
+#ifdef SOLUTION_ENABLED
   std::atomic<bool> m_hasMoved{false};
   std::unique_ptr<NetlinkListener> m_netlinkListener;
 #endif
@@ -356,21 +334,11 @@ main(int argc, char** argv)
 {
   auto startTime = std::chrono::system_clock::now().time_since_epoch().count();
   
-  std::string mode = "baseline"; // Default to baseline mode
-  if (argc == 3 && std::string(argv[1]) == "--mode") {
-    mode = argv[2];
-    if (mode != "baseline" && mode != "solution") {
-      std::cerr << "[" << startTime << "] ERROR: mode must be 'baseline' or 'solution'" << std::endl;
-      return 1;
-    }
-  }
-
   std::cout << "[" << startTime << "] STARTUP: Producer application starting" << std::endl;
-  std::cout << "[" << startTime << "] STARTUP: Running in '" << mode << "' mode" << std::endl;
   std::cout << "[" << startTime << "] STARTUP: Process ID: " << getpid() << std::endl;
 
   try {
-    ndn::examples::Producer producer(mode);
+    ndn::examples::Producer producer;
     std::cout << "[" << startTime << "] STARTUP: Producer initialized, starting event loop" << std::endl;
     producer.run();
   }
