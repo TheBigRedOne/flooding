@@ -6,8 +6,8 @@ Vagrant.configure("2") do |config|
 
   config.vm.network "private_network", type: "dhcp"
 
-  common_cpus   = 4
-  common_memory = 4096
+  common_cpus   = 8
+  common_memory = 16384
 
   config.vm.provider :virtualbox do |vb|
     vb.name = "exp-solution-virtualbox"

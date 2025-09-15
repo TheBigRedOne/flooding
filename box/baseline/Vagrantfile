@@ -7,7 +7,7 @@ $INSTALL_BASE = <<EOF
   git clone https://github.com/named-data/mini-ndn.git /home/vagrant/mini-ndn
   cd /home/vagrant/mini-ndn
   git checkout 73add71f860979426aef63136bf78ed525862e5c
-  ./install.sh -y --release=2024-08 --jobs=4
+  ./install.sh -y --release=2024-08 --jobs=8
 
   # --- Install NDN Wireshark Dissector ---
   # Create a standard directory for the dissector
@@ -39,8 +39,8 @@ Vagrant.configure("2") do |config|
   config.vm.network "private_network", type: "dhcp"
 
   # The --jobs= parameter to ./install.sh (above) should match common_cpus
-  common_cpus   = 4
-  common_memory = 4096
+  common_cpus   = 8
+  common_memory = 16384
 
   config.vm.provider :virtualbox do |vb|
     vb.name = "baseline-virtualbox"
