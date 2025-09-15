@@ -6,7 +6,7 @@ $INSTALL_BASE = <<EOF
   # Clone and install mini-ndn
   git clone https://github.com/TheBigRedOne/mini-ndn.git /home/vagrant/mini-ndn
   cd /home/vagrant/mini-ndn
-  git checkout 727e028c6d2fa04ddf6553aabb68a29cd123c221
+  git checkout 73add71f860979426aef63136bf78ed525862e5c
   ./install.sh -y
   --cxx=https://github.com/TheBigRedOne/ndn-cxx.git@@OptoFlood \
   --nfd=https://github.com/TheBigRedOne/NFD.git@@OptoFlood \
