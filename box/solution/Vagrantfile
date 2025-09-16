@@ -9,7 +9,7 @@ $INSTALL_BASE = <<EOF
   git checkout 73add71f860979426aef63136bf78ed525862e5c
   ./install.sh -y \
   --cxx=https://github.com/TheBigRedOne/ndn-cxx.git@OptoFlood \
-  --nfd=https://github.com/TheBigRedOne/NFD.git@d61e960910e903615acf3d87d74cf41dbf3364e2 \
+  --nfd=https://github.com/TheBigRedOne/NFD.git@OptoFlood \
   --psync=https://github.com/named-data/PSync.git@0.5.0 \
   --nlsr=https://github.com/TheBigRedOne/NLSR.git@OptoFlood \
   --tools=https://github.com/named-data/ndn-tools.git@ndn-tools-24.07 \
