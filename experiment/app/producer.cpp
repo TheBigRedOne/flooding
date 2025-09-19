@@ -20,22 +20,22 @@
 #include <thread>
 #include <iomanip>
 
+// Only available in solution build
 #ifdef SOLUTION_ENABLED
 #include <ndn-cxx/optoflood.hpp>
+#endif
 // Linux headers for Netlink
 #include <asm/types.h>
 #include <sys/socket.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 #include <unistd.h>
-#endif
 
 // OptoFlood TLV types are now defined in ndn-cxx/optoflood.hpp
 
 namespace ndn {
 namespace examples {
 
-#ifdef SOLUTION_ENABLED
 /**
  * @brief A helper class to listen for network interface changes using Netlink.
  * This class encapsulates the logic for creating a Netlink socket and integrating
@@ -166,7 +166,6 @@ private:
   MobilityCallback m_callback;
   boost::asio::posix::stream_descriptor m_netlinkSocket;
 };
-#endif
 
 
 class Producer : noncopyable
@@ -176,12 +175,14 @@ public:
     : m_face(m_ioContext)
     , m_keyChain()
   {
+    // Default to disabled; enable automatically in solution builds
 #ifdef SOLUTION_ENABLED
-    m_netlinkListener = std::make_unique<NetlinkListener>(
-      m_ioContext, [this] { this->onMobilityEvent(); }
-    );
+    m_enableOptoFlood = true;
 #endif
   }
+
+  void enableOptoFlood(bool enable = true) { m_enableOptoFlood = enable; }
+  void forceMobilityOnce() { m_enableOptoFlood = true; m_hasMoved = true; m_forceMobilityOnceFlag = true; }
 
   void
   run()
@@ -191,16 +192,20 @@ public:
                              std::bind(&Producer::onInterest, this, _2),
                              std::bind(&Producer::onRegisterSuccess, this, _1),
                              std::bind(&Producer::onRegisterFailed, this, _1, _2));
-#ifdef SOLUTION_ENABLED
-    // In solution mode, start listening for real network events.
-    try {
-      m_netlinkListener->start();
-      std::cout << "Netlink listener started for mobility detection." << std::endl;
+    if (m_enableOptoFlood) {
+      try {
+        if (!m_netlinkListener) {
+          m_netlinkListener = std::make_unique<NetlinkListener>(
+            m_ioContext, [this] { this->onMobilityEvent(); }
+          );
+        }
+        m_netlinkListener->start();
+        std::cout << "Netlink listener started for mobility detection." << std::endl;
+      }
+      catch (const std::exception& e) {
+        std::cerr << "ERROR: Failed to start Netlink listener: " << e.what() << std::endl;
+      }
     }
-    catch (const std::exception& e) {
-      std::cerr << "ERROR: Failed to start Netlink listener: " << e.what() << std::endl;
-    }
-#endif
     m_ioContext.run();
   }
 
@@ -233,7 +238,6 @@ private:
     m_face.shutdown();
   }
 
-#ifdef SOLUTION_ENABLED
   // This callback is triggered by the NetlinkListener
   void
   onMobilityEvent()
@@ -245,7 +249,6 @@ private:
     m_mobilityEventCount++;
     std::cout << "[" << timestamp << "] MOBILITY: Total mobility events: " << m_mobilityEventCount << std::endl;
   }
-#endif
 
   void
   onInterest(const Interest& interest)
@@ -262,13 +265,13 @@ private:
     data->setFreshnessPeriod(10_s);
     data->setContent(std::string_view("OptoFlood Test Data"));
 
-#ifdef SOLUTION_ENABLED
     if (m_hasMoved) {
       std::cout << "[" << timestamp << "] DATA: Attaching OptoFlood mobility markers" << std::endl;
 
       // Use OptoFlood API to create mobility-related blocks
       MetaInfo metaInfo = data->getMetaInfo();
       
+#ifdef SOLUTION_ENABLED
       // Add MobilityFlag
       metaInfo.addAppMetaInfo(optoflood::makeMobilityFlagBlock());
       
@@ -282,19 +285,19 @@ private:
       // Add a placeholder TraceHint. In a full implementation, this would carry meaningful PoA info.
       std::vector<uint8_t> traceHint = {0x01, 0x02};
       metaInfo.addAppMetaInfo(optoflood::makeTraceHintBlock(traceHint));
+#endif
       
       data->setMetaInfo(metaInfo);
       
       // Log additional OptoFlood fields
       std::cout << "[" << timestamp << "] DATA: Mobility packet marked"
-                << " FloodID: " << floodId
                 << " NewFaceSeq: " << m_mobilityEventCount << std::endl;
 
       // Reset the flag after processing
       m_hasMoved = false; 
+      m_forceMobilityOnceFlag = false;
       std::cout << "[" << timestamp << "] DATA: Mobility flag cleared for producer" << std::endl;
     }
-#endif
 
     m_keyChain.sign(*data);
     
@@ -315,10 +318,10 @@ private:
   Face m_face{m_ioContext};
   KeyChain m_keyChain;
 
-#ifdef SOLUTION_ENABLED
   std::atomic<bool> m_hasMoved{false};
   std::unique_ptr<NetlinkListener> m_netlinkListener;
-#endif
+  bool m_enableOptoFlood = false;
+  bool m_forceMobilityOnceFlag = false;
   
   // Statistics counters for experiment analysis
   uint64_t m_interestCount = 0;
@@ -339,6 +342,18 @@ main(int argc, char** argv)
 
   try {
     ndn::examples::Producer producer;
+    // CLI flags retained but not required under solution build
+    // --solution / --mode=solution: no-op in solution build (already enabled)
+    // --force-mobility: Force one mobility event
+    for (int i = 1; i < argc; ++i) {
+      std::string arg = argv[i];
+      if (arg == "--force-mobility") {
+        producer.forceMobilityOnce();
+      }
+      else if (arg == "--solution" || arg == "--mode=solution") {
+        producer.enableOptoFlood(true);
+      }
+    }
     std::cout << "[" << startTime << "] STARTUP: Producer initialized, starting event loop" << std::endl;
     producer.run();
   }

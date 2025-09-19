@@ -29,7 +29,15 @@ public:
     , m_validator(m_face)
     , m_scheduler(m_ioContext)
   {
+#ifdef SOLUTION_ENABLED
+    // Default enable OptoFlood behavior in solution builds
+    m_enableOptoFlood = true;
+#endif
   }
+
+  void enableOptoFlood(bool enable = false) { m_enableOptoFlood = enable; }
+  void setFloodThreshold(uint32_t threshold) { m_floodThreshold = threshold; }
+  void forceFloodOnce() { m_forceFloodInitially = true; m_enableOptoFlood = true; }
 
   void
   run()
@@ -95,20 +103,20 @@ private:
     interest.setMustBeFresh(true);
     interest.setInterestLifetime(6_s); // As per .tex description
     
-#ifdef SOLUTION_ENABLED
     // Check if we should enable Interest flooding (OptoFlood solution mode)
     if (shouldEnableFlooding()) {
       auto timestamp = std::chrono::system_clock::now().time_since_epoch().count();
       std::cout << "[" << timestamp << "] OPTOFLOOD: Enabling Interest flooding due to consecutive failures" << std::endl;
       
       // Add OptoFlood parameters for controlled flooding
+#ifdef SOLUTION_ENABLED
       auto params = optoflood::makeInterestFloodingParameters(std::nullopt, DEFAULT_FLOOD_HOP_LIMIT);
       interest.setApplicationParameters(params);
+#endif
       
       // Reset failure counter after triggering flooding
       m_consecutiveFailures = 0;
     }
-#endif
     
     // Record send time for latency calculation
     m_sendTimeMap[name] = std::chrono::system_clock::now().time_since_epoch().count();
@@ -142,9 +150,7 @@ private:
     }
 
     // Reset consecutive failures on successful data reception
-#ifdef SOLUTION_ENABLED
     m_consecutiveFailures = 0;
-#endif
 
     m_validator.validate(data,
                        [this, recvTimestamp] (const Data&) {
@@ -164,16 +170,12 @@ private:
   {
     auto timestamp = std::chrono::system_clock::now().time_since_epoch().count();
     m_nacksReceived++;
-#ifdef SOLUTION_ENABLED
     m_consecutiveFailures++;
-#endif
     
     std::cerr << "[" << timestamp << "] NACK: Received NACK #" << m_nacksReceived
               << " Name: " << interest.getName() 
               << " Reason: " << nack.getReason()
-#ifdef SOLUTION_ENABLED
               << " Consecutive failures: " << m_consecutiveFailures
-#endif
               << std::endl;
     
     // Remove from send time map
@@ -193,15 +195,11 @@ private:
   {
     auto timestamp = std::chrono::system_clock::now().time_since_epoch().count();
     m_timeouts++;
-#ifdef SOLUTION_ENABLED
     m_consecutiveFailures++;
-#endif
     
     std::cerr << "[" << timestamp << "] TIMEOUT: Interest timeout #" << m_timeouts
               << " Name: " << interest.getName()
-#ifdef SOLUTION_ENABLED
               << " Consecutive failures: " << m_consecutiveFailures
-#endif
               << std::endl;
     
     // Remove from send time map
@@ -227,14 +225,18 @@ private:
     }
   }
   
-#ifdef SOLUTION_ENABLED
   bool
-  shouldEnableFlooding() const
+  shouldEnableFlooding()
   {
-    // Enable flooding after 3 consecutive failures (timeout or NACK)
-    return m_consecutiveFailures >= 3;
+    if (!m_enableOptoFlood) {
+      return false;
+    }
+    if (m_forceFloodInitially && !m_forceFloodConsumed) {
+      m_forceFloodConsumed = true;
+      return true;
+    }
+    return m_consecutiveFailures >= m_floodThreshold;
   }
-#endif
 
 private:
   boost::asio::io_context m_ioContext;
@@ -254,10 +256,12 @@ private:
   // Map to track RTT for each Interest
   std::map<Name, uint64_t> m_sendTimeMap;
   
-#ifdef SOLUTION_ENABLED
-  // OptoFlood support
+  // OptoFlood support (runtime-configurable)
+  bool m_enableOptoFlood = false;
   uint32_t m_consecutiveFailures = 0;
-#endif
+  uint32_t m_floodThreshold = 3;
+  bool m_forceFloodInitially = false;
+  bool m_forceFloodConsumed = false;
 };
 
 } // namespace examples
@@ -274,6 +278,28 @@ main(int argc, char** argv)
   
   try {
     ndn::examples::Consumer consumer;
+
+    // Parse simple CLI flags to control OptoFlood behavior
+    // --solution                Enable OptoFlood features
+    // --flood-threshold=N       Set consecutive-failure threshold (default 3)
+    // --force-flood             Force flooding for the next Interest immediately
+    for (int i = 1; i < argc; ++i) {
+      std::string arg = argv[i];
+      if (arg == "--solution" || arg == "--mode=solution") {
+        consumer.enableOptoFlood(true);
+      }
+      else if (arg.rfind("--flood-threshold=", 0) == 0) {
+        auto value = arg.substr(std::string("--flood-threshold=").size());
+        try {
+          uint32_t t = static_cast<uint32_t>(std::stoul(value));
+          consumer.setFloodThreshold(t);
+        }
+        catch (...) {}
+      }
+      else if (arg == "--force-flood") {
+        consumer.forceFloodOnce();
+      }
+    }
     std::cout << "[" << startTime << "] STARTUP: Consumer initialized, starting Interest generation" << std::endl;
     consumer.run();
   }
