@@ -67,11 +67,11 @@ Named Data Networking, Producer Mobility, NLSR, Routing
 \label{sec:introduction}
 
 % Paragraph 1: Motivation.
-The use of Named Data Networking (NDN) protocols optimises the network for content delivery. Rather than indirect from name to location via the DNS, as done in the Internet today, NDN protocols make named-based routing, content delivery, and pervasive caching core services of the network.
+The use of Named Data Networking (NDN) protocols optimises the network for content delivery. Rather than being indirect from name to location via the DNS, as is done in the Internet today, NDN protocols make named-based routing, content delivery, and pervasive caching core services of the network.
 
 % Paragraph 2: Specific problem.
-A limitation of current NDN protocols, however, is that they don't effectively support producer mobility.  Each time a content producer moves, the network must quickly discover its new location and ensure continuous data delivery without introducing delays or packet loss. For applications such as live video streaming and video conferencing, even short interruptions can degrade the user experience and reliability. 
-Prior work \cite{FIXME} has improved NDN behaviour in these scenarios, but performance still lags behind what is needed.
+A limitation of current NDN protocols, however, is that they do not effectively support producer mobility.  Each time a content producer moves, the network must quickly discover its new location and ensure continuous data delivery without introducing delays or packet loss. For applications such as live video streaming and video conferencing, even short interruptions can degrade user experience and reliability. 
+Previous work \cite{FIXME} has improved the behaviour of NDN in these scenarios, but performance still lags behind what is needed.
 %Addressing producer mobility is therefore essential if NDN protocols are to see wide adoption.
 
 %We consider the delay and packet loss caused by the slow routing convergence when NDN producers change their network attachment point. NDN producers must re-register their data prefix at each new network location and wait for global routing updates to propagate. During this convergence period, Interest packets may be misrouted or discarded due to outdated forwarding paths. Our baseline tests indicate that this can result in interruptions lasting several seconds, severely impacting latency-sensitive applications. In addition, repeated movements can exacerbate this issue, significantly affecting the overall performance of the network.
@@ -86,7 +86,7 @@ with Named-data Link State Routing (NLSR), generating short-lived routing update
 Initial results show a \todo{XX}\% reduction in packet loss and a \todo{YY}\% reducing in convergence time from our approach (\S\ref{sec:evaluation}).
 
 % Paragraph 4: Comparison to related work.
-Compared to prior NDN mobility protocols, such as routing-based updates \cite{meddeb:2018:afirm}, Interest-based notification solutions \cite{auge:2016:map-me} or anchor-based tracing mechanisms \cite{zhang:2018:kite},
+Compared to previous NDN mobility protocols, such as routing-based updates \cite{meddeb:2018:afirm}, Interest-based notification solutions \cite{auge:2016:map-me} or anchor-based tracing mechanisms \cite{zhang:2018:kite},
 OptoFlood provides a more integrated and lightweight solution that leverages flooding as its primary mechanism for rapid path recovery and convergence. Unlike existing flooding solutions, our approach uses explicit controls, including hop limits and producer-side flood rate limits, to restrict the scope and duration of flooding, minimising unnecessary overhead. Additionally, by leveraging temporary bidirectional paths established via controlled flooding, OptoFlood accelerates global routing updates without relying on centralised anchor nodes, thereby avoiding single points of failure and reducing potential path inefficiencies.
 
 % Paragraph 5: Roadmap.
@@ -98,7 +98,7 @@ Finally, Section \ref{sec:conclusion} concludes the paper and briefly discusses 
 \section{Producer Mobility in NDN}
 \label{sec:problem}
 
-NDN shifts from a host-centric to a data-centric model, where content is identified by names rather than addresses. In NDN, communication relies on two core packet types: Interest Packets, sent by consumers to request data by specifying the content name, and Data Packets, returned by producers containing the requested content and related metadata. Both packet types follow a concise Type-Length-Value (TLV) encoding, enabling efficient processing and extendability.
+NDN shifts from a host-centric model to a data-centric model, where content is identified by names rather than addresses. In NDN, communication relies on two core packet types: Interest Packets, sent by consumers to request data by specifying the content name, and Data Packets, returned by producers containing the requested content and related metadata. Both packet types follow a concise Type-Length-Value (TLV) encoding, enabling efficient processing and extendability.
 
 NDN packet forwarders maintain a Content Store that caches Data packets; a Pending Interest Table (PIT) that records forwarded Interest packets awaiting the corresponding Data packets, ensuring accurate reverse path forwarding; and a Forwarding Information Base (FIB) that guides Interest packet forwarding.
 When an Interest arrives at a forwarder, it checks the Content Store and returns the cached Data, if it is available. Otherwise, the PIT is checked to aggregate Interests and, if the Interest is new, it is forwarded based on the FIB. Figure~\ref{fig:NDN Packets Processing Flow} illustrates packet forwarding.
@@ -106,11 +106,11 @@ When an Interest arrives at a forwarder, it checks the Content Store and returns
 \begin{figure}[t]
     \centering
     \includegraphics[width=1\linewidth]{figures/NDN_Packets_Processing_Flow.pdf}
-    \caption{NDN Packets Processing Flow \csp{Update to make readable in single column form}}
+    \caption{NDN Packets Processing Flow}
     \label{fig:NDN Packets Processing Flow}
 \end{figure}
 
-The Named-Data Link State Routing protocol (NLSR) disseminates routing information via Link State Advertisements (LSAs) that carry link status and available data prefix information that are used to populate the FIB. NLSR adapts to network changes, such as node failures, new node attachments, or topology changes via periodic updates.
+The Named-Data Link State Routing protocol (NLSR) disseminates routing information via Link State Advertisements (LSAs) that carry link status and available data prefix information that are used to populate the FIB. NLSR adapts to network changes, such as node failures, new node attachments, or topology changes through periodic updates.
 
 \begin{figure}[t]
     \centering
@@ -119,14 +119,14 @@ The Named-Data Link State Routing protocol (NLSR) disseminates routing informati
     \label{fig:NDN Producer Mobility Problem}
 \end{figure}
 
-Producer mobility in NDN poses significant challenges, especially in dynamic network environments. Each time a producer moves, it must re-register its data prefix so that NLSR can propagate the updated routing information across the network. However, routing convergence through NLSR is inherently slow due to periodic dissemination of the LSAs and gradual propagation of routing updates (Figure~\ref{fig:NDN Producer Mobility Problem}). \csp{Does NLSR not send triggered updates when topology changes?}
+Producer mobility in NDN poses significant challenges, especially in dynamic network environments. Each time a producer moves, it must re-register its data prefix so that NLSR can propagate the updated routing information across the network. However, routing convergence through NLSR is often not immediate; even when updates are generated, dissemination remains periodic and network-wide, which is slow relative to micro-mobility timescales (Figure~\ref{fig:NDN Producer Mobility Problem}).
 This results in the following:
 \begin{itemize}
-\item \textbf{Increased Latency:} When a producer changes its attachment point, its associated data prefixes must be re-advertised, initiating routing updates starting from the directly connected forwarder. These updates must propagate throughout the entire network before Interest Packets can be delivered to the producer at its new location. During this convergence period, consumers experience significant communication interruptions, often lasting several seconds or longer \cite{FIXME}. In scenarios requiring low latency, such as live video streaming or real-time conferencing, even brief interruptions degrade the user experience \cite{FIXME} and severely limit NDN's practical utility.
+\item \textbf{Increased Latency:} When a producer changes its attachment point, its associated data prefixes must be re-advertised, initiating routing updates starting from the directly connected forwarder. These updates must propagate throughout the entire network before Interest Packets can be delivered to the producer at its new location. During this convergence period, consumers experience significant communication interruptions, often lasting several seconds or longer \cite{FIXME}. In scenarios requiring low latency, such as live video streaming or real-time conferencing, even brief interruptions degrade the user experience \cite{FIXME} and severely limit the practical utility of NDN.
 
 \item \textbf{Packet Loss:} During producer relocation and the subsequent routing convergence process, Interest packets arriving at the producer's previous attachment point are unable to reach the new location, causing these packets to expire and be discarded. Additionally, data packets responding to interest received prior to relocation may be stranded at nodes lacking proper PIT entries, as the reverse paths have been invalidated. Without a valid return path, these Data packets remain undeliverable until their lifetimes expire, leading to further packet loss and negatively affecting communication reliability.
 
-\item \textbf{Increased Network Resource Usage:} The inefficiencies introduced by latency and packet loss also result in increased retransmissions of interest packets \cite{FIXME}. These retransmissions consume additional bandwidth and processing resources across the network, potentially impacting overall network performance and affecting other communications.
+\item \textbf{Increased Network Resource Usage:} Inefficiencies introduced by latency and packet loss also result in increased retransmissions of packets of Interest \cite{FIXME}. These retransmissions consume additional bandwidth and processing resources across the network, potentially impacting overall network performance and affecting other communications.
 
 \end{itemize}
 
@@ -139,7 +139,7 @@ These problems highlight the limitations of traditional routing-based approaches
 \label{sec:solution}
 
 To address the challenges of producer mobility in NDN, particularly in latency-sensitive applications such as video conferencing or live streaming, we propose \textit{OptoFlood}, a novel controllable flooding mechanism. OptoFlood rapidly establishes temporary bidirectional communication paths following producer movements and leverages these paths to accelerate global routing convergence.
-OptoFlood also selectively incorporates beneficial elements from existing mobility solutions such as scoped flooding, inspired by MAP-Me \cite{FIXME}, and trace-guided forwarding from KITE \cite{FIXME} to further improve efficiency and performance.
+OptoFlood also selectively incorporates beneficial elements from existing mobility solutions, such as scoped flooding, inspired by MAP-Me \cite{FIXME}, and trace-guided forwarding from KITE \cite{FIXME} to further improve efficiency and performance.
 
 \csp{Need a diagram showing the operation of the flooding, that the following can refer to.}
 
@@ -154,15 +154,15 @@ When moving to a new Point of Attachment (PoA), the producer immediately initiat
 \item \textbf{Trace-Hint}: lightweight breadcrumb of recent PoAs (inspired by KITE~\cite{zhang:2018:kite}) for guided flooding.
 \end{itemize}
 
-These flooded Data packets preferentially follow existing valid FIB entries. If no valid FIB entry exists, the packets fall back to scoped blind flooding limited by a conservative maximum HopLimit of three hops, restricting propagation within typical local access and aggregation networks. The goal of this flooding is to reach nodes maintaining valid Pending Interest Table (PIT) entries, thus promptly rescuing pending Interests.
+These flooded Data packets preferentially follow existing valid FIB next hops; if no valid FIB next hop exists, they fall back to forwarding over directly-adjacent faces (i.e., data-plane neighbours) under strict scope controls. In our implementation the Data hop count is carried in the NDNLPv2 header as an experimental \emph{OptoHopLimit} field (value~96), which is outside the signed portion of the Data and is decremented hop-by-hop. We conservatively bound propagation with a maximum of three hops, restricting flooding within typical local access and aggregation networks. The goal is to reach nodes maintaining valid Pending Interest Table (PIT) entries and promptly rescue pending Interests.
 
 \subsection{Interest Flooding Triggered by Forwarder FIB Invalidation}
 \label{sec:solution:interest-flooding}
 
-Forwarders adjacent to the previous PoA detect invalid FIB entries upon receiving Interest packets without available next hops. These forwarders initiate controlled flooding of only the initial batch of Interests directly impacted by producer relocation. Flooding is triggered explicitly after the forwarder observes explicit invalidation signals, such as receiving NACK packets or reaching a predefined consecutive Interest failure threshold.
+Forwarders conditionally perform Interest flooding when an Interest arrives without available next hops (FIB/TFIB miss), or when an explicit flood request is present. In our prototype, the consumer includes an explicit request in the Interest \emph{ApplicationParameters} after a small number of consecutive failures; the forwarder acts as the enforcement point and sets the native \emph{HopLimit} before executing flooding, and only under FIB/TFIB miss. Optionally, a fast, rate-limited probe on the first miss can be enabled to further reduce recovery time.
 The Interest flooding strategy involves:
 \begin{itemize}
-\item \textbf{Prioritised Forward}: Forwarders first attempt to forward Interests via existing valid FIB entries towards last known PoAs, guided by \textit{Trace-Hints} embedded within Interest packets.
+\item \textbf{Prioritised Forward}: Forwarders first attempt to forward Interests via existing valid FIB entries towards the last known PoAs, guided by \textit{Trace-Hints} embedded within Interest packets.
 \item \textbf{Scoped Blind Flooding}: In the absence of valid FIB entries, forwarders employ scoped blind flooding inspired by the local discovery mechanism of MAP-Me~\cite{auge:2016:map-me}, restricting packet propagation by using a conservative HopLimit (typically set to 3).
 \end{itemize}
 
@@ -172,9 +172,9 @@ This controlled flooding efficiently discovers the producer's new location, mini
 \label{sec:solution:bidir}
 
 OptoFlood leverages the coordinated flooding of Interest and Data packets to establish robust temporary bidirectional paths. When flooded Interests reach the relocated producer, returning Data packets carry updated \textit{NewFaceSeq} and \textit{Flood-ID}. Forwarders receiving these Data packets establish or update a separate Temporary FIB (TFIB), distinct from the standard FIB, specifically designed to handle transient mobility-related paths.
-\csp{Why a temporary FIB rather than state in the existing FIB?}
+% rationale for TFIB vs FIB
 
-The TFIB entries maintain temporary forwarding states with a brief TTL (approximately one second \csp{why this value?}), a duration selected to quickly remove transient forwarding states after global routing convergence, thereby minimising memory and state overhead.
+The TFIB entries maintain temporary forwarding state with a brief TTL (approximately one second), chosen to bridge micro-mobility gaps without accumulating state; entries naturally expire as regular routing reconverges, minimising memory and control overhead.
 
 Flooded Data packets returning downstream primarily follow existing PIT entries towards consumers. If PIT entries have expired, the packets return to TFIB entries, ensuring reliable downstream connectivity.
 
@@ -184,13 +184,13 @@ Thus, the combination of controlled Interest and Data packet flooding rapidly an
 \subsection{Accelerated Network Convergence}
 \label{sec:solution:convergence}
 
-OptoFlood uniquely integrates temporary flooding-based paths with global routing convergence via Named-data Link State Routing (NLSR) \cite{}. Whenever a forwarder establishes a TFIB entry due to successful flooding, it immediately generates and disseminates a short-lived \csp{What is meant by ``short-lived''?} Fast-LSA, which includes the \textit{NewFaceSeq} and the face information learnt from the flood results. The Fast-LSAs are generated only upon TFIB creation, rather than upon other forms of mobility detection. This is because TFIB entries explicitly confirm new valid forwarding paths identified by successful flooding. In contrast, other unverified mobility detections could introduce erroneous information or routing instability. This Fast-LSA rapidly propagates among neighbouring nodes, typically within milliseconds, significantly accelerating local route convergence. Regular periodic LSAs subsequently replace these Fast-LSAs, allowing TFIB entries to gracefully expire. This approach accelerates global convergence without requiring core NLSR modifications.
+OptoFlood integrates temporary flooding-based paths with global routing convergence via Named-data Link State Routing (NLSR) \cite{}. Whenever a forwarder establishes a TFIB entry due to successful flooding, it triggers NLSR over the local management namespace to publish a short-lived Fast-LSA (about one second). The trigger conveys \textit{Name}, \textit{ExpirationPeriod}, optionally \textit{FaceId}, and encodes \textit{NewFaceSeq} using the cost field. Upon trigger, NLSR installs a FastPrefixLsa and performs short-lived RIB registration via its controller interface, and actively unregisters at expiry. Simple 500~ms per-prefix throttling and Prefix+NewFaceSeq deduplication prevent churn. TFIB-based triggering ensures that only verified, data-plane-confirmed paths seed convergence, while regular periodic LSAs later supersede these temporary hints.
 
 \subsection{Security and Flooding Control}
 
 To help mitigate the security risks associated with flooding, OptoFlood uses three complementary mechanisms.
 
-First, NDN Data packets contain digital signatures that authenticate static packet fields such as names and content, protecting packet integrity and authenticity from intermediate node manipulation. Dynamic fields like \textit{MobilityFlag} (changed upon PIT match) and \textit{HopLimit} (decremented hop-by-hop) cannot be authenticated by signatures, as a legitimate intermediate modification occurs. Thus, signatures provide baseline authenticity rather than complete tamper protection for dynamic fields.
+First, NDN Data packets contain digital signatures that authenticate static packet fields such as names and content. The hop-by-hop \textit{OptoHopLimit} used for Data flooding is carried in the NDNLPv2 header and is not covered by the signature, so decrementing it at each hop does not affect signature verification. Similarly, dynamic indicators such as \textit{MobilityFlag} are used for forwarding decisions and are not intended to be protected end-to-end.
 
 Second, a global maximum HopLimit threshold (\S\ref{sec:solution:data-flooding}) is enforced throughout the network, derived from the typical hop distances of the mobile network between PoAs. This prevents malicious producers from initiating flood attacks with excessive hop counts, ensuring that flooding remains confined to local access or aggregation layers.
 
@@ -202,12 +202,12 @@ Together, these mechanisms maintain a robust security posture without significan
 \section{Evaluation}
 \label{sec:evaluation}
 
-We evaluate OptoFlood in micromobility \ryo{what is micromobility? can we just say mobility?} scenarios with real-time video, representing common conferencing and live streaming applications.
+We evaluated OptoFlood in real-time video-based mobility scenarios, representing common live conferencing and streaming applications.
 
 % ------------------------------------------------------------------------------
 \subsection{Methodology}
 
-We focus on campus micro-mobility with real-time video: a smartphone user walks across a campus network, with the connection handing over between nearby Points of Attachment (PoAs) under the same distribution domain while the video stream remains active. This is a common, real-world, scenario that must work effectively with NDN and that is sensitive to latency, packet loss, and transient routing disruption.
+We focus on campus micro-mobility with real-time video: a smartphone user walks across a campus network, with the connection handing over between nearby Points of Attachment (PoAs) under the same distribution domain while the video stream remains active. This is a common, real-world scenario that must work effectively with NDN and that is sensitive to latency, packet loss, and transient routing disruption.
 
 % In this local setting, the new attachment is typically within two to three hops of the previous path. OptoFlood scopes propagation accordingly (small hop limits) and writes short-lived temporary forwarding entries to form a transient bidirectional path; the confirmed path information is then used to speed up convergence of the routing plane.
 % 
@@ -216,7 +216,7 @@ We focus on campus micro-mobility with real-time video: a smartphone user walks 
 % - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 \subsubsection{Producer Application}
 We implement a typical NDN video producer with our mobility extensions.
-Generated video Data packets have a threshness period of 10 seconds, permitting caching but preventing stale data from clogging the network, and carry a payload of synthetic data matching the size and timing of video content. Packets are digitally signed to ensure integrity and security.
+Generated video Data packets have a threshness period of 10 seconds, permitting caching but preventing stale data from clogging the network, and carry a payload of synthetic data matching the size and timing of video content. The packets are digitally signed to ensure integrity and security.
 Content prefixes are advertised via NLSR in the usual manner, with the extensions discussed in Section \ref{sec:solution}.
 
 % The producer application generates Data packets in response to Interests and incorporates necessary mobility indications to enable OptoFlood’s controlled flooding and route convergence acceleration. The application itself remains primarily focused on standard data processing tasks, with mobility handled through simple packet markings.
@@ -247,29 +247,7 @@ As described in Section \ref{sec:solution}, marked Data packets are flooded in a
 % - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 \subsubsection{Consumer Application}
 
-\csp{This is too long: one paragraph only}
-
-The consumer application continuously issues Interest packets and processes received Data packets to simulate realistic, real-time video stream handling. Maintains a straightforward NDN-based operation without explicit mobility awareness, relying instead on the underlying network mechanisms provided by OptoFlood.
-
-\textbf{Automatic Data Requests:}
-The consumer sends Interests with a predefined name prefix (e.g., \texttt{/example/livestream/}) appended by sequential version numbers to uniquely identify each data chunk. The interest packets are marked as "must be fresh" and set with a lifetime of 6 seconds to ensure timely delivery, aligning with typical real-time video requirements (simulating 30 frames per second).
-
-\textbf{Request Frequency:}
-The application generates Interest packets at intervals of 33 milliseconds, simulating the typical frame rate of a real-time video stream.\ryo{which is? (use fps for frame-rate)} This frequency ensures realistic load conditions without overwhelming network resources.
-
-\textbf{Management of Unresponsive Interests:}
-Timed-out Interests are placed into a First-In-First-Out (FIFO) queue for retransmission at a controlled, lower frequency of once per second. \ryo{wouldn't the application want to be more aggressive?} Retransmissions are triggered by Interest timeouts or Negative Acknowledgements (NACKs), such as "NoRoute" or "NotFound", indicating possible mobility-related disruptions. This conservative retransmission policy minimises resource consumption while maintaining stream continuity.
-
-\textbf{Data Reception and Verification:}
-Upon receiving Data packets, the consumer verifies their authenticity using a preloaded trust schema—a predefined set of rules for packet signature verification—to ensure data integrity and security. Verified Data packets simulate video frame processing by logging content reception; verification failures trigger error logging.
-
-\textbf{Error Handling:}
-Received NACK packets result in logging the error cause and scheduling the Interest for controlled retransmission. Similarly, timeouts prompt retransmission without requiring explicit mobility management at the application layer, as forwarders transparently handle temporary flooding and recovery paths.
-
-\textbf{Naming and Integrity:}
-Strict naming conventions are maintained to ensure accurate matching of requested and received Data packets, preserving stream integrity.
-
-In general, the consumer remains lightweight, relying on standard NDN operations and OptoFlood’s underlying flood mechanisms to manage mobility transparently.
+The consumer issues Interests every 33~ms (30~fps) with freshness and a 6~s lifetime, validates returned Data using a trust schema, and logs basic metrics. It remains mobility-agnostic: after a small number of consecutive failures, the consumer includes an explicit flood request in the Interest \textit{ApplicationParameters}. Forwarders then enforce flooding only under FIB/TFIB miss and set the native HopLimit, keeping overhead bounded while enabling rapid recovery.
 
 % - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 \subsubsection{Network Topology}
