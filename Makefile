@@ -58,8 +58,44 @@ TOOLS_SRCS := experiment/tool/exp.py \
              experiment/tool/plot_loss.py \
              experiment/tool/plot_overhead.py
 
+# Host-side plotting environment (for re-generating figures without re-running experiments)
+VENV_DIR := experiment/tool/.venv
+PYTHON   := $(VENV_DIR)/bin/python3
+
+BASELINE_DIR := results/baseline
+SOLUTION_DIR := results/solution
+CSV_BASELINE := $(BASELINE_DIR)/consumer_capture.csv
+CSV_SOLUTION := $(SOLUTION_DIR)/consumer_capture.csv
+
 # Main target
 all: $(PAPER_PDF)
+
+# High-level orchestration targets (provider must be set via `make kvm ...` or `make vb ...`)
+.PHONY: box box-initial box-baseline box-solution experiment experiment-baseline experiment-solution result paper
+
+# Boxes
+box-initial: box/initial/initial.$(PROVIDER).box
+
+box-baseline: box/baseline/baseline.$(PROVIDER).box
+
+box-solution: box/solution/solution.$(PROVIDER).box
+
+# Build all boxes (initial + baseline + solution)
+box: box-initial box-baseline box-solution
+
+# Experiments (run inside VMs and pull back results)
+experiment-baseline: $(BASELINE_RESULTS)
+
+experiment-solution: $(SOLUTION_RESULTS)
+
+# Run both experiments
+experiment: experiment-baseline experiment-solution
+
+# Assemble result figures for the paper (copy from results/ to paper/figures)
+result: $(BASELINE_PAPER_FIGURES) $(SOLUTION_PAPER_FIGURES)
+
+# Build the paper PDF
+paper: $(PAPER_PDF)
 
 # Ensure results directories exist
 results:
@@ -104,8 +140,8 @@ box/solution/solution.$(PROVIDER).box: box/solution/Vagrantfile box/initial/init
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/solution vagrant halt
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/solution vagrant destroy -f
 
-# Updated build-boxes target to reflect provider-specific boxes
-build-boxes: box/baseline/baseline.$(PROVIDER).box box/solution/solution.$(PROVIDER).box
+# Updated build-boxes target to reflect provider-specific boxes (kept for backward compatibility)
+build-boxes: box-baseline box-solution
 
 # SSH config file for baseline experiment
 .ssh_config_baseline: experiment/baseline/Vagrantfile box/baseline/baseline.$(PROVIDER).box
@@ -142,7 +178,7 @@ SOLUTION_RESULTS := $(SOLUTION_DISRUPTION_PDF) \
                     $(SOLUTION_OVERHEAD_PDF) \
                     results/solution/overhead_total.txt
 
-# Baseline experiment results
+# Baseline experiment results (produce inside VM and rsync back)
 $(BASELINE_RESULTS): $(APP_SRCS) $(BASELINE_SRCS) $(TOOLS_SRCS) .ssh_config_baseline | results/baseline
 	ACTUAL_BASELINE_BOX_PATH="box/baseline/baseline.$(PROVIDER).box" \
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant up
@@ -150,7 +186,7 @@ $(BASELINE_RESULTS): $(APP_SRCS) $(BASELINE_SRCS) $(TOOLS_SRCS) .ssh_config_base
 	$(RSYNC_BASELINE) baseline:/home/vagrant/mini-ndn/flooding/experiment/baseline/results/ results/baseline
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant halt -f || true
 
-# Solution experiment results
+# Solution experiment results (produce inside VM and rsync back)
 $(SOLUTION_RESULTS): $(APP_SRCS) $(SOLUTION_SRCS) $(TOOLS_SRCS) .ssh_config_solution | results/solution
 	ACTUAL_SOLUTION_BOX_PATH="box/solution/solution.$(PROVIDER).box" \
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant up
@@ -158,41 +194,73 @@ $(SOLUTION_RESULTS): $(APP_SRCS) $(SOLUTION_SRCS) $(TOOLS_SRCS) .ssh_config_solu
 	$(RSYNC_SOLUTION) solution:/home/vagrant/mini-ndn/flooding/experiment/solution/results/ results/solution;
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant halt -f || true
 
+# Host-side venv for plotting
+$(VENV_DIR): experiment/tool/requirements.txt
+	python3 -m venv $(VENV_DIR)
+	$(VENV_DIR)/bin/pip install -r experiment/tool/requirements.txt
+	touch $(VENV_DIR)
+
+# Replot from existing CSV (baseline)
+$(BASELINE_DISRUPTION_PDF) $(BASELINE_DIR)/disruption_metrics.txt: $(CSV_BASELINE) experiment/tool/plot_latency.py | $(VENV_DIR) $(BASELINE_DIR)
+	@if [ ! -f $(CSV_BASELINE) ]; then \
+	  echo "Missing $(CSV_BASELINE). Run 'make $(PROVIDER) experiment-baseline' first."; exit 1; \
+	fi
+	$(PYTHON) experiment/tool/plot_latency.py --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
+
+$(BASELINE_LOSS_PDF) $(BASELINE_DIR)/loss_ratio.txt: $(CSV_BASELINE) experiment/tool/plot_loss.py | $(VENV_DIR) $(BASELINE_DIR)
+	@{ test -f $(CSV_BASELINE) || { echo "Missing $(CSV_BASELINE)."; exit 1; }; }
+	$(PYTHON) experiment/tool/plot_loss.py --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
+
+$(BASELINE_OVERHEAD_PDF) $(BASELINE_DIR)/overhead_total.txt: $(CSV_BASELINE) experiment/tool/plot_overhead.py | $(VENV_DIR) $(BASELINE_DIR)
+	@{ test -f $(CSV_BASELINE) || { echo "Missing $(CSV_BASELINE)."; exit 1; }; }
+	$(PYTHON) experiment/tool/plot_overhead.py --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
+
+# Replot from existing CSV (solution)
+$(SOLUTION_DISRUPTION_PDF) $(SOLUTION_DIR)/disruption_metrics.txt: $(CSV_SOLUTION) experiment/tool/plot_latency.py | $(VENV_DIR) $(SOLUTION_DIR)
+	@{ test -f $(CSV_SOLUTION) || { echo "Missing $(CSV_SOLUTION). Run 'make $(PROVIDER) experiment-solution' first."; exit 1; }; }
+	$(PYTHON) experiment/tool/plot_latency.py --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
+
+$(SOLUTION_LOSS_PDF) $(SOLUTION_DIR)/loss_ratio.txt: $(CSV_SOLUTION) experiment/tool/plot_loss.py | $(VENV_DIR) $(SOLUTION_DIR)
+	@{ test -f $(CSV_SOLUTION) || { echo "Missing $(CSV_SOLUTION)."; exit 1; }; }
+	$(PYTHON) experiment/tool/plot_loss.py --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
+
+$(SOLUTION_OVERHEAD_PDF) $(SOLUTION_DIR)/overhead_total.txt: $(CSV_SOLUTION) experiment/tool/plot_overhead.py | $(VENV_DIR) $(SOLUTION_DIR)
+	@{ test -f $(CSV_SOLUTION) || { echo "Missing $(CSV_SOLUTION)."; exit 1; }; }
+	$(PYTHON) experiment/tool/plot_overhead.py --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
+
 # --- Copy Results to Paper Directory ---
 # These rules copy the final PDF results into the paper's figures directory.
 
-$(BASELINE_DISRUPTION_FIGURE): $(BASELINE_RESULTS) | paper/figures
+$(BASELINE_DISRUPTION_FIGURE): $(BASELINE_DISRUPTION_PDF) | paper/figures
 	cp $(BASELINE_DISRUPTION_PDF) $@
 
-$(BASELINE_LOSS_FIGURE): $(BASELINE_RESULTS) | paper/figures
+$(BASELINE_LOSS_FIGURE): $(BASELINE_LOSS_PDF) | paper/figures
 	cp $(BASELINE_LOSS_PDF) $@
 
-$(BASELINE_OVERHEAD_FIGURE): $(BASELINE_RESULTS) | paper/figures
+$(BASELINE_OVERHEAD_FIGURE): $(BASELINE_OVERHEAD_PDF) | paper/figures
 	cp $(BASELINE_OVERHEAD_PDF) $@
 
-$(SOLUTION_DISRUPTION_FIGURE): $(SOLUTION_RESULTS) | paper/figures
+$(SOLUTION_DISRUPTION_FIGURE): $(SOLUTION_DISRUPTION_PDF) | paper/figures
 	cp $(SOLUTION_DISRUPTION_PDF) $@
 
-$(SOLUTION_LOSS_FIGURE): $(SOLUTION_RESULTS) | paper/figures
+$(SOLUTION_LOSS_FIGURE): $(SOLUTION_LOSS_PDF) | paper/figures
 	cp $(SOLUTION_LOSS_PDF) $@
 
-$(SOLUTION_OVERHEAD_FIGURE): $(SOLUTION_RESULTS) | paper/figures
+$(SOLUTION_OVERHEAD_FIGURE): $(SOLUTION_OVERHEAD_PDF) | paper/figures
 	cp $(SOLUTION_OVERHEAD_PDF) $@
 
 # Generate the paper
 $(PAPER_PDF): $(MAIN_TEX) $(ALL_FIGURES) | paper
 	$(MAKE) -C paper
 
+
 # Cleanup
 clean: clean-ssh-config
 	rm -rf results
 	cd paper && $(MAKE) clean
 
-deep-clean:
-	@echo "Error: You must specify a provider for deep-clean."
-	@echo "Usage: make deep-clean-kvm  (for KVM/libvirt)"
-	@echo "   or: make deep-clean-vb   (for VirtualBox)"
-	@exit 1
+# Unified deep-clean (use with provider wrapper: `make kvm deep-clean` or `make vb deep-clean`)
+deep-clean: _deep-clean_provider
 
 # Renamed target for actual implementation
 _deep-clean_provider: clean
@@ -231,7 +299,7 @@ deep-clean-vb:
 	@echo "Deep cleaning using VirtualBox provider..."
 	@$(MAKE) PROVIDER=virtualbox _deep-clean_provider
 
-.PHONY: all build-boxes clean deep-clean _deep-clean_provider clean-ssh-config kvm vb deep-clean-kvm deep-clean-vb
+.PHONY: all build-boxes clean deep-clean _deep-clean_provider clean-ssh-config kvm vb deep-clean-kvm deep-clean-vb box box-initial box-baseline box-solution experiment experiment-baseline experiment-solution result paper
 
 .DELETE_ON_ERROR:
 
