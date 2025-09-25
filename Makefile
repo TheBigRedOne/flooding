@@ -68,7 +68,7 @@ CSV_BASELINE := $(BASELINE_DIR)/consumer_capture.csv
 CSV_SOLUTION := $(SOLUTION_DIR)/consumer_capture.csv
 
 # Main target
-all: $(PAPER_PDF)
+all: box experiment result paper
 
 # High-level orchestration targets (provider must be set via `make kvm ...` or `make vb ...`)
 .PHONY: box box-initial box-baseline box-solution experiment experiment-baseline experiment-solution result paper
@@ -94,8 +94,14 @@ experiment: experiment-baseline experiment-solution
 # Assemble result figures for the paper (copy from results/ to paper/figures)
 result: $(BASELINE_PAPER_FIGURES) $(SOLUTION_PAPER_FIGURES)
 
-# Build the paper PDF
-paper: $(PAPER_PDF)
+# Build the paper PDF (standalone: do not auto-run results)
+paper:
+	@missing=0; \
+	for f in $(BASELINE_PAPER_FIGURES) $(SOLUTION_PAPER_FIGURES); do \
+	  if [ ! -f $$f ]; then echo "Missing figure: $$f (run 'make $(PROVIDER) result')"; missing=1; fi; \
+	done; \
+	if [ $$missing -ne 0 ]; then exit 1; fi
+	$(MAKE) -C paper
 
 # Ensure results directories exist
 results:
@@ -144,7 +150,11 @@ box/solution/solution.$(PROVIDER).box: box/solution/Vagrantfile box/initial/init
 build-boxes: box-baseline box-solution
 
 # SSH config file for baseline experiment
-.ssh_config_baseline: experiment/baseline/Vagrantfile box/baseline/baseline.$(PROVIDER).box
+.ssh_config_baseline: experiment/baseline/Vagrantfile
+	@if [ ! -f box/baseline/baseline.$(PROVIDER).box ]; then \
+	  echo "Missing baseline box: box/baseline/baseline.$(PROVIDER).box"; \
+	  echo "Please run 'make $(PROVIDER) box-baseline' (requires initial box)."; exit 1; \
+	fi
 	# Force destroy any lingering VM to ensure a clean state
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant destroy -f || true
 	ACTUAL_BASELINE_BOX_PATH="box/baseline/baseline.$(PROVIDER).box" \
@@ -152,7 +162,11 @@ build-boxes: box-baseline box-solution
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant ssh-config --host baseline > .ssh_config_baseline
 
 # SSH config file for solution experiment
-.ssh_config_solution: experiment/solution/Vagrantfile box/solution/solution.$(PROVIDER).box
+.ssh_config_solution: experiment/solution/Vagrantfile
+	@if [ ! -f box/solution/solution.$(PROVIDER).box ]; then \
+	  echo "Missing solution box: box/solution/solution.$(PROVIDER).box"; \
+	  echo "Please run 'make $(PROVIDER) box-solution' (requires initial box)."; exit 1; \
+	fi
 	# Force destroy any lingering VM to ensure a clean state
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant destroy -f || true
 	ACTUAL_SOLUTION_BOX_PATH="box/solution/solution.$(PROVIDER).box" \
@@ -205,46 +219,42 @@ $(VENV_DIR): experiment/tool/requirements.txt
 # Replot from existing CSV (baseline)
 $(BASELINE_DISRUPTION_PDF) $(BASELINE_DIR)/disruption_metrics.txt: $(CSV_BASELINE) experiment/tool/plot_latency.py | $(VENV_DIR) $(BASELINE_DIR)
 	@if [ ! -f $(CSV_BASELINE) ]; then \
-	  echo "Missing $(CSV_BASELINE). Running experiment-baseline to fetch artifacts..."; \
-	  $(MAKE) $(PROVIDER) experiment-baseline; \
+	  echo "Missing $(CSV_BASELINE). Please run 'make $(PROVIDER) experiment-baseline' first."; exit 1; \
 	fi
 	$(PYTHON) experiment/tool/plot_latency.py --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
 
 $(BASELINE_LOSS_PDF) $(BASELINE_DIR)/loss_ratio.txt: $(CSV_BASELINE) experiment/tool/plot_loss.py | $(VENV_DIR) $(BASELINE_DIR)
 	@if [ ! -f $(CSV_BASELINE) ]; then \
-	  echo "Missing $(CSV_BASELINE). Running experiment-baseline to fetch artifacts..."; \
-	  $(MAKE) $(PROVIDER) experiment-baseline; \
+	  echo "Missing $(CSV_BASELINE). Please run 'make $(PROVIDER) experiment-baseline' first."; exit 1; \
 	fi
 	$(PYTHON) experiment/tool/plot_loss.py --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
 
 $(BASELINE_OVERHEAD_PDF) $(BASELINE_DIR)/overhead_total.txt: $(CSV_BASELINE) experiment/tool/plot_overhead.py | $(VENV_DIR) $(BASELINE_DIR)
 	@if [ ! -f $(CSV_BASELINE) ]; then \
-	  echo "Missing $(CSV_BASELINE). Running experiment-baseline to fetch artifacts..."; \
-	  $(MAKE) $(PROVIDER) experiment-baseline; \
+	  echo "Missing $(CSV_BASELINE). Please run 'make $(PROVIDER) experiment-baseline' first."; exit 1; \
 	fi
 	$(PYTHON) experiment/tool/plot_overhead.py --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
 
 # Replot from existing CSV (solution)
 $(SOLUTION_DISRUPTION_PDF) $(SOLUTION_DIR)/disruption_metrics.txt: $(CSV_SOLUTION) experiment/tool/plot_latency.py | $(VENV_DIR) $(SOLUTION_DIR)
 	@if [ ! -f $(CSV_SOLUTION) ]; then \
-	  echo "Missing $(CSV_SOLUTION). Running experiment-solution to fetch artifacts..."; \
-	  $(MAKE) $(PROVIDER) experiment-solution; \
+	  echo "Missing $(CSV_SOLUTION). Please run 'make $(PROVIDER) experiment-solution' first."; exit 1; \
 	fi
 	$(PYTHON) experiment/tool/plot_latency.py --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
 
 $(SOLUTION_LOSS_PDF) $(SOLUTION_DIR)/loss_ratio.txt: $(CSV_SOLUTION) experiment/tool/plot_loss.py | $(VENV_DIR) $(SOLUTION_DIR)
 	@if [ ! -f $(CSV_SOLUTION) ]; then \
-	  echo "Missing $(CSV_SOLUTION). Running experiment-solution to fetch artifacts..."; \
-	  $(MAKE) $(PROVIDER) experiment-solution; \
+	  echo "Missing $(CSV_SOLUTION). Please run 'make $(PROVIDER) experiment-solution' first."; exit 1; \
 	fi
 	$(PYTHON) experiment/tool/plot_loss.py --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
 
 $(SOLUTION_OVERHEAD_PDF) $(SOLUTION_DIR)/overhead_total.txt: $(CSV_SOLUTION) experiment/tool/plot_overhead.py | $(VENV_DIR) $(SOLUTION_DIR)
 	@if [ ! -f $(CSV_SOLUTION) ]; then \
-	  echo "Missing $(CSV_SOLUTION). Running experiment-solution to fetch artifacts..."; \
-	  $(MAKE) $(PROVIDER) experiment-solution; \
+	  echo "Missing $(CSV_SOLUTION). Please run 'make $(PROVIDER) experiment-solution' first."; exit 1; \
 	fi
 	$(PYTHON) experiment/tool/plot_overhead.py --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
+
+# (No phony CSV placeholders; missing CSV is handled by recipe-time checks with clear guidance.)
 
 # --- Copy Results to Paper Directory ---
 # These rules copy the final PDF results into the paper's figures directory.
