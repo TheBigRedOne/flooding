@@ -84,9 +84,9 @@ box-solution: box/solution/solution.$(PROVIDER).box
 box: box-initial box-baseline box-solution
 
 # Experiments (run inside VMs and pull back results)
-experiment-baseline: $(BASELINE_RESULTS)
+experiment-baseline: results/.baseline_fetched
 
-experiment-solution: $(SOLUTION_RESULTS)
+experiment-solution: results/.solution_fetched
 
 # Run both experiments
 experiment: experiment-baseline experiment-solution
@@ -178,20 +178,22 @@ SOLUTION_RESULTS := $(SOLUTION_DISRUPTION_PDF) \
                     $(SOLUTION_OVERHEAD_PDF) \
                     results/solution/overhead_total.txt
 
-# Baseline experiment results (produce inside VM and rsync back)
-$(BASELINE_RESULTS): $(APP_SRCS) $(BASELINE_SRCS) $(TOOLS_SRCS) .ssh_config_baseline | results/baseline
+# Fetch baseline artifacts (pcap/csv/pdfs) from VM
+results/.baseline_fetched: $(APP_SRCS) $(BASELINE_SRCS) $(TOOLS_SRCS) .ssh_config_baseline | results/baseline
 	ACTUAL_BASELINE_BOX_PATH="box/baseline/baseline.$(PROVIDER).box" \
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant up
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant ssh -c 'cd /home/vagrant/mini-ndn/flooding/experiment/baseline && make clean && make all'
 	$(RSYNC_BASELINE) baseline:/home/vagrant/mini-ndn/flooding/experiment/baseline/results/ results/baseline
+	@touch $@
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant halt -f || true
 
-# Solution experiment results (produce inside VM and rsync back)
-$(SOLUTION_RESULTS): $(APP_SRCS) $(SOLUTION_SRCS) $(TOOLS_SRCS) .ssh_config_solution | results/solution
+# Fetch solution artifacts (pcap/csv/pdfs) from VM
+results/.solution_fetched: $(APP_SRCS) $(SOLUTION_SRCS) $(TOOLS_SRCS) .ssh_config_solution | results/solution
 	ACTUAL_SOLUTION_BOX_PATH="box/solution/solution.$(PROVIDER).box" \
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant up
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant ssh -c 'cd /home/vagrant/mini-ndn/flooding/experiment/solution && make clean && make all'
 	$(RSYNC_SOLUTION) solution:/home/vagrant/mini-ndn/flooding/experiment/solution/results/ results/solution;
+	@touch $@
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant halt -f || true
 
 # Host-side venv for plotting
@@ -203,29 +205,45 @@ $(VENV_DIR): experiment/tool/requirements.txt
 # Replot from existing CSV (baseline)
 $(BASELINE_DISRUPTION_PDF) $(BASELINE_DIR)/disruption_metrics.txt: $(CSV_BASELINE) experiment/tool/plot_latency.py | $(VENV_DIR) $(BASELINE_DIR)
 	@if [ ! -f $(CSV_BASELINE) ]; then \
-	  echo "Missing $(CSV_BASELINE). Run 'make $(PROVIDER) experiment-baseline' first."; exit 1; \
+	  echo "Missing $(CSV_BASELINE). Running experiment-baseline to fetch artifacts..."; \
+	  $(MAKE) $(PROVIDER) experiment-baseline; \
 	fi
 	$(PYTHON) experiment/tool/plot_latency.py --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
 
 $(BASELINE_LOSS_PDF) $(BASELINE_DIR)/loss_ratio.txt: $(CSV_BASELINE) experiment/tool/plot_loss.py | $(VENV_DIR) $(BASELINE_DIR)
-	@{ test -f $(CSV_BASELINE) || { echo "Missing $(CSV_BASELINE)."; exit 1; }; }
+	@if [ ! -f $(CSV_BASELINE) ]; then \
+	  echo "Missing $(CSV_BASELINE). Running experiment-baseline to fetch artifacts..."; \
+	  $(MAKE) $(PROVIDER) experiment-baseline; \
+	fi
 	$(PYTHON) experiment/tool/plot_loss.py --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
 
 $(BASELINE_OVERHEAD_PDF) $(BASELINE_DIR)/overhead_total.txt: $(CSV_BASELINE) experiment/tool/plot_overhead.py | $(VENV_DIR) $(BASELINE_DIR)
-	@{ test -f $(CSV_BASELINE) || { echo "Missing $(CSV_BASELINE)."; exit 1; }; }
+	@if [ ! -f $(CSV_BASELINE) ]; then \
+	  echo "Missing $(CSV_BASELINE). Running experiment-baseline to fetch artifacts..."; \
+	  $(MAKE) $(PROVIDER) experiment-baseline; \
+	fi
 	$(PYTHON) experiment/tool/plot_overhead.py --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
 
 # Replot from existing CSV (solution)
 $(SOLUTION_DISRUPTION_PDF) $(SOLUTION_DIR)/disruption_metrics.txt: $(CSV_SOLUTION) experiment/tool/plot_latency.py | $(VENV_DIR) $(SOLUTION_DIR)
-	@{ test -f $(CSV_SOLUTION) || { echo "Missing $(CSV_SOLUTION). Run 'make $(PROVIDER) experiment-solution' first."; exit 1; }; }
+	@if [ ! -f $(CSV_SOLUTION) ]; then \
+	  echo "Missing $(CSV_SOLUTION). Running experiment-solution to fetch artifacts..."; \
+	  $(MAKE) $(PROVIDER) experiment-solution; \
+	fi
 	$(PYTHON) experiment/tool/plot_latency.py --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
 
 $(SOLUTION_LOSS_PDF) $(SOLUTION_DIR)/loss_ratio.txt: $(CSV_SOLUTION) experiment/tool/plot_loss.py | $(VENV_DIR) $(SOLUTION_DIR)
-	@{ test -f $(CSV_SOLUTION) || { echo "Missing $(CSV_SOLUTION)."; exit 1; }; }
+	@if [ ! -f $(CSV_SOLUTION) ]; then \
+	  echo "Missing $(CSV_SOLUTION). Running experiment-solution to fetch artifacts..."; \
+	  $(MAKE) $(PROVIDER) experiment-solution; \
+	fi
 	$(PYTHON) experiment/tool/plot_loss.py --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
 
 $(SOLUTION_OVERHEAD_PDF) $(SOLUTION_DIR)/overhead_total.txt: $(CSV_SOLUTION) experiment/tool/plot_overhead.py | $(VENV_DIR) $(SOLUTION_DIR)
-	@{ test -f $(CSV_SOLUTION) || { echo "Missing $(CSV_SOLUTION)."; exit 1; }; }
+	@if [ ! -f $(CSV_SOLUTION) ]; then \
+	  echo "Missing $(CSV_SOLUTION). Running experiment-solution to fetch artifacts..."; \
+	  $(MAKE) $(PROVIDER) experiment-solution; \
+	fi
 	$(PYTHON) experiment/tool/plot_overhead.py --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
 
 # --- Copy Results to Paper Directory ---
