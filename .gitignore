@@ -76,3 +76,9 @@ Thumbs.db
 # Temporary or swap files
 *.swp
 *.swo
+
+# Project docs
+OptoFlood整合情况.md
+OptoFlood部署总结.md
+OptoFlood部署计划.md
+README_OptoFlood.md

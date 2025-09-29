@@ -1,5 +1,15 @@
 PROVIDER ?= virtualbox
 
+# Provider goal rewriting: allow `make kvm …` or `make vb …` without double execution
+ifeq ($(firstword $(MAKECMDGOALS)),kvm)
+  PROVIDER := libvirt
+  override MAKECMDGOALS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
+endif
+ifeq ($(firstword $(MAKECMDGOALS)),vb)
+  PROVIDER := virtualbox
+  override MAKECMDGOALS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
+endif
+
 # Master Control Makefile
 
 # --- Main Experiment Outputs ---
@@ -311,13 +321,12 @@ clean-ssh-config:
 	rm -f .ssh_config_baseline .ssh_config_solution
 
 # Provider-specific convenience targets
+# Legacy provider convenience targets (kept for compatibility). No-op due to goal rewriting above.
 kvm:
-	@echo "Setting provider to libvirt (KVM)"
-	@$(MAKE) PROVIDER=libvirt $(filter-out $@,$(MAKECMDGOALS))
+	@true
 
 vb:
-	@echo "Setting provider to VirtualBox"
-	@$(MAKE) PROVIDER=virtualbox $(filter-out $@,$(MAKECMDGOALS))
+	@true
 
 deep-clean-kvm:
 	@echo "Deep cleaning using libvirt (KVM) provider..."
