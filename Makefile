@@ -10,6 +10,12 @@ ifeq ($(firstword $(MAKECMDGOALS)),vb)
   override MAKECMDGOALS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 endif
 
+# Optional flag-like goal to disable tests: allow `make kvm all -disable_test`
+ifneq ($(filter -disable_test,$(MAKECMDGOALS)),)
+  DISABLE_TEST := 1
+  override MAKECMDGOALS := $(filter-out -disable_test,$(MAKECMDGOALS))
+endif
+
 # Master Control Makefile
 
 # --- Main Experiment Outputs ---
@@ -77,11 +83,12 @@ SOLUTION_DIR := results/solution
 CSV_BASELINE := $(BASELINE_DIR)/consumer_capture.csv
 CSV_SOLUTION := $(SOLUTION_DIR)/consumer_capture.csv
 
-# Main target
-all: box experiment result paper
+# Main target (set DISABLE_TEST=1 to skip tests)
+DISABLE_TEST ?=
+all: box experiment $(if $(DISABLE_TEST),,test) result paper
 
 # High-level orchestration targets (provider must be set via `make kvm ...` or `make vb ...`)
-.PHONY: box box-initial box-baseline box-solution experiment experiment-baseline experiment-solution result paper
+.PHONY: box box-initial box-baseline box-solution experiment experiment-baseline experiment-solution result paper test
 
 # Boxes
 box-initial: box/initial/initial.$(PROVIDER).box
@@ -103,6 +110,9 @@ experiment: experiment-baseline experiment-solution
 
 # Assemble result figures for the paper (copy from results/ to paper/figures)
 result: $(BASELINE_PAPER_FIGURES) $(SOLUTION_PAPER_FIGURES)
+
+# Run the test experiment
+test: $(MAKE) -C test PROVIDER=$(PROVIDER) test-all
 
 # Build the paper PDF (standalone: do not auto-run results)
 paper:
