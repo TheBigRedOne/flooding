@@ -15,14 +15,24 @@ from typing import List
 
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 PCAP_DIR = os.path.join(TEST_DIR, 'pcap')
+# Load custom dissector explicitly for tshark
+LUA_DISS = os.path.abspath(os.path.join(TEST_DIR, '..', 'experiment', 'tool', 'ndn.lua'))
 
 
 def run(cmd: List[str]) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
 
 
+def tshark_cmd(extra: List[str]) -> List[str]:
+    args = ['tshark']
+    if os.path.exists(LUA_DISS):
+        args += ['-X', f'lua_script:{LUA_DISS}']
+    args += extra
+    return args
+
+
 def tshark_json(pcap: str, fields: List[str]) -> List[dict]:
-    cmd = ['tshark', '-r', pcap, '-T', 'json']
+    cmd = tshark_cmd(['-r', pcap, '-T', 'json'])
     res = run(cmd)
     if res.returncode != 0:
         print(f"FAIL: tshark error on {pcap}: {res.stderr}")
@@ -134,7 +144,7 @@ def validate_s2() -> None:
         p = os.path.join(PCAP_DIR, f'{node}.pcap')
         if not os.path.exists(p):
             continue
-        res = run(['tshark', '-r', p, '-Y', 'ndn.type==6', '-T', 'fields', '-e', 'ndn.name'])
+        res = run(tshark_cmd(['-r', p, '-Y', 'ndn.type==6', '-T', 'fields', '-e', 'ndn.name']))
         names = [ln.strip() for ln in res.stdout.splitlines() if ln.strip()]
         if len(names) != len(set(names)):
             print(f'FAIL: S2 duplicate Data detected on {node}')
@@ -149,7 +159,7 @@ def validate_s3() -> None:
     if not os.path.exists(p):
         print('FAIL: S3 missing r3.pcap')
         sys.exit(1)
-    res = run(['tshark', '-r', p, '-Y', 'ndn.type==5', '-c', '1'])
+    res = run(tshark_cmd(['-r', p, '-Y', 'ndn.type==5', '-c', '1']))
     if res.returncode == 0:
         print('PASS: S3 TFIB/forwarding window observed (Interest present)')
         return
@@ -165,7 +175,7 @@ def validate_s5() -> None:
         p = os.path.join(PCAP_DIR, f'{node}.pcap')
         if not os.path.exists(p):
             continue
-        res = run(['tshark', '-r', p, '-Y', 'ndn.name contains "/localhost/nlsr/fast-lsa"', '-c', '1'])
+        res = run(tshark_cmd(['-r', p, '-Y', 'ndn.name contains "/localhost/nlsr/fast-lsa"', '-c', '1']))
         if res.returncode == 0:
             any_hit = True
             break

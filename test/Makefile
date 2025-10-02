@@ -46,8 +46,11 @@ vm-destroy:
 prep: check-solution-box vm-up
 	# Build apps inside VM (solution mode)
 	$(VAGRANT_SOLUTION) ssh -c 'cd /home/vagrant/mini-ndn/flooding/experiment/solution && make clean && make producer && make consumer'
+	# Ensure tshark loads updated NDN dissector (ndn.lua)
+	$(VAGRANT_SOLUTION) ssh -c 'sudo mkdir -p /usr/local/share/ndn-dissect-wireshark && sudo cp /home/vagrant/mini-ndn/flooding/experiment/tool/ndn.lua /usr/local/share/ndn-dissect-wireshark/ndn.lua'
 	# Run test topology and capture multi-point pcaps (outputs under /home/vagrant/mini-ndn/flooding/test)
-	$(VAGRANT_SOLUTION) ssh -c 'EXPERIMENT_DIR=/home/vagrant/mini-ndn/flooding/test /usr/bin/sudo -E python3 /home/vagrant/mini-ndn/flooding/test/exp_test.py'
+	$(VAGRANT_SOLUTION) ssh -c 'EXPERIMENT_DIR=/home/vagrant/mini-ndn/flooding/test WIRESHARK_RUN_FROM_BUILD_DIRECTORY=1 WIRESHARK_PLUGIN_DIR= /usr/bin/sudo -E tshark -v >/dev/null 2>&1 || true'
+	$(VAGRANT_SOLUTION) ssh -c 'EXPERIMENT_DIR=/home/vagrant/mini-ndn/flooding/test WIRESHARK_RUN_FROM_BUILD_DIRECTORY=1 WIRESHARK_PLUGIN_DIR= LUA_PATH="/usr/local/share/ndn-dissect-wireshark/?.lua;;" LUA_CPATH=";;" /usr/bin/sudo -E python3 /home/vagrant/mini-ndn/flooding/test/exp_test.py'
 	# Rsync back test artifacts to host test/
 	SSHCFG=.ssh_config_solution; \
 		$(VAGRANT_SOLUTION) ssh-config --host solution > $$SSHCFG; \
