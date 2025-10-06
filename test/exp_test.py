@@ -86,6 +86,14 @@ if __name__ == '__main__':
     r4 = ndn.net['r4']
     r5 = ndn.net['r5']
 
+    # Helper to take nfdc snapshots per node
+    def snap(node, label: str):
+        base = os.path.join(results_dir, f"{node.name}_{label}")
+        node.cmd(f"nfdc status report text > {base}_status.txt 2>/dev/null || true")
+        node.cmd(f"nfdc face list > {base}_face.txt 2>/dev/null || true")
+        node.cmd(f"nfdc fib list > {base}_fib.txt 2>/dev/null || true")
+        node.cmd(f"nfdc route list > {base}_rib.txt 2>/dev/null || true")
+
     # Start tcpdump on multiple nodes (use -i any within each namespace)
     consumer_pcap = os.path.join(pcap_dir, 'consumer.pcap')
     producer_pcap = os.path.join(pcap_dir, 'producer.pcap')
@@ -112,20 +120,26 @@ if __name__ == '__main__':
     producer.cmd(f"{producer_exec} --solution &> {producer_log} &")
     consumer.cmd(f"{consumer_exec} --solution &> {consumer_log} &")
 
-    # Warm-up period
+    # Warm-up period, then take T0 snapshot
     sleep(60)
+    for n in (r1, r2, r3, r4, r5):
+        snap(n, 'T0')
 
     # Mobility event #1: move producer to r3 (linear validation: S1/S3/S4)
     info('Mobility #1: producer attaches to r3\n')
     ndn.net.configLinkStatus('producer', 'r2', 'down')
     ndn.net.configLinkStatus('producer', 'r3', 'up')
     sleep(120)
+    for n in (r1, r2, r3, r4, r5):
+        snap(n, 'T1')
 
     # Mobility event #2: move producer to r4 (branch path A)
     info('Mobility #2: producer attaches to r4\n')
     ndn.net.configLinkStatus('producer', 'r3', 'down')
     ndn.net.configLinkStatus('producer', 'r4', 'up')
     sleep(120)
+    for n in (r1, r2, r3, r4, r5):
+        snap(n, 'T2')
 
     # Mobility event #3: move producer to r5 (branch path B)
     info('Mobility #3: producer attaches to r5\n')

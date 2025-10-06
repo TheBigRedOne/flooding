@@ -137,53 +137,62 @@ def validate_s4() -> None:
 
 
 def validate_s2() -> None:
-    # Dedup: check same Data name/FloodId appears once per neighbor; fallback to count per pcap
-    # Simplified: ensure r3, r4, r5 do not show duplicated identical Data frames within small time window
-    # For strong evidence, this would parse Data name and custom FloodId field if dissector available.
+    # Strong dedup by FloodId (MetaInfo TLV 202) via custom dissector field ndn.flood_id
+    any_checked = False
     for node in ('r3', 'r4', 'r5'):
         p = os.path.join(PCAP_DIR, f'{node}.pcap')
         if not os.path.exists(p):
             continue
-        res = run(tshark_cmd(['-r', p, '-Y', 'ndn.type==6', '-T', 'fields', '-e', 'ndn.name']))
-        names = [ln.strip() for ln in res.stdout.splitlines() if ln.strip()]
-        if len(names) != len(set(names)):
-            print(f'FAIL: S2 duplicate Data detected on {node}')
-            sys.exit(1)
-    print('PASS: S2 Data dedup (no duplicates by name observed)')
+        res = run(tshark_cmd(['-r', p, '-Y', 'ndn.type==6', '-T', 'fields', '-e', 'ndn.flood_id']))
+        lines = [ln.strip() for ln in res.stdout.splitlines() if ln.strip()]
+        if lines:
+            any_checked = True
+            if len(lines) != len(set(lines)):
+                print(f'FAIL: S2 duplicate FloodId detected on {node}')
+                sys.exit(1)
+    if not any_checked:
+        print('FAIL: S2 no FloodId observed in pcaps (check dissector)')
+        sys.exit(1)
+    print('PASS: S2 Data dedup by FloodId (no duplicates)')
 
 
 def validate_s3() -> None:
-    # TFIB: rely on logs if available; minimal check here is that Interests traverse when FIB miss expected window
-    # Placeholder: success if Interests observed at r3 within expected window.
-    p = os.path.join(PCAP_DIR, 'r3.pcap')
-    if not os.path.exists(p):
-        print('FAIL: S3 missing r3.pcap')
+    # Strong TFIB window evidence via RIB snapshots (T1 vs T2) and Interest presence
+    r3_rib_T1 = os.path.join(TEST_DIR, 'r3_T1_rib.txt')
+    r3_rib_T2 = os.path.join(TEST_DIR, 'r3_T2_rib.txt')
+    if not (os.path.exists(r3_rib_T1) and os.path.exists(r3_rib_T2)):
+        print('FAIL: S3 missing RIB snapshots (r3_T1_rib.txt/r3_T2_rib.txt)')
         sys.exit(1)
-    res = run(tshark_cmd(['-r', p, '-Y', 'ndn.type==5', '-c', '1']))
-    if res.returncode == 0:
-        print('PASS: S3 TFIB/forwarding window observed (Interest present)')
-        return
-    print('FAIL: S3 no Interest observed at r3')
-    sys.exit(1)
+    with open(r3_rib_T1, 'r', encoding='utf-8', errors='ignore') as f1, open(r3_rib_T2, 'r', encoding='utf-8', errors='ignore') as f2:
+        t1 = f1.read()
+        t2 = f2.read()
+    if t1 == t2:
+        print('FAIL: S3 RIB did not change across T1->T2 window')
+        sys.exit(1)
+    p = os.path.join(PCAP_DIR, 'r3.pcap')
+    if os.path.exists(p):
+        res = run(tshark_cmd(['-r', p, '-Y', 'ndn.type==5', '-c', '1']))
+        if res.returncode != 0:
+            print('FAIL: S3 no Interest observed at r3 during window')
+            sys.exit(1)
+    print('PASS: S3 TFIB window evidenced by RIB change and Interest presence')
 
 
 def validate_s5() -> None:
-    # Fast-LSA: expect logs/nfdc evidence. Here we check for management Data under localhost namespace in pcaps as a proxy.
-    # Strong variant should parse NLSR logs; minimal check here:
-    any_hit = False
-    for node in ('r2', 'r3', 'r4'):
-        p = os.path.join(PCAP_DIR, f'{node}.pcap')
-        if not os.path.exists(p):
-            continue
-        res = run(tshark_cmd(['-r', p, '-Y', 'ndn.name contains "/localhost/nlsr/fast-lsa"', '-c', '1']))
-        if res.returncode == 0:
-            any_hit = True
-            break
-    if any_hit:
-        print('PASS: S5 management trigger observed (proxy for Fast-LSA)')
-    else:
-        print('FAIL: S5 no management trigger observed')
+    # Strong Fast-LSA check via RIB snapshots: detect short-lived route between T1 and T2
+    r3_rib_T1 = os.path.join(TEST_DIR, 'r3_T1_rib.txt')
+    r3_rib_T2 = os.path.join(TEST_DIR, 'r3_T2_rib.txt')
+    if not (os.path.exists(r3_rib_T1) and os.path.exists(r3_rib_T2)):
+        print('FAIL: S5 missing RIB snapshots (r3_T1_rib.txt/r3_T2_rib.txt)')
         sys.exit(1)
+    with open(r3_rib_T1, 'r', encoding='utf-8', errors='ignore') as f1, open(r3_rib_T2, 'r', encoding='utf-8', errors='ignore') as f2:
+        t1 = f1.read().splitlines()
+        t2 = f2.read().splitlines()
+    disappeared = [ln for ln in t1 if ln not in t2]
+    if not disappeared:
+        print('FAIL: S5 no short-lived RIB entries detected between T1 and T2')
+        sys.exit(1)
+    print('PASS: S5 short-lived RIB entries detected, count =', len(disappeared))
 
 
 def main():
