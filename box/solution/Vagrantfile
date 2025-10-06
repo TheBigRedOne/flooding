@@ -4,14 +4,17 @@ $INSTALL_BASE = <<EOF
   set -e -u -o pipefail
 
   # Clone and install mini-ndn
-  # Ensure pip supports --break-system-packages used by downstream installers
-  python3 -m pip install --user --upgrade pip
-  echo 'export PATH=$HOME/.local/bin:/usr/local/bin:$PATH' >> /home/vagrant/.profile
-  export PATH=$HOME/.local/bin:/usr/local/bin:$PATH
-
   git clone https://github.com/named-data/mini-ndn.git /home/vagrant/mini-ndn
   cd /home/vagrant/mini-ndn
   git checkout 73add71f860979426aef63136bf78ed525862e5c
+  # Pre-clone mininet-wifi and remove Debian-specific pip flag to avoid errors on older/upstream pip
+  mkdir -p /home/vagrant/mini-ndn/dl
+  if [ ! -d "/home/vagrant/mini-ndn/dl/mininet-wifi" ]; then
+    git clone https://github.com/intrig-unicamp/mininet-wifi.git /home/vagrant/mini-ndn/dl/mininet-wifi || true
+  fi
+  if [ -f "/home/vagrant/mini-ndn/dl/mininet-wifi/util/install.sh" ]; then
+    sed -i 's/ --break-system-packages//g' /home/vagrant/mini-ndn/dl/mininet-wifi/util/install.sh || true
+  fi
   ./install.sh -y \
   --cxx=https://github.com/TheBigRedOne/ndn-cxx.git@OptoFlood \
   --nfd=https://github.com/TheBigRedOne/NFD.git@OptoFlood \
