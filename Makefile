@@ -112,7 +112,8 @@ experiment: experiment-baseline experiment-solution
 result: $(BASELINE_PAPER_FIGURES) $(SOLUTION_PAPER_FIGURES)
 
 # Run the test experiment
-test: $(MAKE) -C test PROVIDER=$(PROVIDER) test-all
+test:
+	$(MAKE) -C test PROVIDER=$(PROVIDER) test-all
 
 # Build the paper PDF (standalone: do not auto-run results)
 paper:
