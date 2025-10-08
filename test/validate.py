@@ -94,7 +94,7 @@ def validate_s1() -> None:
         if not os.path.exists(p):
             continue
         # Prefer direct field extraction for robustness
-        vals = tshark_fields(p, 'ndn.type==6', 'ndn.lp.hoplimit')
+        vals = tshark_fields(p, 'ndn.type==Data', 'ndn.lp.hoplimit')
         if vals:
             try:
                 seen.append(int(vals[0]))
@@ -135,7 +135,7 @@ def validate_s4() -> None:
         if not os.path.exists(p):
             continue
         # Prefer direct field extraction for robustness
-        vals = tshark_fields(p, 'ndn.type==5', 'ndn.hoplimit')
+        vals = tshark_fields(p, 'ndn.type==Interest', 'ndn.hoplimit')
         if vals:
             try:
                 seen.append(int(vals[0]))
@@ -169,7 +169,7 @@ def validate_s2() -> None:
         p = os.path.join(PCAP_DIR, f'{node}.pcap')
         if not os.path.exists(p):
             continue
-        res = run(tshark_cmd(['-r', p, '-Y', 'ndn.type==6', '-T', 'fields', '-e', 'ndn.flood_id']))
+        res = run(tshark_cmd(['-r', p, '-Y', 'ndn.type==Data', '-T', 'fields', '-e', 'ndn.flood_id']))
         lines = [ln.strip() for ln in res.stdout.splitlines() if ln.strip()]
         if lines:
             any_checked = True
