@@ -111,7 +111,7 @@ if __name__ == '__main__':
     r4.cmd(f"tcpdump -i any -U -w {r4_pcap} &> {os.path.join(results_dir, 'tcpdump_r4.log')} &")
     r5.cmd(f"tcpdump -i any -U -w {r5_pcap} &> {os.path.join(results_dir, 'tcpdump_r5.log')} &")
 
-    # Launch producer and consumer apps
+    # Launch producer and consumer apps (built under test/ by Makefile prep)
     producer_exec = os.path.join(experiment_dir, 'producer')
     consumer_exec = os.path.join(experiment_dir, 'consumer')
     producer_log = os.path.join(results_dir, 'producer.log')

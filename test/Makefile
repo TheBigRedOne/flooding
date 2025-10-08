@@ -44,8 +44,9 @@ vm-destroy:
 
 # Prepare: build apps in-VM for test, run dedicated test topology, and fetch artifacts
 prep: check-solution-box vm-up
-	# Build apps inside VM (solution mode)
-	$(VAGRANT_SOLUTION) ssh -c 'cd /home/vagrant/mini-ndn/flooding/experiment/solution && make clean && make producer && make consumer'
+    # Build apps inside VM under test/ from experiment/app sources (solution features enabled)
+    $(VAGRANT_SOLUTION) ssh -c 'cd /home/vagrant/mini-ndn/flooding/test && rm -f producer consumer && g++ -std=c++17 -g -O2 -DSOLUTION_ENABLED -o producer ../experiment/app/producer.cpp -DBOOST_STACKTRACE_DYN_LINK -DBOOST_LOG_DYN_LINK -I/usr/local/include -L/usr/local/lib -lndn-cxx -lboost_chrono -lboost_filesystem -lboost_log -lboost_thread -lboost_stacktrace_backtrace -lcrypto -lsqlite3 -latomic -lrt -lpthread'
+    $(VAGRANT_SOLUTION) ssh -c 'cd /home/vagrant/mini-ndn/flooding/test && g++ -std=c++17 -g -O2 -DSOLUTION_ENABLED -o consumer ../experiment/app/consumer.cpp -DBOOST_STACKTRACE_DYN_LINK -DBOOST_LOG_DYN_LINK -I/usr/local/include -L/usr/local/lib -lndn-cxx -lboost_chrono -lboost_filesystem -lboost_log -lboost_thread -lboost_stacktrace_backtrace -lcrypto -lsqlite3 -latomic -lrt -lpthread'
 	# Ensure tshark loads updated NDN dissector (ndn.lua)
 	$(VAGRANT_SOLUTION) ssh -c 'sudo mkdir -p /usr/local/share/ndn-dissect-wireshark && sudo cp /home/vagrant/mini-ndn/flooding/experiment/tool/ndn.lua /usr/local/share/ndn-dissect-wireshark/ndn.lua'
 	# Run test topology and capture multi-point pcaps (outputs under /home/vagrant/mini-ndn/flooding/test)
