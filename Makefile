@@ -316,6 +316,7 @@ _deep-clean_provider: clean
 	rm -rf $(BASELINE_FIGURE) $(SOLUTION_FIGURE) $(PAPER_PDF)
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant destroy -f || true
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant destroy -f || true
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=test vagrant destroy -f || true
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/baseline vagrant destroy -f || true
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/solution vagrant destroy -f || true
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/initial  vagrant destroy -f || true
