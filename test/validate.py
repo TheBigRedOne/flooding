@@ -45,6 +45,14 @@ def tshark_json(pcap: str, fields: List[str]) -> List[dict]:
     return data
 
 
+def tshark_fields(pcap: str, display_filter: str, field: str) -> List[str]:
+    cmd = tshark_cmd(['-r', pcap, '-Y', display_filter, '-T', 'fields', '-e', field])
+    res = run(cmd)
+    if res.returncode != 0:
+        return []
+    return [ln.strip() for ln in res.stdout.splitlines() if ln.strip()]
+
+
 def extract_hoplimits(json_packets: List[dict], is_data: bool) -> List[int]:
     hoplimits = []
     for pkt in json_packets:
@@ -85,6 +93,15 @@ def validate_s1() -> None:
     for p in path_pcaps:
         if not os.path.exists(p):
             continue
+        # Prefer direct field extraction for robustness
+        vals = tshark_fields(p, 'ndn.type==6', 'ndn.lp.hoplimit')
+        if vals:
+            try:
+                seen.append(int(vals[0]))
+                continue
+            except Exception:
+                pass
+        # Fallback to JSON scan
         j = tshark_json(p, [])
         hls = extract_hoplimits(j, is_data=True)
         if hls:
@@ -117,6 +134,15 @@ def validate_s4() -> None:
     for p in path_pcaps:
         if not os.path.exists(p):
             continue
+        # Prefer direct field extraction for robustness
+        vals = tshark_fields(p, 'ndn.type==5', 'ndn.hoplimit')
+        if vals:
+            try:
+                seen.append(int(vals[0]))
+                continue
+            except Exception:
+                pass
+        # Fallback to JSON scan
         j = tshark_json(p, [])
         hls = extract_hoplimits(j, is_data=False)
         if hls:
