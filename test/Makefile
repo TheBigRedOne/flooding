@@ -47,6 +47,9 @@ prep: check-solution-box vm-up
 	# Build apps inside VM under test/ from experiment/app sources (solution features enabled)
 	$(VAGRANT_SOLUTION) ssh -c 'set -e; cd /home/vagrant/mini-ndn/flooding/test && rm -f producer consumer && PKG="$$(pkg-config --cflags --libs libndn-cxx)" && g++ -std=c++17 -g -O2 -DSOLUTION_ENABLED -o producer ../experiment/app/producer.cpp $$PKG && chmod +x producer && ls -l producer'
 	$(VAGRANT_SOLUTION) ssh -c 'set -e; cd /home/vagrant/mini-ndn/flooding/test && PKG="$$(pkg-config --cflags --libs libndn-cxx)" && g++ -std=c++17 -g -O2 -DSOLUTION_ENABLED -o consumer ../experiment/app/consumer.cpp $$PKG && chmod +x consumer && ls -l consumer'
+	# Ensure trust schema is available beside binaries
+	$(VAGRANT_SOLUTION) ssh -c 'cp -f /home/vagrant/mini-ndn/flooding/experiment/app/trust-schema.conf /home/vagrant/mini-ndn/flooding/test/ || true'
+	$(VAGRANT_SOLUTION) ssh -c 'cp -f /home/vagrant/mini-ndn/flooding/experiment/app/trust-schema.conf /home/vagrant/mini-ndn/flooding/ || true'
 	# Ensure tshark loads updated NDN dissector (ndn.lua)
 	$(VAGRANT_SOLUTION) ssh -c 'sudo mkdir -p /usr/local/share/ndn-dissect-wireshark && sudo cp /home/vagrant/mini-ndn/flooding/experiment/tool/ndn.lua /usr/local/share/ndn-dissect-wireshark/ndn.lua'
 	# Run test topology and capture multi-point pcaps (outputs under /home/vagrant/mini-ndn/flooding/test)
