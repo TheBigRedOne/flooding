@@ -138,65 +138,52 @@ These problems highlight the limitations of traditional routing-based approaches
 \section{Controllable Flooding for NDN Mobility} 
 \label{sec:solution}
 
-To address the challenges of producer mobility in NDN, particularly in latency-sensitive applications such as video conferencing or live streaming, we propose \textit{OptoFlood}, a novel controllable flooding mechanism. OptoFlood rapidly establishes temporary bidirectional communication paths following producer movements and leverages these paths to accelerate global routing convergence.
-OptoFlood also selectively incorporates beneficial elements from existing mobility solutions, such as scoped flooding, inspired by MAP-Me \cite{FIXME}, and trace-guided forwarding from KITE \cite{FIXME} to further improve efficiency and performance.
+To address the challenges of producer mobility in NDN, particularly in latency-sensitive applications such as video conferencing or live streaming, we propose \textit{OptoFlood}, a novel controllable flooding mechanism. OptoFlood rapidly establishes temporary bidirectional communication paths following producer movements and leverages these paths to accelerate routing convergence.
 
 \csp{Need a diagram showing the operation of the flooding, that the following can refer to.}
 
 \subsection{Producer Mobility Detection and Data Packet Flooding}
 \label{sec:solution:data-flooding}
 
-When moving to a new Point of Attachment (PoA), the producer immediately initiates controlled flooding of Data packets corresponding to any Interest packets it had received prior to the handover, but to which it had not yet responded. These Data packets are marked in their MetaInfo TLV with:
+When moving to a new Point of Attachment (PoA), the producer immediately starts controlled flooding of Data packets that correspond to Interests received before handover but not yet satisfied. Each flooded Data packet carries four markings:
+
 \begin{itemize}
-\item \textbf{MobilityFlag}: indicates mobility-related flooding.
-\item \textbf{Flood-ID}: unique identifier for deduplication.
-\item \textbf{NewFaceSeq}: sequence number that ensures consistency.
-\item \textbf{Trace-Hint}: lightweight breadcrumb of recent PoAs (inspired by KITE~\cite{zhang:2018:kite}) for guided flooding.
+  \item \textbf{LP--MobilityFlag}: a per-hop forwarding hint for mobility handling; intermediate nodes clear it upon a PIT match so that the Data return via normal forwarding.
+  \item \textbf{LP--HopLimit}: a per-hop scope control decremented at each hop (default~3) to confine flooding within the local access/aggregation domain.
+  \item \textbf{Flood-ID}: an immutable identifier used for duplicate suppression in floods; it is carried in the signed portion of the Data (e.g. as a MetaInfo extension TLV) so that nodes on the path cannot forge or alter it.
+  \item \textbf{NewFaceSeq}: an immutable sequence number used by forwarders to create or update a Temporary FIB (TFIB) entry once the Data are returned; it is also carried in the signed portion of the data to ensure integrity.
 \end{itemize}
 
-These flooded Data packets preferentially follow existing valid FIB next hops; if no valid FIB next hop exists, they fall back to forwarding over directly-adjacent faces (i.e., data-plane neighbours) under strict scope controls. In our implementation the Data hop count is carried in the NDNLPv2 header as an experimental \emph{OptoHopLimit} field (value~96), which is outside the signed portion of the Data and is decremented hop-by-hop. We conservatively bound propagation with a maximum of three hops, restricting flooding within typical local access and aggregation networks. The goal is to reach nodes maintaining valid Pending Interest Table (PIT) entries and promptly rescue pending Interests.
+Flooded Data packets \emph{first} follow available FIB next hops. If no valid FIB next hop exists, forwarders fall back to \emph{scoped expansion} over data-plane adjacent faces under LP--HopLimit, with duplicate suppression by Flood-ID and rate limiting. The aim is to reach a node that still holds a valid Pending Interest Table (PIT) entry along the original path so that the Data can return to the consumer without waiting for global routing updates.
 
-\subsection{Interest Flooding Triggered by Forwarder FIB Invalidation}
+\subsection{Consumer-Triggered Interest Flooding with Forwarder Gating}
 \label{sec:solution:interest-flooding}
 
-Forwarders conditionally perform Interest flooding when an Interest arrives without available next hops (FIB/TFIB miss), or when an explicit flood request is present. In our prototype, the consumer includes an explicit request in the Interest \emph{ApplicationParameters} after a small number of consecutive failures; the forwarder acts as the enforcement point and sets the native \emph{HopLimit} before executing flooding, and only under FIB/TFIB miss. Optionally, a fast, rate-limited probe on the first miss can be enabled to further reduce recovery time.
-The Interest flooding strategy involves:
-\begin{itemize}
-\item \textbf{Prioritised Forward}: Forwarders first attempt to forward Interests via existing valid FIB entries towards the last known PoAs, guided by \textit{Trace-Hints} embedded within Interest packets.
-\item \textbf{Scoped Blind Flooding}: In the absence of valid FIB entries, forwarders employ scoped blind flooding inspired by the local discovery mechanism of MAP-Me~\cite{auge:2016:map-me}, restricting packet propagation by using a conservative HopLimit (typically set to 3).
-\end{itemize}
-
-This controlled flooding efficiently discovers the producer's new location, minimising unnecessary network load.
+The consumer explicitly triggers the first batch of \emph{controlled} floods after a small number of consecutive failures (e.g., timeouts or NoRoute NACKs). It does so by issuing Interests with a conservative native \emph{HopLimit} (default~3). Forwarders act as enforcement points: they only execute the flood when both PIT lookup fails and no FIB/TFIB next hop is available; otherwise, they forward via TFIB/FIB without flooding. Flooding remains strictly scoped by HopLimit and is subject to duplicate suppression and per-producer rate limiting. This design reduces misfires due to transient fluctuations and keeps the mechanism under tight control.
 
 \subsection{Temporary Bidirectional Path Establishment}
 \label{sec:solution:bidir}
 
-OptoFlood leverages the coordinated flooding of Interest and Data packets to establish robust temporary bidirectional paths. When flooded Interests reach the relocated producer, returning Data packets carry updated \textit{NewFaceSeq} and \textit{Flood-ID}. Forwarders receiving these Data packets establish or update a separate Temporary FIB (TFIB), distinct from the standard FIB, specifically designed to handle transient mobility-related paths.
-% rationale for TFIB vs FIB
+Flooded Interests that reach the relocated producer trigger returning Data carrying updated LP--NewFaceSeq and LP--Flood-ID. Forwarders on the return path create or update a separate \emph{Temporary FIB (TFIB)} entry, distinct from the standard FIB, to capture the discovered working face. TFIB entries have a short TTL (about one second): long enough to bridge micro-mobility gaps, short enough to avoid stale state, and keep memory bounded. Subsequent Interests then switch to unicast via TFIB immediately.
 
-The TFIB entries maintain temporary forwarding state with a brief TTL (approximately one second), chosen to bridge micro-mobility gaps without accumulating state; entries naturally expire as regular routing reconverges, minimising memory and control overhead.
-
-Flooded Data packets returning downstream primarily follow existing PIT entries towards consumers. If PIT entries have expired, the packets return to TFIB entries, ensuring reliable downstream connectivity.
-
-Thus, the combination of controlled Interest and Data packet flooding rapidly and effectively bridges temporary communication gaps caused by producer mobility, ensuring minimal disruption for latency-sensitive applications.
-
+Downstream, flooded Data packets primarily follow existing PIT state towards consumers; if PIT entries have expired, TFIB provides a reliable fallback. Thus, the coordinated use of controlled Interest and Data flooding creates a temporary bidirectional path within a few hops and quickly cuts back to unicast once a hit is confirmed.
 
 \subsection{Accelerated Network Convergence}
 \label{sec:solution:convergence}
 
-OptoFlood integrates temporary flooding-based paths with global routing convergence via Named-data Link State Routing (NLSR) \cite{}. Whenever a forwarder establishes a TFIB entry due to successful flooding, it triggers NLSR over the local management namespace to publish a short-lived Fast-LSA (about one second). The trigger conveys \textit{Name}, \textit{ExpirationPeriod}, optionally \textit{FaceId}, and encodes \textit{NewFaceSeq} using the cost field. Upon trigger, NLSR installs a FastPrefixLsa and performs short-lived RIB registration via its controller interface, and actively unregisters at expiry. Simple 500~ms per-prefix throttling and Prefix+NewFaceSeq deduplication prevent churn. TFIB-based triggering ensures that only verified, data-plane-confirmed paths seed convergence, while regular periodic LSAs later supersede these temporary hints.
+OptoFlood integrates temporary flooding-based paths with global routing convergence via NLSR. Whenever a forwarder establishes a TFIB entry due to successful flooding, a local control-plane component (e.g., NLSR or a controller) is triggered over the management namespace to publish a short-lived, scoped update (Fast-LSA style). This accelerates local route availability while keeping responsibilities clear: the forwarding plane maintains TFIB and executes scoped floods; the control plane handles signed routing updates, throttling, and expiry. Regular periodic LSAs later supersede the short-lived updates, and TFIB entries expire naturally.
 
 \subsection{Security and Flooding Control}
 
-To help mitigate the security risks associated with flooding, OptoFlood uses three complementary mechanisms.
+To mitigate risks associated with flooding, OptoFlood uses three complementary mechanisms.
 
-First, NDN Data packets contain digital signatures that authenticate static packet fields such as names and content. The hop-by-hop \textit{OptoHopLimit} used for Data flooding is carried in the NDNLPv2 header and is not covered by the signature, so decrementing it at each hop does not affect signature verification. Similarly, dynamic indicators such as \textit{MobilityFlag} are used for forwarding decisions and are not intended to be protected end-to-end.
+\textbf{Digital signatures for static fields.} NDN Data packets are signed; static fields such as Names and Content are authenticated end-to-end. Dynamic, hop-by-hop controls (\emph{LP--MobilityFlag}, \emph{LP--HopLimit}) live in the LP header outside the signature so that intermediate nodes can legitimately decrement or clear them without breaking integrity checks on the Data itself.
 
-Second, a global maximum HopLimit threshold (\S\ref{sec:solution:data-flooding}) is enforced throughout the network, derived from the typical hop distances of the mobile network between PoAs. This prevents malicious producers from initiating flood attacks with excessive hop counts, ensuring that flooding remains confined to local access or aggregation layers.
+\textbf{Global hop-limit threshold.} A network-wide maximum hop limit of~3 confines floods to local access/aggregation domains and prevents producers from initiating wide-area floods with excessive scopeA network-wide maximum hop limit of~3 confines floods to local access/aggregation domains and prevents producers from initiating wide-area floods with excessive scope. Packets exceeding the threshold are dropped.
 
-Third, strict flood rate limits per producer (60-100 packets / second) prevent resource exhaustion, effectively protecting against Denial-of-Service (DoS) attacks by restricting flood volumes within realistic network capacity limits.
+\textbf{Per-producer flood rate limit.} Forwarders enforce a per-producer cap (e.g., 100~packets/s for flooded traffic). This bounds overhead and reduces the attack surface for denial-of-service attempts, while still allowing enough first-batch exploration to rescue pending Interests.
 
-Together, these mechanisms maintain a robust security posture without significantly increasing complexity or overhead.
+Together, these controls keep flooding local, short, and safe, while enabling rapid recovery in mobility events.
 
 % ==============================================================================
 \section{Evaluation}
