@@ -164,7 +164,7 @@ The consumer explicitly triggers the first batch of \emph{controlled} floods aft
 \subsection{Temporary Bidirectional Path Establishment}
 \label{sec:solution:bidir}
 
-Flooded Interests that reach the relocated producer trigger returning Data carrying updated LP--NewFaceSeq and LP--Flood-ID. Forwarders on the return path create or update a separate \emph{Temporary FIB (TFIB)} entry, distinct from the standard FIB, to capture the discovered working face. TFIB entries have a short TTL (about one second): long enough to bridge micro-mobility gaps, short enough to avoid stale state, and keep memory bounded. Subsequent Interests then switch to unicast via TFIB immediately.
+Flooded Interests that reach the relocated producer trigger returning Data carrying updated NewFaceSeq and Flood-ID. Forwarders on the return path create or update a separate \emph{Temporary FIB (TFIB)} entry, distinct from the standard FIB, to capture the discovered working face. TFIB entries have a short TTL (about one second): long enough to bridge micro-mobility gaps, short enough to avoid stale state, and keep memory bounded. Subsequent Interests then switch to unicast via TFIB immediately.
 
 Downstream, flooded Data packets primarily follow existing PIT state towards consumers; if PIT entries have expired, TFIB provides a reliable fallback. Thus, the coordinated use of controlled Interest and Data flooding creates a temporary bidirectional path within a few hops and quickly cuts back to unicast once a hit is confirmed.
 
