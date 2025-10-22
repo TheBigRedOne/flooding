@@ -8,8 +8,8 @@ $INSTALL_BASE = <<EOF
   cd /home/vagrant/mini-ndn
   git checkout 73add71f860979426aef63136bf78ed525862e5c
   ./install.sh -y \
-  --cxx=https://github.com/TheBigRedOne/ndn-cxx.git@23a1418404ac4c630bbdc3de50d9ea856f2f9952 \
-  --nfd=https://github.com/TheBigRedOne/NFD.git@80b117c520b50f38f7b42937567214893dac5cb9 \
+  --cxx=https://github.com/TheBigRedOne/ndn-cxx.git@1c82a16b92bf08f26700797e82997cbc8bdf6961 \
+  --nfd=https://github.com/TheBigRedOne/NFD.git@14fea1e00f19882a2e7ea712ccfedf6fe0a820f8 \
   --psync=https://github.com/named-data/PSync.git@0.5.0 \
   --nlsr=https://github.com/TheBigRedOne/NLSR.git@de1fefe92dc5dc39ae5f47d256197dbeea81210f \
   --tools=https://github.com/named-data/ndn-tools.git@ndn-tools-24.07 \
