@@ -218,7 +218,7 @@ Content prefixes are advertised via NLSR in the usual manner, with the extension
 % Data payloads in the current experiment use placeholder strings (e.g. "Hello, world!") to simulate real-time data characteristics. Although not employing actual video content, these payloads maintain consistent sizes to reflect realistic video packet profiles. Generated Data packets are digitally signed using the default keychain, ensuring integrity and security.
 % 
 % \textbf{Mobility Detection and Flooding Preparation:}
-On detecting changes in its network attachment point, the producer marks pending Data packets with a \texttt{MobilityFlag} within the MetaInfo TLV.of the packet. Additionally, each marked packet includes a unique Flood-ID (for duplicate detection), a sequence number (ensuring correct ordering and consistency), and a trace-hint (a lightweight path indicator derived from recent attachment points, guiding packet direction during flooding). 
+On detecting changes in its network attachment point, the producer causes pending Data packets to be treated as in \emph{flooding mode} by relying on hop-by-hop Link Protocol (LP) fields: forwarders set an \texttt{LP--MobilityFlag} and apply an \texttt{LP--HopLimit}. Each marked packet also carries a unique Flood-ID (for duplicate suppression) and a NewFaceSeq (for temporary path state) in the signed portion (MetaInfo extension), ensuring integrity end-to-end. 
 % These markings prepare Data packets for controlled flooding, rescuing pending Interests affected by mobility events.
 % 
 % \textbf{Controlled Data Packet Flooding:}

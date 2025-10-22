@@ -268,23 +268,16 @@ private:
     if (m_hasMoved) {
       std::cout << "[" << timestamp << "] DATA: Attaching OptoFlood mobility markers" << std::endl;
 
-      // Use OptoFlood API to create mobility-related blocks
+      // Use OptoFlood API to create immutable MetaInfo blocks for dedup/TFIB
       MetaInfo metaInfo = data->getMetaInfo();
       
 #ifdef SOLUTION_ENABLED
-      // Add MobilityFlag
-      metaInfo.addAppMetaInfo(optoflood::makeMobilityFlagBlock());
-      
       // Add FloodID (using timestamp as unique ID)
       uint64_t floodId = static_cast<uint64_t>(timestamp);
       metaInfo.addAppMetaInfo(optoflood::makeFloodIdBlock(floodId));
       
       // Add NewFaceSeq (using mobility event count as sequence)
       metaInfo.addAppMetaInfo(optoflood::makeNewFaceSeqBlock(m_mobilityEventCount));
-      
-      // Add a placeholder TraceHint. In a full implementation, this would carry meaningful PoA info.
-      std::vector<uint8_t> traceHint = {0x01, 0x02};
-      metaInfo.addAppMetaInfo(optoflood::makeTraceHintBlock(traceHint));
 #endif
       
       data->setMetaInfo(metaInfo);

@@ -232,8 +232,9 @@ local NDN_DICT = {
    [29] = {name = "KeyDigest"                    , field = ProtoField.bytes("ndn.keydigest", "KeyDigest")},
    [23] = {name = "SignatureValue"               , field = ProtoField.bytes("ndn.sigvalue", "SignatureValue")},
 
-   -- OptoFlood MetaInfo extensions (experimental)
-   [201] = {name = "MobilityFlag"                , field = ProtoField.string("ndn.mobility_flag", "MobilityFlag")                 , value = getTrue},
+   -- OptoFlood MetaInfo extensions (experimental; MobilityFlag moved to LP 97)
+   -- [201] kept for backward compatibility if present in older traces
+   [201] = {name = "MobilityFlag (deprecated)"    , field = ProtoField.string("ndn.mobility_flag", "MobilityFlag (deprecated)")     , value = getTrue},
    [202] = {name = "FloodId"                     , field = ProtoField.uint64("ndn.flood_id", "FloodId", base.DEC)                 , value = getNonNegativeInteger},
    [203] = {name = "NewFaceSeq"                  , field = ProtoField.uint64("ndn.new_face_seq", "NewFaceSeq", base.DEC)          , value = getNonNegativeInteger},
    [204] = {name = "TraceHint"                   , field = ProtoField.bytes("ndn.trace_hint", "TraceHint")},
@@ -256,6 +257,8 @@ local NDN_DICT = {
    [840] = {name = "TxSequence"                  , field = ProtoField.uint64("ndn.txseq", "TxSequence", base.DEC)                  , value = getNonNegativeInteger},
    -- OptoFlood: LP OptoHopLimit (TLV 96) – hop-by-hop limit for Data flooding (outside signed portion)
    [96]  = {name = "OptoHopLimit"                 , field = ProtoField.uint8("ndn.lp.hoplimit", "LP OptoHopLimit", base.DEC)        , value = getLpHopLimit},
+   -- OptoFlood: LP MobilityFlag (TLV 97) – hop-by-hop mobility indicator cleared on PIT hit
+   [97]  = {name = "OptoMobilityFlag"             , field = ProtoField.string("ndn.lp.mobility_flag", "LP MobilityFlag")            , value = getTrue},
 }
 
 -- -- Add protofields in NDN protocol
