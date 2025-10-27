@@ -26,7 +26,8 @@
 -- local inspect = require('inspect')
 
 -- NDN protocol
-ndn = Proto("ndn", "Named Data Networking (NDN)")
+-- Use a unique protocol description to avoid collision with preinstalled dissectors
+ndn = Proto("ndn", "Named Data Networking (NDN) - OptoFlood")
 
 -- TODO with NDNLPv2 processing:
 -- * mark field "unknown" when the field is recognized but the relevant feature is disabled

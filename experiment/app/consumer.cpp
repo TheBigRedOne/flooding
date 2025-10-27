@@ -110,7 +110,7 @@ private:
       
       // Add OptoFlood parameters for controlled flooding
 #ifdef SOLUTION_ENABLED
-      auto params = optoflood::makeInterestFloodingParameters(std::nullopt, DEFAULT_FLOOD_HOP_LIMIT);
+      auto params = optoflood::makeInterestFloodingParameters(DEFAULT_FLOOD_HOP_LIMIT);
       interest.setApplicationParameters(params);
 #endif
       
