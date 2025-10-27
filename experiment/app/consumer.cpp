@@ -108,10 +108,16 @@ private:
       auto timestamp = std::chrono::system_clock::now().time_since_epoch().count();
       std::cout << "[" << timestamp << "] OPTOFLOOD: Enabling Interest flooding due to consecutive failures" << std::endl;
       
-      // Add OptoFlood parameters for controlled flooding
+      // Add OptoFlood parameters for controlled flooding (defensive against TLV errors)
 #ifdef SOLUTION_ENABLED
-      auto params = optoflood::makeInterestFloodingParameters(DEFAULT_FLOOD_HOP_LIMIT);
-      interest.setApplicationParameters(params);
+      try {
+        auto params = optoflood::makeInterestFloodingParameters(DEFAULT_FLOOD_HOP_LIMIT);
+        interest.setApplicationParameters(params);
+      }
+      catch (const std::exception& ex) {
+        std::cerr << "[" << timestamp << "] ERROR: Failed to set ApplicationParameters: " << ex.what() << std::endl;
+        std::cerr << "[" << timestamp << "] INFO: Disabling Interest flooding for this request (continue without params)" << std::endl;
+      }
 #endif
       
       // Reset failure counter after triggering flooding

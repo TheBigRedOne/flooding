@@ -152,10 +152,8 @@ end
 
 -- LP OptoHopLimit (TLV 96) used by OptoFlood; same 1-octet semantics without type assertion
 function getLpHopLimit(b)
-   if b.length ~= 1 then
-      return "invalid (should have 1 octet)"
-   end
-   return getValue(b):uint()
+   -- Accept 1/2/4/8-byte NonNegativeInteger encodings
+   return getNonNegativeInteger(b):tonumber()
 end
 
 function getTrue(block)
