@@ -112,15 +112,11 @@ private:
 #ifdef SOLUTION_ENABLED
       try {
         std::cout << "[" << timestamp << "] AP: build begin" << std::endl;
-        // Encode inner InterestFloodRequest as ApplicationParameters value per spec
-        auto inner = optoflood::makeInterestFloodingParameters(DEFAULT_FLOOD_HOP_LIMIT);
+        // Encode InterestFloodRequest with hopLimit
+        auto inner = optoflood::makeInterestFloodingParameters(std::nullopt, DEFAULT_FLOOD_HOP_LIMIT);
         interest.setApplicationParameters(inner);
         std::cout << "[" << timestamp << "] AP: set ok, valueLen="
                   << interest.getApplicationParameters().value_size() << std::endl;
-        // ParametersDigest is required when ApplicationParameters present
-        interest.appendParametersDigestToName();
-        std::cout << "[" << timestamp << "] AP: digest ok, nameSz="
-                  << interest.getName().size() << std::endl;
       }
       catch (const std::exception& ex) {
         std::cerr << "[" << timestamp << "] ERROR: Failed to set ApplicationParameters: " << ex.what() << std::endl;
