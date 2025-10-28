@@ -111,8 +111,10 @@ private:
       // Enable ApplicationParameters
 #ifdef SOLUTION_ENABLED
       try {
-        auto params = optoflood::makeInterestFloodingParameters(DEFAULT_FLOOD_HOP_LIMIT);
-        interest.setApplicationParameters(params);
+        // Encode inner InterestFloodRequest as ApplicationParameters value per spec
+        auto inner = optoflood::makeInterestFloodingParameters(DEFAULT_FLOOD_HOP_LIMIT);
+        interest.setApplicationParameters(inner);
+        // ParametersDigest is required when ApplicationParameters present
         interest.appendParametersDigestToName();
       }
       catch (const std::exception& ex) {
