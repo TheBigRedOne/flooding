@@ -108,7 +108,18 @@ private:
       auto timestamp = std::chrono::system_clock::now().time_since_epoch().count();
       std::cout << "[" << timestamp << "] OPTOFLOOD: Enabling Interest flooding due to consecutive failures" << std::endl;
       
-      // Use native HopLimit
+      // Enable ApplicationParameters
+#ifdef SOLUTION_ENABLED
+      try {
+        auto params = optoflood::makeInterestFloodingParameters(DEFAULT_FLOOD_HOP_LIMIT);
+        interest.setApplicationParameters(params);
+        interest.appendParametersDigestToName();
+      }
+      catch (const std::exception& ex) {
+        std::cerr << "[" << timestamp << "] ERROR: Failed to set ApplicationParameters: " << ex.what() << std::endl;
+      }
+#endif
+      // Set native HopLimit (TLV 34) to control propagation range
       interest.setHopLimit(DEFAULT_FLOOD_HOP_LIMIT);
       
       // Reset failure counter after triggering flooding
