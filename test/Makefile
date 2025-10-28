@@ -44,14 +44,15 @@ vm-destroy:
 
 # Prepare: build apps in-VM for test, run dedicated test topology, and fetch artifacts
 prep: check-solution-box vm-up
-	# Build apps inside VM under test/ from experiment/app sources (solution features enabled)
-	$(VAGRANT_SOLUTION) ssh -c 'set -e; cd /home/vagrant/mini-ndn/flooding/test && rm -f producer consumer && PKG="$$(pkg-config --cflags --libs libndn-cxx)" && g++ -std=c++17 -g -O2 -DSOLUTION_ENABLED -o producer ../experiment/app/producer.cpp $$PKG && chmod +x producer && ls -l producer'
-	$(VAGRANT_SOLUTION) ssh -c 'set -e; cd /home/vagrant/mini-ndn/flooding/test && PKG="$$(pkg-config --cflags --libs libndn-cxx)" && g++ -std=c++17 -g -O2 -DSOLUTION_ENABLED -o consumer ../experiment/app/consumer.cpp $$PKG && chmod +x consumer && ls -l consumer'
+	# Build apps inside VM from host-synced sources under /vagrant (always latest from host)
+	$(VAGRANT_SOLUTION) ssh -c 'set -e; test -d /vagrant/experiment/app || (echo "/vagrant not synced; run: vagrant reload --provision" && exit 1)'
+	$(VAGRANT_SOLUTION) ssh -c 'set -e; cd /home/vagrant/mini-ndn/flooding/test && rm -f producer consumer && PKG="$$(pkg-config --cflags --libs libndn-cxx)" && g++ -std=c++17 -g -O2 -DSOLUTION_ENABLED -o producer /vagrant/experiment/app/producer.cpp $$PKG && chmod +x producer && ls -l producer'
+	$(VAGRANT_SOLUTION) ssh -c 'set -e; cd /home/vagrant/mini-ndn/flooding/test && PKG="$$(pkg-config --cflags --libs libndn-cxx)" && g++ -std=c++17 -g -O2 -DSOLUTION_ENABLED -o consumer /vagrant/experiment/app/consumer.cpp $$PKG && chmod +x consumer && ls -l consumer'
 	# Ensure trust schema is available beside binaries
-	$(VAGRANT_SOLUTION) ssh -c 'cp -f /home/vagrant/mini-ndn/flooding/experiment/app/trust-schema.conf /home/vagrant/mini-ndn/flooding/test/ || true'
-	$(VAGRANT_SOLUTION) ssh -c 'cp -f /home/vagrant/mini-ndn/flooding/experiment/app/trust-schema.conf /home/vagrant/mini-ndn/flooding/ || true'
+	$(VAGRANT_SOLUTION) ssh -c 'cp -f /vagrant/experiment/app/trust-schema.conf /home/vagrant/mini-ndn/flooding/test/ || true'
+	$(VAGRANT_SOLUTION) ssh -c 'cp -f /vagrant/experiment/app/trust-schema.conf /home/vagrant/mini-ndn/flooding/ || true'
 	# Ensure tshark loads updated NDN dissector (ndn.lua)
-	$(VAGRANT_SOLUTION) ssh -c 'sudo mkdir -p /usr/local/share/ndn-dissect-wireshark && sudo cp /home/vagrant/mini-ndn/flooding/experiment/tool/ndn.lua /usr/local/share/ndn-dissect-wireshark/ndn.lua'
+	$(VAGRANT_SOLUTION) ssh -c 'sudo mkdir -p /usr/local/share/ndn-dissect-wireshark && sudo cp /vagrant/experiment/tool/ndn.lua /usr/local/share/ndn-dissect-wireshark/ndn.lua'
 	# Run test topology and capture multi-point pcaps (outputs under /home/vagrant/mini-ndn/flooding/test)
 	$(VAGRANT_SOLUTION) ssh -c 'EXPERIMENT_DIR=/home/vagrant/mini-ndn/flooding/test WIRESHARK_RUN_FROM_BUILD_DIRECTORY=1 WIRESHARK_PLUGIN_DIR= /usr/bin/sudo -E tshark -v >/dev/null 2>&1 || true'
 	$(VAGRANT_SOLUTION) ssh -c 'EXPERIMENT_DIR=/home/vagrant/mini-ndn/flooding/test WIRESHARK_RUN_FROM_BUILD_DIRECTORY=1 WIRESHARK_PLUGIN_DIR= LUA_PATH="/usr/local/share/ndn-dissect-wireshark/?.lua;;" LUA_CPATH=";;" /usr/bin/sudo -E python3 /home/vagrant/mini-ndn/flooding/test/exp_test.py'
