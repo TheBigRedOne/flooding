@@ -122,8 +122,10 @@ private:
         std::cerr << "[" << timestamp << "] ERROR: Failed to set ApplicationParameters: " << ex.what() << std::endl;
       }
 #endif
+#ifdef SOLUTION_ENABLED
       // Set native HopLimit (TLV 34) to control propagation range
       interest.setHopLimit(DEFAULT_FLOOD_HOP_LIMIT);
+#endif
       
       // Reset failure counter after triggering flooding
       m_consecutiveFailures = 0;

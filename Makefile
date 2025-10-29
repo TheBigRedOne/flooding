@@ -179,7 +179,7 @@ build-boxes: box-baseline box-solution
 	# Force destroy any lingering VM to ensure a clean state
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant destroy -f || true
 	ACTUAL_BASELINE_BOX_PATH="box/baseline/baseline.$(PROVIDER).box" \
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant up
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant up --provision
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant ssh-config --host baseline > .ssh_config_baseline
 
 # SSH config file for solution experiment
@@ -191,7 +191,7 @@ build-boxes: box-baseline box-solution
 	# Force destroy any lingering VM to ensure a clean state
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant destroy -f || true
 	ACTUAL_SOLUTION_BOX_PATH="box/solution/solution.$(PROVIDER).box" \
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant up
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant up --provision
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant ssh-config --host solution > .ssh_config_solution
 
 # Rsync commands
@@ -216,7 +216,7 @@ SOLUTION_RESULTS := $(SOLUTION_DISRUPTION_PDF) \
 # Fetch baseline artifacts (pcap/csv/pdfs) from VM
 results/.baseline_fetched: $(APP_SRCS) $(BASELINE_SRCS) $(TOOLS_SRCS) .ssh_config_baseline | results/baseline
 	ACTUAL_BASELINE_BOX_PATH="box/baseline/baseline.$(PROVIDER).box" \
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant up
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant up --provision
 	# Run experiment inside VM using host-synced /vagrant so outputs appear on host immediately
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant ssh -c 'cd /vagrant/experiment/baseline && make clean && make all'
 	# Copy from host-synced experiment directory into consolidated results/baseline/
@@ -227,7 +227,7 @@ results/.baseline_fetched: $(APP_SRCS) $(BASELINE_SRCS) $(TOOLS_SRCS) .ssh_confi
 # Fetch solution artifacts (pcap/csv/pdfs) from VM
 results/.solution_fetched: $(APP_SRCS) $(SOLUTION_SRCS) $(TOOLS_SRCS) .ssh_config_solution | results/solution
 	ACTUAL_SOLUTION_BOX_PATH="box/solution/solution.$(PROVIDER).box" \
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant up
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant up --provision
 	# Run experiment inside VM using host-synced /vagrant so outputs appear on host immediately
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant ssh -c 'cd /vagrant/experiment/solution && make clean && make all'
 	# Copy from host-synced experiment directory into consolidated results/solution/
