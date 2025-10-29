@@ -9,7 +9,7 @@ CXX      := g++
 CXXFLAGS := -std=c++17 -g -O2 -DSOLUTION_ENABLED
 LDFLAGS  := $(shell pkg-config --cflags --libs libndn-cxx)
 
-APP_DIR  := ../app
+APP_DIR  := /vagrant/experiment/app
 TOOL_DIR := ../tool
 VENV_DIR := $(TOOL_DIR)/.venv
 PYTHON   := $(VENV_DIR)/bin/python3
