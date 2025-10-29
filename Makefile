@@ -217,10 +217,8 @@ SOLUTION_RESULTS := $(SOLUTION_DISRUPTION_PDF) \
 results/.baseline_fetched: $(APP_SRCS) $(BASELINE_SRCS) $(TOOLS_SRCS) .ssh_config_baseline | results/baseline
 	ACTUAL_BASELINE_BOX_PATH="box/baseline/baseline.$(PROVIDER).box" \
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant up --provision
-	# Run experiment inside VM using host-synced /vagrant to emit results onto host
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant ssh -c 'cd /vagrant/experiment/baseline && make clean && make all'
-	# Copy results from host-synced experiment directory
-	cp -a experiment/baseline/results/. results/baseline/
+	# Run experiment inside VM using host-synced /vagrant, then copy results to /vagrant/results/baseline (host-visible)
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant ssh -c 'cd /vagrant/experiment/baseline && make clean && make all && mkdir -p /vagrant/results/baseline && cp -a results/. /vagrant/results/baseline/'
 	@touch $@
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant halt -f || true
 
@@ -228,10 +226,8 @@ results/.baseline_fetched: $(APP_SRCS) $(BASELINE_SRCS) $(TOOLS_SRCS) .ssh_confi
 results/.solution_fetched: $(APP_SRCS) $(SOLUTION_SRCS) $(TOOLS_SRCS) .ssh_config_solution | results/solution
 	ACTUAL_SOLUTION_BOX_PATH="box/solution/solution.$(PROVIDER).box" \
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant up --provision
-	# Run experiment inside VM using host-synced /vagrant to emit results onto host
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant ssh -c 'cd /vagrant/experiment/solution && make clean && make all'
-	# Copy results from host-synced experiment directory
-	cp -a experiment/solution/results/. results/solution/
+	# Run experiment inside VM using host-synced /vagrant, then copy results to /vagrant/results/solution (host-visible)
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant ssh -c 'cd /vagrant/experiment/solution && make clean && make all && mkdir -p /vagrant/results/solution && cp -a results/. /vagrant/results/solution/'
 	@touch $@
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant halt -f || true
 
