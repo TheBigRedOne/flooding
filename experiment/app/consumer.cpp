@@ -14,6 +14,7 @@
 
 #ifdef SOLUTION_ENABLED
 #include <ndn-cxx/optoflood.hpp>
+#include <optional>
 // Defines the fixed hop limit for controlled Interest flooding.
 static constexpr uint8_t DEFAULT_FLOOD_HOP_LIMIT = 3;
 #endif
@@ -112,8 +113,8 @@ private:
 #ifdef SOLUTION_ENABLED
       try {
         std::cout << "[" << timestamp << "] AP: build begin" << std::endl;
-        // Encode InterestFloodRequest with hopLimit
-        auto inner = optoflood::makeInterestFloodingParameters(std::nullopt, DEFAULT_FLOOD_HOP_LIMIT);
+        // Encode InterestFloodRequest with hopLimit（无 trace-hint）
+        ndn::Block inner = ndn::optoflood::makeInterestFloodingParameters(std::optional<uint8_t>(DEFAULT_FLOOD_HOP_LIMIT));
         interest.setApplicationParameters(inner);
         std::cout << "[" << timestamp << "] AP: set ok, valueLen="
                   << interest.getApplicationParameters().value_size() << std::endl;

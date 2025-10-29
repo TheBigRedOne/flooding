@@ -233,10 +233,9 @@ local NDN_DICT = {
 
    -- OptoFlood MetaInfo extensions (experimental; MobilityFlag moved to LP 97)
    -- [201] kept for backward compatibility if present in older traces
-   [201] = {name = "MobilityFlag (deprecated)"    , field = ProtoField.string("ndn.mobility_flag", "MobilityFlag (deprecated)")     , value = getTrue},
-   [202] = {name = "FloodId"                     , field = ProtoField.uint64("ndn.flood_id", "FloodId", base.DEC)                 , value = getNonNegativeInteger},
-   [203] = {name = "NewFaceSeq"                  , field = ProtoField.uint64("ndn.new_face_seq", "NewFaceSeq", base.DEC)          , value = getNonNegativeInteger},
-   [204] = {name = "TraceHint"                   , field = ProtoField.bytes("ndn.trace_hint", "TraceHint")},
+  [201] = {name = "MobilityFlag (deprecated)"    , field = ProtoField.string("ndn.mobility_flag", "MobilityFlag (deprecated)")     , value = getTrue},
+  [202] = {name = "FloodId"                     , field = ProtoField.uint64("ndn.flood_id", "FloodId", base.DEC)                 , value = getNonNegativeInteger},
+  [203] = {name = "NewFaceSeq"                  , field = ProtoField.uint64("ndn.new_face_seq", "NewFaceSeq", base.DEC)          , value = getNonNegativeInteger},
 
    -- NDNLPv2 headers
    [80] = {name = "Fragment"                     },
