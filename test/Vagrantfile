@@ -5,7 +5,7 @@ Vagrant.configure("2") do |config|
   config.vm.box = solution_box_path
 
   # Sync project root to /vagrant so VM sees host updates immediately
-  config.vm.synced_folder ".", "/vagrant"
+  config.vm.synced_folder "../", "/vagrant"
 
   config.vm.network "private_network", type: "dhcp"
 
@@ -29,13 +29,8 @@ Vagrant.configure("2") do |config|
     lv.memory = common_memory
   end
 
-  # Clone the flooding repository and ensure toolchain PATH (pip user bin) available
+  # Ensure PATH for user installs
   config.vm.provision "shell", inline: <<-SHELL
-    if [ ! -d "/home/vagrant/mini-ndn/flooding" ]; then
-      git clone https://github.com/TheBigRedOne/flooding.git /home/vagrant/mini-ndn/flooding
-      chown -R vagrant:vagrant /home/vagrant/mini-ndn/flooding
-    fi
-    # Ensure user pip bin on PATH both current shell and future logins
     echo 'export PATH=$HOME/.local/bin:/usr/local/bin:$PATH' >> /home/vagrant/.profile
     export PATH=$HOME/.local/bin:/usr/local/bin:$PATH
   SHELL
