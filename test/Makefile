@@ -46,6 +46,8 @@ vm-destroy:
 prep: check-solution-box vm-up
 	# Build apps inside VM from host-synced sources under /vagrant (always latest from host)
 	$(VAGRANT_SOLUTION) ssh -c 'set -e; test -d /vagrant/experiment/app || (echo "/vagrant not synced; run: vagrant reload --provision" && exit 1)'
+	# Diagnostics: print ndn-cxx version and API signature inside VM
+	$(VAGRANT_SOLUTION) ssh -c 'set -e; echo "ndn-cxx pkg-config version:"; pkg-config --modversion libndn-cxx || true; echo "optoflood.hpp signatures:"; grep -n "makeInterestFloodingParameters" /usr/local/include/ndn-cxx/optoflood.hpp || true'
 	$(VAGRANT_SOLUTION) ssh -c 'set -e; cd /vagrant/test && rm -f producer consumer && PKG="$$(pkg-config --cflags --libs libndn-cxx)" && g++ -std=c++17 -g -O2 -DSOLUTION_ENABLED -o producer /vagrant/experiment/app/producer.cpp $$PKG && chmod +x producer && ls -l producer'
 	$(VAGRANT_SOLUTION) ssh -c 'set -e; cd /vagrant/test && PKG="$$(pkg-config --cflags --libs libndn-cxx)" && g++ -std=c++17 -g -O2 -DSOLUTION_ENABLED -o consumer /vagrant/experiment/app/consumer.cpp $$PKG && chmod +x consumer && ls -l consumer'
 	# Ensure trust schema is available beside binaries
