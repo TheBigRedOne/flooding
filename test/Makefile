@@ -23,7 +23,7 @@ SOLUTION_BOX := $(ROOT_DIR)/box/solution/solution.$(PROVIDER).box
 VAGRANT_SOLUTION := VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=$(ROOT_DIR)/test vagrant
 
 .PHONY: test-all prep test-s1 test-s2 test-s3 test-s4 test-s5 \
-        vm-up vm-halt vm-destroy check-solution-box
+        vm-up vm-recreate vm-halt vm-destroy check-solution-box
 
 check-solution-box:
 	@if [ ! -f "$(SOLUTION_BOX)" ]; then \
@@ -34,7 +34,12 @@ check-solution-box:
 
 # Convenience VM lifecycle helpers (explicit; not auto-run unless invoked)
 vm-up: check-solution-box
-	ACTUAL_SOLUTION_BOX_PATH="$(SOLUTION_BOX)" $(VAGRANT_SOLUTION) up
+    ACTUAL_SOLUTION_BOX_PATH="$(SOLUTION_BOX)" $(VAGRANT_SOLUTION) up --provision
+
+# Recreate VM to avoid stale environment (destroys then provisions)
+vm-recreate: check-solution-box
+    ACTUAL_SOLUTION_BOX_PATH="$(SOLUTION_BOX)" $(VAGRANT_SOLUTION) destroy -f || true
+    ACTUAL_SOLUTION_BOX_PATH="$(SOLUTION_BOX)" $(VAGRANT_SOLUTION) up --provision
 
 vm-halt:
 	$(VAGRANT_SOLUTION) halt -f || true
@@ -43,7 +48,7 @@ vm-destroy:
 	$(VAGRANT_SOLUTION) destroy -f || true
 
 # Prepare: build apps in-VM for test, run dedicated test topology, and fetch artifacts
-prep: check-solution-box vm-up
+prep: check-solution-box vm-recreate
 	# Build apps inside VM from host-synced sources under /vagrant (always latest from host)
 	$(VAGRANT_SOLUTION) ssh -c 'set -e; test -d /vagrant/experiment/app || (echo "/vagrant not synced; run: vagrant reload --provision" && exit 1)'
 	# Diagnostics: print ndn-cxx version and API signature inside VM
