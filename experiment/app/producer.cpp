@@ -193,18 +193,18 @@ public:
                              std::bind(&Producer::onRegisterSuccess, this, _1),
                              std::bind(&Producer::onRegisterFailed, this, _1, _2));
     if (m_enableOptoFlood) {
-    try {
+      try {
         if (!m_netlinkListener) {
           m_netlinkListener = std::make_unique<NetlinkListener>(
             m_ioContext, [this] { this->onMobilityEvent(); }
           );
         }
-      m_netlinkListener->start();
-      std::cout << "Netlink listener started for mobility detection." << std::endl;
-    }
-    catch (const std::exception& e) {
-      std::cerr << "ERROR: Failed to start Netlink listener: " << e.what() << std::endl;
-    }
+        m_netlinkListener->start();
+        std::cout << "Netlink listener started for mobility detection." << std::endl;
+      }
+      catch (const std::exception& e) {
+        std::cerr << "ERROR: Failed to start Netlink listener: " << e.what() << std::endl;
+      }
     }
     m_ioContext.run();
   }
