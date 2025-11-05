@@ -115,14 +115,8 @@ result: $(BASELINE_PAPER_FIGURES) $(SOLUTION_PAPER_FIGURES)
 test:
 	$(MAKE) -C test PROVIDER=$(PROVIDER) test-all
 
-# Build the paper PDF (standalone: do not auto-run results)
-paper:
-	@missing=0; \
-	for f in $(BASELINE_PAPER_FIGURES) $(SOLUTION_PAPER_FIGURES); do \
-	  if [ ! -f $$f ]; then echo "Missing figure: $$f (run 'make $(PROVIDER) result')"; missing=1; fi; \
-	done; \
-	if [ $$missing -ne 0 ]; then exit 1; fi
-	$(MAKE) -C paper
+# Build the paper PDF (follow dependencies; do not hand-check and exit)
+paper: $(PAPER_PDF)
 
 # Ensure results directories exist
 results:
@@ -171,11 +165,7 @@ box/solution/solution.$(PROVIDER).box: box/solution/Vagrantfile box/initial/init
 build-boxes: box-baseline box-solution
 
 # SSH config file for baseline experiment
-.ssh_config_baseline: experiment/baseline/Vagrantfile
-	@if [ ! -f box/baseline/baseline.$(PROVIDER).box ]; then \
-	  echo "Missing baseline box: box/baseline/baseline.$(PROVIDER).box"; \
-	  echo "Please run 'make $(PROVIDER) box-baseline' (requires initial box)."; exit 1; \
-	fi
+.ssh_config_baseline: experiment/baseline/Vagrantfile box/baseline/baseline.$(PROVIDER).box
 	# Force destroy any lingering VM to ensure a clean state
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant destroy -f || true
 	ACTUAL_BASELINE_BOX_PATH="box/baseline/baseline.$(PROVIDER).box" \
@@ -183,11 +173,7 @@ build-boxes: box-baseline box-solution
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant ssh-config --host baseline > .ssh_config_baseline
 
 # SSH config file for solution experiment
-.ssh_config_solution: experiment/solution/Vagrantfile
-	@if [ ! -f box/solution/solution.$(PROVIDER).box ]; then \
-	  echo "Missing solution box: box/solution/solution.$(PROVIDER).box"; \
-	  echo "Please run 'make $(PROVIDER) box-solution' (requires initial box)."; exit 1; \
-	fi
+.ssh_config_solution: experiment/solution/Vagrantfile box/solution/solution.$(PROVIDER).box
 	# Force destroy any lingering VM to ensure a clean state
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant destroy -f || true
 	ACTUAL_SOLUTION_BOX_PATH="box/solution/solution.$(PROVIDER).box" \
@@ -197,6 +183,16 @@ build-boxes: box-baseline box-solution
 # Rsync commands
 RSYNC_BASELINE = rsync -avH -e "ssh -F .ssh_config_baseline"
 RSYNC_SOLUTION = rsync -avH -e "ssh -F .ssh_config_solution"
+
+# Remote working directory inside VMs (standardized for rsync-based runs)
+REMOTE_DIR := /home/vagrant/flooding
+
+# Files/dirs excluded from rsync push
+RSYNC_EXCLUDES := \
+  --exclude .git \
+  --exclude .vagrant \
+  --exclude results \
+  --exclude paper/bin
 
 # Define all expected result files from one experiment run
 BASELINE_RESULTS := $(BASELINE_DISRUPTION_PDF) \
@@ -215,21 +211,25 @@ SOLUTION_RESULTS := $(SOLUTION_DISRUPTION_PDF) \
 
 # Fetch baseline artifacts (pcap/csv/pdfs) from VM
 results/.baseline_fetched: $(APP_SRCS) $(BASELINE_SRCS) $(TOOLS_SRCS) .ssh_config_baseline | results/baseline
-	ACTUAL_BASELINE_BOX_PATH="box/baseline/baseline.$(PROVIDER).box" \
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant up --provision
-	# Run experiment inside VM using host-synced /vagrant, then copy results to /vagrant/results/baseline (host-visible)
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant ssh -c 'cd /vagrant/experiment/baseline && make clean && make all && mkdir -p /vagrant/results/baseline && cp -a results/. /vagrant/results/baseline/'
-	@touch $@
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant halt -f || true
+    ACTUAL_BASELINE_BOX_PATH="box/baseline/baseline.$(PROVIDER).box" \
+    VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant up --provision
+    # Push host sources to VM via rsync, run experiment in REMOTE_DIR, then pull results back via rsync
+    $(RSYNC_BASELINE) $(RSYNC_EXCLUDES) ./ baseline:$(REMOTE_DIR)/
+    VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant ssh -c 'set -e; cd $(REMOTE_DIR)/experiment/baseline && make clean && make all'
+    $(RSYNC_BASELINE) baseline:$(REMOTE_DIR)/experiment/baseline/results/. results/baseline/
+    @touch $@
+    VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant halt -f || true
 
 # Fetch solution artifacts (pcap/csv/pdfs) from VM
 results/.solution_fetched: $(APP_SRCS) $(SOLUTION_SRCS) $(TOOLS_SRCS) .ssh_config_solution | results/solution
-	ACTUAL_SOLUTION_BOX_PATH="box/solution/solution.$(PROVIDER).box" \
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant up --provision
-	# Run experiment inside VM using host-synced /vagrant, then copy results to /vagrant/results/solution (host-visible)
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant ssh -c 'cd /vagrant/experiment/solution && make clean && make all && mkdir -p /vagrant/results/solution && cp -a results/. /vagrant/results/solution/'
-	@touch $@
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant halt -f || true
+    ACTUAL_SOLUTION_BOX_PATH="box/solution/solution.$(PROVIDER).box" \
+    VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant up --provision
+    # Push host sources to VM via rsync, run experiment in REMOTE_DIR, then pull results back via rsync
+    $(RSYNC_SOLUTION) $(RSYNC_EXCLUDES) ./ solution:$(REMOTE_DIR)/
+    VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant ssh -c 'set -e; cd $(REMOTE_DIR)/experiment/solution && make clean && make all'
+    $(RSYNC_SOLUTION) solution:$(REMOTE_DIR)/experiment/solution/results/. results/solution/
+    @touch $@
+    VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant halt -f || true
 
 # Host-side venv for plotting
 $(VENV_DIR): experiment/tool/requirements.txt
@@ -237,43 +237,32 @@ $(VENV_DIR): experiment/tool/requirements.txt
 	$(VENV_DIR)/bin/pip install -r experiment/tool/requirements.txt
 	touch $(VENV_DIR)
 
-# Replot from existing CSV (baseline)
+# Replot from CSV (baseline)
 $(BASELINE_DISRUPTION_PDF) $(BASELINE_DIR)/disruption_metrics.txt: $(CSV_BASELINE) experiment/tool/plot_latency.py | $(VENV_DIR) $(BASELINE_DIR)
-	@if [ ! -f $(CSV_BASELINE) ]; then \
-	  echo "Missing $(CSV_BASELINE). Please run 'make $(PROVIDER) experiment-baseline' first."; exit 1; \
-	fi
 	$(PYTHON) experiment/tool/plot_latency.py --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
 
 $(BASELINE_LOSS_PDF) $(BASELINE_DIR)/loss_ratio.txt: $(CSV_BASELINE) experiment/tool/plot_loss.py | $(VENV_DIR) $(BASELINE_DIR)
-	@if [ ! -f $(CSV_BASELINE) ]; then \
-	  echo "Missing $(CSV_BASELINE). Please run 'make $(PROVIDER) experiment-baseline' first."; exit 1; \
-	fi
 	$(PYTHON) experiment/tool/plot_loss.py --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
 
 $(BASELINE_OVERHEAD_PDF) $(BASELINE_DIR)/overhead_total.txt: $(CSV_BASELINE) experiment/tool/plot_overhead.py | $(VENV_DIR) $(BASELINE_DIR)
-	@if [ ! -f $(CSV_BASELINE) ]; then \
-	  echo "Missing $(CSV_BASELINE). Please run 'make $(PROVIDER) experiment-baseline' first."; exit 1; \
-	fi
 	$(PYTHON) experiment/tool/plot_overhead.py --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
 
-# Replot from existing CSV (solution)
+# Replot from CSV (solution)
 $(SOLUTION_DISRUPTION_PDF) $(SOLUTION_DIR)/disruption_metrics.txt: $(CSV_SOLUTION) experiment/tool/plot_latency.py | $(VENV_DIR) $(SOLUTION_DIR)
-	@if [ ! -f $(CSV_SOLUTION) ]; then \
-	  echo "Missing $(CSV_SOLUTION). Please run 'make $(PROVIDER) experiment-solution' first."; exit 1; \
-	fi
 	$(PYTHON) experiment/tool/plot_latency.py --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
 
 $(SOLUTION_LOSS_PDF) $(SOLUTION_DIR)/loss_ratio.txt: $(CSV_SOLUTION) experiment/tool/plot_loss.py | $(VENV_DIR) $(SOLUTION_DIR)
-	@if [ ! -f $(CSV_SOLUTION) ]; then \
-	  echo "Missing $(CSV_SOLUTION). Please run 'make $(PROVIDER) experiment-solution' first."; exit 1; \
-	fi
 	$(PYTHON) experiment/tool/plot_loss.py --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
 
 $(SOLUTION_OVERHEAD_PDF) $(SOLUTION_DIR)/overhead_total.txt: $(CSV_SOLUTION) experiment/tool/plot_overhead.py | $(VENV_DIR) $(SOLUTION_DIR)
-	@if [ ! -f $(CSV_SOLUTION) ]; then \
-	  echo "Missing $(CSV_SOLUTION). Please run 'make $(PROVIDER) experiment-solution' first."; exit 1; \
-	fi
 	$(PYTHON) experiment/tool/plot_overhead.py --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
+
+# Make CSVs buildable via experiment runs (align with make semantics)
+$(CSV_BASELINE): results/.baseline_fetched
+	@test -f $@ || (echo "Error: missing $@ after experiment-baseline"; exit 1)
+
+$(CSV_SOLUTION): results/.solution_fetched
+	@test -f $@ || (echo "Error: missing $@ after experiment-solution"; exit 1)
 
 # (No phony CSV placeholders; missing CSV is handled by recipe-time checks with clear guidance.)
 

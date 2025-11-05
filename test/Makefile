@@ -22,18 +22,28 @@ ROOT_DIR := ..
 SOLUTION_BOX := $(ROOT_DIR)/box/solution/solution.$(PROVIDER).box
 VAGRANT_SOLUTION := VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=$(ROOT_DIR)/test vagrant
 
-.PHONY: test-all prep test-s1 test-s2 test-s3 test-s4 test-s5 \
-        vm-up vm-halt vm-destroy check-solution-box
+# Remote working directory for rsync-based test runs
+REMOTE_DIR := /home/vagrant/flooding
 
-check-solution-box:
-	@if [ ! -f "$(SOLUTION_BOX)" ]; then \
-	  echo "Missing solution box: $(SOLUTION_BOX)"; \
-	  echo "Please run 'make $(PROVIDER) box-solution' at $(ROOT_DIR)"; \
-	  exit 1; \
-	fi
+# Local rsync wrapper using ssh-config generated for the solution VM
+RSYNC_SOLUTION := rsync -avH -e "ssh -F .ssh_config_solution"
+
+# Files/dirs excluded from rsync push (keep host-only artifacts out of VM)
+RSYNC_EXCLUDES := \
+	--exclude .git \
+	--exclude .vagrant \
+	--exclude results \
+	--exclude paper/bin
+
+.PHONY: test-all prep sync test-s1 test-s2 test-s3 test-s4 test-s5 \
+        vm-up vm-halt vm-destroy
+
+# Ensure solution box exists (build via parent Makefile if missing)
+$(SOLUTION_BOX):
+	$(MAKE) -C $(ROOT_DIR) PROVIDER=$(PROVIDER) box-solution
 
 # Convenience VM lifecycle helpers (explicit; not auto-run unless invoked)
-vm-up: check-solution-box
+vm-up: $(SOLUTION_BOX)
 	ACTUAL_SOLUTION_BOX_PATH="$(SOLUTION_BOX)" $(VAGRANT_SOLUTION) up
 
 vm-halt:
@@ -42,24 +52,30 @@ vm-halt:
 vm-destroy:
 	$(VAGRANT_SOLUTION) destroy -f || true
 
+# Sync sources from host to VM via rsync (standardized entry)
+sync: vm-up
+	$(VAGRANT_SOLUTION) ssh-config --host solution > .ssh_config_solution
+	$(RSYNC_SOLUTION) $(RSYNC_EXCLUDES) $(ROOT_DIR)/ solution:$(REMOTE_DIR)/
+
 # Prepare: build apps in-VM for test, run dedicated test topology, and fetch artifacts
-prep: check-solution-box vm-up
-	# Build apps inside VM from host-synced sources under /vagrant (always latest from host)
-	$(VAGRANT_SOLUTION) ssh -c 'set -e; test -d /vagrant/experiment/app || (echo "/vagrant not synced; run: vagrant reload --provision" && exit 1)'
-	$(VAGRANT_SOLUTION) ssh -c 'set -e; cd /vagrant/test && rm -f producer consumer && PKG="$$(pkg-config --cflags --libs libndn-cxx)" && g++ -std=c++17 -g -O2 -DSOLUTION_ENABLED -o producer /vagrant/experiment/app/producer.cpp $$PKG && chmod +x producer && ls -l producer'
-	$(VAGRANT_SOLUTION) ssh -c 'set -e; cd /vagrant/test && PKG="$$(pkg-config --cflags --libs libndn-cxx)" && g++ -std=c++17 -g -O2 -DSOLUTION_ENABLED -o consumer /vagrant/experiment/app/consumer.cpp $$PKG && chmod +x consumer && ls -l consumer'
-	# Ensure trust schema is available beside binaries
-	$(VAGRANT_SOLUTION) ssh -c 'cp -f /vagrant/experiment/app/trust-schema.conf /vagrant/test/ || true'
-	$(VAGRANT_SOLUTION) ssh -c 'cp -f /vagrant/experiment/app/trust-schema.conf /vagrant/ || true'
+prep: check-solution-box vm-up sync
+	# Build apps inside VM from rsynced sources under $(REMOTE_DIR)
+	$(VAGRANT_SOLUTION) ssh -c 'set -e; test -d $(REMOTE_DIR)/experiment/app || (echo "rsync failed: $(REMOTE_DIR)/experiment/app missing" && exit 1)'
+	$(VAGRANT_SOLUTION) ssh -c 'set -e; cd $(REMOTE_DIR)/test && rm -f producer consumer && PKG="$$(pkg-config --cflags --libs libndn-cxx)" && g++ -std=c++17 -g -O2 -DSOLUTION_ENABLED -o producer $(REMOTE_DIR)/experiment/app/producer.cpp $$PKG && chmod -v +x producer'
+	$(VAGRANT_SOLUTION) ssh -c 'set -e; cd $(REMOTE_DIR)/test && PKG="$$(pkg-config --cflags --libs libndn-cxx)" && g++ -std=c++17 -g -O2 -DSOLUTION_ENABLED -o consumer $(REMOTE_DIR)/experiment/app/consumer.cpp $$PKG && chmod -v +x consumer'
+	# Ensure trust schema is available beside binaries (fail if missing)
+	$(VAGRANT_SOLUTION) ssh -c 'set -e; test -f $(REMOTE_DIR)/experiment/app/trust-schema.conf && cp -f $(REMOTE_DIR)/experiment/app/trust-schema.conf $(REMOTE_DIR)/test/'
 	# Ensure tshark loads updated NDN dissector (ndn.lua)
-	$(VAGRANT_SOLUTION) ssh -c 'sudo mkdir -p /usr/local/share/ndn-dissect-wireshark && sudo cp /vagrant/experiment/tool/ndn.lua /usr/local/share/ndn-dissect-wireshark/ndn.lua'
-	# Run test topology and capture multi-point pcaps (outputs under /home/vagrant/mini-ndn/flooding/test)
-	$(VAGRANT_SOLUTION) ssh -c 'EXPERIMENT_DIR=/vagrant/test WIRESHARK_RUN_FROM_BUILD_DIRECTORY=1 WIRESHARK_PLUGIN_DIR= /usr/bin/sudo -E tshark -v >/dev/null 2>&1 || true'
-	$(VAGRANT_SOLUTION) ssh -c 'EXPERIMENT_DIR=/vagrant/test WIRESHARK_RUN_FROM_BUILD_DIRECTORY=1 WIRESHARK_PLUGIN_DIR= LUA_PATH="/usr/local/share/ndn-dissect-wireshark/?.lua;;" LUA_CPATH=";;" /usr/bin/sudo -E python3 /vagrant/test/exp_test.py'
-	# Rsync back test artifacts to host test/
-	SSHCFG=.ssh_config_solution; \
-		$(VAGRANT_SOLUTION) ssh-config --host solution > $$SSHCFG; \
-		rsync -avH -e "ssh -F $$SSHCFG" solution:/vagrant/test/ $(ROOT_DIR)/test/
+	$(VAGRANT_SOLUTION) ssh -c 'set -e; sudo mkdir -p /usr/local/share/ndn-dissect-wireshark && sudo cp $(REMOTE_DIR)/experiment/tool/ndn.lua /usr/local/share/ndn-dissect-wireshark/ndn.lua'
+	# Preflight check for tshark presence
+	$(VAGRANT_SOLUTION) ssh -c 'EXPERIMENT_DIR=$(REMOTE_DIR)/test WIRESHARK_RUN_FROM_BUILD_DIRECTORY=1 WIRESHARK_PLUGIN_DIR= /usr/bin/sudo -E tshark -v >/dev/null 2>&1'
+	# Run test topology; generate artifacts under $(REMOTE_DIR)/test
+	$(VAGRANT_SOLUTION) ssh -c 'EXPERIMENT_DIR=$(REMOTE_DIR)/test WIRESHARK_RUN_FROM_BUILD_DIRECTORY=1 WIRESHARK_PLUGIN_DIR= LUA_PATH="/usr/local/share/ndn-dissect-wireshark/?.lua;;" LUA_CPATH=";;" /usr/bin/sudo -E python3 $(REMOTE_DIR)/test/exp_test.py'
+	# Rsync back test artifacts to host test/ (only pcap and snapshots/logs)
+	$(VAGRANT_SOLUTION) ssh -c 'mkdir -p $(REMOTE_DIR)/test/pcap'
+	mkdir -p $(ROOT_DIR)/test/pcap
+	$(RSYNC_SOLUTION) solution:$(REMOTE_DIR)/test/pcap/ $(ROOT_DIR)/test/pcap/
+	$(RSYNC_SOLUTION) --include "r*_rib.txt" --include "*producer.log" --include "*consumer.log" --include "tcpdump_*.log" --exclude "*" solution:$(REMOTE_DIR)/test/ $(ROOT_DIR)/test/
 	@echo "Artifacts synced to $(ROOT_DIR)/test/"
 
 # Test aggregator (ensures one experiment run, then checks)
