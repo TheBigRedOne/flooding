@@ -10,13 +10,8 @@ ifeq ($(firstword $(MAKECMDGOALS)),vb)
   override MAKECMDGOALS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 endif
 
-# Purpose: Orchestrate OptoFlood validation tests (S1–S5) on the solution box/VM
-# Interface:
-#   - make kvm|vb test-s1 ... test-s5   Run a single test case
-#   - make kvm|vb test-all              Run all test cases sequentially
-#   - make kvm|vb vm-up|vm-halt|vm-destroy  Control solution VM lifecycle
-# Parameters:
-#   - PROVIDER: libvirt (kvm) or virtualbox (vb); set via provider wrapper goals above
+# Purpose: Run solution VM validations (S1–S5) and manage VM lifecycle
+# Interface: test-all, validate-s[1..5], vm-up|vm-halt|vm-destroy; PROVIDER=kvm|vb
 
 ROOT_DIR := ..
 SOLUTION_BOX := $(ROOT_DIR)/box/solution/solution.$(PROVIDER).box
@@ -57,8 +52,8 @@ sync: vm-up
 	$(VAGRANT_SOLUTION) ssh-config --host solution > .ssh_config_solution
 	$(RSYNC_SOLUTION) $(RSYNC_EXCLUDES) $(ROOT_DIR)/ solution:$(REMOTE_DIR)/
 
-# Prepare: build apps in-VM for test, run dedicated test topology, and fetch artifacts
-prep: check-solution-box vm-up sync
+# Prepare: build apps in-VM for test, run topology, and fetch artifacts
+prep: sync
 	# Build apps inside VM from rsynced sources under $(REMOTE_DIR)
 	$(VAGRANT_SOLUTION) ssh -c 'set -e; test -d $(REMOTE_DIR)/experiment/app || (echo "rsync failed: $(REMOTE_DIR)/experiment/app missing" && exit 1)'
 	$(VAGRANT_SOLUTION) ssh -c 'set -e; cd $(REMOTE_DIR)/test && rm -f producer consumer && PKG="$$(pkg-config --cflags --libs libndn-cxx)" && g++ -std=c++17 -g -O2 -DSOLUTION_ENABLED -o producer $(REMOTE_DIR)/experiment/app/producer.cpp $$PKG && chmod -v +x producer'

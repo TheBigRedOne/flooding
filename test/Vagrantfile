@@ -4,9 +4,6 @@ Vagrant.configure("2") do |config|
   solution_box_path = ENV['ACTUAL_SOLUTION_BOX_PATH'] || "box/solution/solution.box"
   config.vm.box = solution_box_path
 
-  # Sync project root to /vagrant so VM sees host updates immediately
-  config.vm.synced_folder "../", "/vagrant"
-
   config.vm.network "private_network", type: "dhcp"
 
   common_cpus   = 8
