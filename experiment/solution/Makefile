@@ -9,7 +9,7 @@ CXX      := g++
 CXXFLAGS := -std=c++17 -g -O2 -DSOLUTION_ENABLED
 LDFLAGS  := $(shell pkg-config --cflags --libs libndn-cxx)
 
-APP_DIR  := /vagrant/experiment/app
+APP_DIR  := ../app
 TOOL_DIR := ../tool
 VENV_DIR := $(TOOL_DIR)/.venv
 PYTHON   := $(VENV_DIR)/bin/python3
@@ -43,8 +43,8 @@ $(CSV_FILE): $(PCAP_FILE)
 # The PCAP result depends on the experiment script and the compiled apps.
 $(PCAP_FILE): $(TOOL_DIR)/exp.py producer consumer
 	mkdir -p results
-	# Run the experiment script using sudo in 'solution' mode.
-	sudo EXPERIMENT_DIR=$(shell pwd) python3 $(TOOL_DIR)/exp.py
+	# Run the experiment script using sudo, preserving EXPERIMENT_DIR environment.
+	sudo -E env EXPERIMENT_DIR=$(shell pwd) python3 $(TOOL_DIR)/exp.py
 
 # Recipe to compile the producer.
 producer: $(APP_DIR)/producer.cpp
