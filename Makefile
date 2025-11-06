@@ -211,25 +211,25 @@ SOLUTION_RESULTS := $(SOLUTION_DISRUPTION_PDF) \
 
 # Fetch baseline artifacts (pcap/csv/pdfs) from VM
 results/.baseline_fetched: $(APP_SRCS) $(BASELINE_SRCS) $(TOOLS_SRCS) .ssh_config_baseline | results/baseline
-    ACTUAL_BASELINE_BOX_PATH="box/baseline/baseline.$(PROVIDER).box" \
-    VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant up --provision
-    # Push host sources to VM via rsync, run experiment in REMOTE_DIR, then pull results back via rsync
-    $(RSYNC_BASELINE) $(RSYNC_EXCLUDES) ./ baseline:$(REMOTE_DIR)/
-    VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant ssh -c 'set -e; cd $(REMOTE_DIR)/experiment/baseline && make clean && make all'
-    $(RSYNC_BASELINE) baseline:$(REMOTE_DIR)/experiment/baseline/results/. results/baseline/
-    @touch $@
-    VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant halt -f || true
+	ACTUAL_BASELINE_BOX_PATH="box/baseline/baseline.$(PROVIDER).box" \
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant up --provision
+	# Push host sources to VM via rsync, run experiment in REMOTE_DIR, then pull results back via rsync
+	$(RSYNC_BASELINE) $(RSYNC_EXCLUDES) ./ baseline:$(REMOTE_DIR)/
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant ssh -c 'set -e; cd $(REMOTE_DIR)/experiment/baseline && make clean && make all'
+	$(RSYNC_BASELINE) baseline:$(REMOTE_DIR)/experiment/baseline/results/. results/baseline/
+	@touch $@
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant halt -f || true
 
 # Fetch solution artifacts (pcap/csv/pdfs) from VM
 results/.solution_fetched: $(APP_SRCS) $(SOLUTION_SRCS) $(TOOLS_SRCS) .ssh_config_solution | results/solution
-    ACTUAL_SOLUTION_BOX_PATH="box/solution/solution.$(PROVIDER).box" \
-    VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant up --provision
-    # Push host sources to VM via rsync, run experiment in REMOTE_DIR, then pull results back via rsync
-    $(RSYNC_SOLUTION) $(RSYNC_EXCLUDES) ./ solution:$(REMOTE_DIR)/
-    VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant ssh -c 'set -e; cd $(REMOTE_DIR)/experiment/solution && make clean && make all'
-    $(RSYNC_SOLUTION) solution:$(REMOTE_DIR)/experiment/solution/results/. results/solution/
-    @touch $@
-    VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant halt -f || true
+	ACTUAL_SOLUTION_BOX_PATH="box/solution/solution.$(PROVIDER).box" \
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant up --provision
+	# Push host sources to VM via rsync, run experiment in REMOTE_DIR, then pull results back via rsync
+	$(RSYNC_SOLUTION) $(RSYNC_EXCLUDES) ./ solution:$(REMOTE_DIR)/
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant ssh -c 'set -e; cd $(REMOTE_DIR)/experiment/solution && make clean && make all'
+	$(RSYNC_SOLUTION) solution:$(REMOTE_DIR)/experiment/solution/results/. results/solution/
+	@touch $@
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant halt -f || true
 
 # Host-side venv for plotting
 $(VENV_DIR): experiment/tool/requirements.txt
