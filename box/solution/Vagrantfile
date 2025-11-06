@@ -41,9 +41,6 @@ Vagrant.configure("2") do |config|
   initial_box_path = ENV['ACTUAL_INITIAL_BOX_PATH'] || "box/initial/initial.box"
   config.vm.box = initial_box_path
 
-  # Sync the project root directory to /vagrant in the VM
-  config.vm.synced_folder ".", "/vagrant"
-
   config.vm.network "private_network", type: "dhcp"
 
   # The --jobs= parameter to ./install.sh (above) should match common_cpus

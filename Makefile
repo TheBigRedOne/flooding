@@ -264,10 +264,8 @@ $(CSV_BASELINE): results/.baseline_fetched
 $(CSV_SOLUTION): results/.solution_fetched
 	@test -f $@ || (echo "Error: missing $@ after experiment-solution"; exit 1)
 
-# (No phony CSV placeholders; missing CSV is handled by recipe-time checks with clear guidance.)
 
 # --- Copy Results to Paper Directory ---
-# These rules copy the final PDF results into the paper's figures directory.
 
 $(BASELINE_DISRUPTION_FIGURE): $(BASELINE_DISRUPTION_PDF) | paper/figures
 	cp $(BASELINE_DISRUPTION_PDF) $@
@@ -316,26 +314,10 @@ _deep-clean_provider: clean
 	rm -f box/solution/solution.$(PROVIDER).box
 	rm -f box/initial/initial.$(PROVIDER).box
 
-
 # Clean SSH config file
 clean-ssh-config:
 	rm -f .ssh_config_baseline .ssh_config_solution
 
-# Provider-specific convenience targets
-# Legacy provider convenience targets (kept for compatibility). No-op due to goal rewriting above.
-kvm:
-	@true
-
-vb:
-	@true
-
-deep-clean-kvm:
-	@echo "Deep cleaning using libvirt (KVM) provider..."
-	@$(MAKE) PROVIDER=libvirt _deep-clean_provider
-
-deep-clean-vb:
-	@echo "Deep cleaning using VirtualBox provider..."
-	@$(MAKE) PROVIDER=virtualbox _deep-clean_provider
 
 .PHONY: all build-boxes clean deep-clean _deep-clean_provider clean-ssh-config kvm vb deep-clean-kvm deep-clean-vb box box-initial box-baseline box-solution experiment experiment-baseline experiment-solution result paper
 
