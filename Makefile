@@ -100,10 +100,10 @@ box-solution: box/solution/solution.$(PROVIDER).box
 # Build all boxes (initial + baseline + solution)
 box: box-initial box-baseline box-solution
 
-# Experiments (run inside VMs and pull back results)
-experiment-baseline: results/.baseline_fetched
+# Experiments (run inside VMs and pull back CSVs)
+experiment-baseline: $(CSV_BASELINE)
 
-experiment-solution: results/.solution_fetched
+experiment-solution: $(CSV_SOLUTION)
 
 # Run both experiments
 experiment: experiment-baseline experiment-solution
@@ -194,41 +194,23 @@ RSYNC_EXCLUDES := \
   --exclude results \
   --exclude paper/bin
 
-# Define all expected result files from one experiment run
-BASELINE_RESULTS := $(BASELINE_DISRUPTION_PDF) \
-                    results/baseline/disruption_metrics.txt \
-                    $(BASELINE_LOSS_PDF) \
-                    results/baseline/loss_ratio.txt \
-                    $(BASELINE_OVERHEAD_PDF) \
-                    results/baseline/overhead_total.txt
 
-SOLUTION_RESULTS := $(SOLUTION_DISRUPTION_PDF) \
-                    results/solution/disruption_metrics.txt \
-                    $(SOLUTION_LOSS_PDF) \
-                    results/solution/loss_ratio.txt \
-                    $(SOLUTION_OVERHEAD_PDF) \
-                    results/solution/overhead_total.txt
-
-# Fetch baseline artifacts (pcap/csv/pdfs) from VM
-results/.baseline_fetched: $(APP_SRCS) $(BASELINE_SRCS) $(TOOLS_SRCS) .ssh_config_baseline | results/baseline
+# Baseline: build CSV via one VM run, then host will plot PDFs from CSV
+$(CSV_BASELINE): $(APP_SRCS) $(BASELINE_SRCS) $(TOOLS_SRCS) .ssh_config_baseline | results/baseline
 	ACTUAL_BASELINE_BOX_PATH="box/baseline/baseline.$(PROVIDER).box" \
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant up --provision
-	# Push host sources to VM via rsync, run experiment in REMOTE_DIR, then pull results back via rsync
 	$(RSYNC_BASELINE) $(RSYNC_EXCLUDES) ./ baseline:$(REMOTE_DIR)/
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant ssh -c 'set -e; cd $(REMOTE_DIR)/experiment/baseline && make clean && make all'
 	$(RSYNC_BASELINE) baseline:$(REMOTE_DIR)/experiment/baseline/results/. results/baseline/
-	@touch $@
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant halt -f || true
 
-# Fetch solution artifacts (pcap/csv/pdfs) from VM
-results/.solution_fetched: $(APP_SRCS) $(SOLUTION_SRCS) $(TOOLS_SRCS) .ssh_config_solution | results/solution
+# Solution: build CSV via one VM run, then host will plot PDFs from CSV
+$(CSV_SOLUTION): $(APP_SRCS) $(SOLUTION_SRCS) $(TOOLS_SRCS) .ssh_config_solution | results/solution
 	ACTUAL_SOLUTION_BOX_PATH="box/solution/solution.$(PROVIDER).box" \
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant up --provision
-	# Push host sources to VM via rsync, run experiment in REMOTE_DIR, then pull results back via rsync
 	$(RSYNC_SOLUTION) $(RSYNC_EXCLUDES) ./ solution:$(REMOTE_DIR)/
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant ssh -c 'set -e; cd $(REMOTE_DIR)/experiment/solution && make clean && make all'
 	$(RSYNC_SOLUTION) solution:$(REMOTE_DIR)/experiment/solution/results/. results/solution/
-	@touch $@
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant halt -f || true
 
 # Host-side venv for plotting
@@ -237,7 +219,7 @@ $(VENV_DIR): experiment/tool/requirements.txt
 	$(VENV_DIR)/bin/pip install -r experiment/tool/requirements.txt
 	touch $(VENV_DIR)
 
-# Replot from CSV (baseline)
+# Plot from CSV (baseline)
 $(BASELINE_DISRUPTION_PDF) $(BASELINE_DIR)/disruption_metrics.txt: $(CSV_BASELINE) experiment/tool/plot_latency.py | $(VENV_DIR) $(BASELINE_DIR)
 	$(PYTHON) experiment/tool/plot_latency.py --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
 
@@ -247,7 +229,7 @@ $(BASELINE_LOSS_PDF) $(BASELINE_DIR)/loss_ratio.txt: $(CSV_BASELINE) experiment/
 $(BASELINE_OVERHEAD_PDF) $(BASELINE_DIR)/overhead_total.txt: $(CSV_BASELINE) experiment/tool/plot_overhead.py | $(VENV_DIR) $(BASELINE_DIR)
 	$(PYTHON) experiment/tool/plot_overhead.py --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
 
-# Replot from CSV (solution)
+# Plot from CSV (solution)
 $(SOLUTION_DISRUPTION_PDF) $(SOLUTION_DIR)/disruption_metrics.txt: $(CSV_SOLUTION) experiment/tool/plot_latency.py | $(VENV_DIR) $(SOLUTION_DIR)
 	$(PYTHON) experiment/tool/plot_latency.py --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
 
@@ -256,14 +238,6 @@ $(SOLUTION_LOSS_PDF) $(SOLUTION_DIR)/loss_ratio.txt: $(CSV_SOLUTION) experiment/
 
 $(SOLUTION_OVERHEAD_PDF) $(SOLUTION_DIR)/overhead_total.txt: $(CSV_SOLUTION) experiment/tool/plot_overhead.py | $(VENV_DIR) $(SOLUTION_DIR)
 	$(PYTHON) experiment/tool/plot_overhead.py --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
-
-# Make CSVs buildable via experiment runs (align with make semantics)
-$(CSV_BASELINE): results/.baseline_fetched
-	@test -f $@ || (echo "Error: missing $@ after experiment-baseline"; exit 1)
-
-$(CSV_SOLUTION): results/.solution_fetched
-	@test -f $@ || (echo "Error: missing $@ after experiment-solution"; exit 1)
-
 
 # --- Copy Results to Paper Directory ---
 

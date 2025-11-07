@@ -10,31 +10,13 @@ LDFLAGS  := $(shell pkg-config --cflags --libs libndn-cxx)
 
 APP_DIR  := ../app
 TOOL_DIR := ../tool
-VENV_DIR := $(TOOL_DIR)/.venv
-PYTHON   := $(VENV_DIR)/bin/python3
 
 # --- Targets ---
 
-# The main target to run the full experiment and get all result files.
-all: results/disruption_times.pdf results/disruption_metrics.txt results/loss_ratio.txt results/loss_comparison.pdf results/overhead_timeseries.pdf results/overhead_total.txt
+# The main target to produce CSV (PCAP->CSV) for host-side plotting
+all: $(CSV_FILE)
 
-# Define a target for the virtual environment setup.
-# It checks if the requirements have changed before reinstalling.
-$(VENV_DIR): $(TOOL_DIR)/requirements.txt
-	python3 -m venv $(VENV_DIR)
-	$(VENV_DIR)/bin/pip install -r $(TOOL_DIR)/requirements.txt
-	touch $(VENV_DIR) # Update timestamp
 
-# The final plots/data depend on the CSV file AND the venv being ready.
-results/disruption_times.pdf results/disruption_metrics.txt: $(CSV_FILE) | $(VENV_DIR)
-	# Generate plots and metrics from the CSV data for R1
-	$(PYTHON) $(TOOL_DIR)/plot_latency.py --input $(CSV_FILE) --output-dir results --handoff-times "120, 240"
-
-results/loss_ratio.txt results/loss_comparison.pdf: $(CSV_FILE) | $(VENV_DIR)
-	$(PYTHON) $(TOOL_DIR)/plot_loss.py --input $(CSV_FILE) --output-dir results --handoff-times "120, 240"
-
-results/overhead_timeseries.pdf results/overhead_total.txt: $(CSV_FILE) | $(VENV_DIR)
-	$(PYTHON) $(TOOL_DIR)/plot_overhead.py --input $(CSV_FILE) --output-dir results --handoff-times "120, 240"
 
 
 # Convert PCAP to CSV using tshark
