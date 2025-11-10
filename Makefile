@@ -220,23 +220,23 @@ $(VENV_DIR): experiment/tool/requirements.txt
 	touch $(VENV_DIR)
 
 # Plot from CSV (baseline)
-$(BASELINE_DISRUPTION_PDF) $(BASELINE_DIR)/disruption_metrics.txt: $(CSV_BASELINE) experiment/tool/plot_latency.py | $(VENV_DIR) $(BASELINE_DIR)
+$(BASELINE_DISRUPTION_PDF) $(BASELINE_DIR)/disruption_metrics.txt &: $(CSV_BASELINE) experiment/tool/plot_latency.py | $(VENV_DIR) $(BASELINE_DIR)
 	$(PYTHON) experiment/tool/plot_latency.py --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
 
-$(BASELINE_LOSS_PDF) $(BASELINE_DIR)/loss_ratio.txt: $(CSV_BASELINE) experiment/tool/plot_loss.py | $(VENV_DIR) $(BASELINE_DIR)
+$(BASELINE_LOSS_PDF) $(BASELINE_DIR)/loss_ratio.txt &: $(CSV_BASELINE) experiment/tool/plot_loss.py | $(VENV_DIR) $(BASELINE_DIR)
 	$(PYTHON) experiment/tool/plot_loss.py --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
 
-$(BASELINE_OVERHEAD_PDF) $(BASELINE_DIR)/overhead_total.txt: $(CSV_BASELINE) experiment/tool/plot_overhead.py | $(VENV_DIR) $(BASELINE_DIR)
+$(BASELINE_OVERHEAD_PDF) $(BASELINE_DIR)/overhead_total.txt &: $(CSV_BASELINE) experiment/tool/plot_overhead.py | $(VENV_DIR) $(BASELINE_DIR)
 	$(PYTHON) experiment/tool/plot_overhead.py --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
 
 # Plot from CSV (solution)
-$(SOLUTION_DISRUPTION_PDF) $(SOLUTION_DIR)/disruption_metrics.txt: $(CSV_SOLUTION) experiment/tool/plot_latency.py | $(VENV_DIR) $(SOLUTION_DIR)
+$(SOLUTION_DISRUPTION_PDF) $(SOLUTION_DIR)/disruption_metrics.txt &: $(CSV_SOLUTION) experiment/tool/plot_latency.py | $(VENV_DIR) $(SOLUTION_DIR)
 	$(PYTHON) experiment/tool/plot_latency.py --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
 
-$(SOLUTION_LOSS_PDF) $(SOLUTION_DIR)/loss_ratio.txt: $(CSV_SOLUTION) experiment/tool/plot_loss.py | $(VENV_DIR) $(SOLUTION_DIR)
+$(SOLUTION_LOSS_PDF) $(SOLUTION_DIR)/loss_ratio.txt &: $(CSV_SOLUTION) experiment/tool/plot_loss.py | $(VENV_DIR) $(SOLUTION_DIR)
 	$(PYTHON) experiment/tool/plot_loss.py --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
 
-$(SOLUTION_OVERHEAD_PDF) $(SOLUTION_DIR)/overhead_total.txt: $(CSV_SOLUTION) experiment/tool/plot_overhead.py | $(VENV_DIR) $(SOLUTION_DIR)
+$(SOLUTION_OVERHEAD_PDF) $(SOLUTION_DIR)/overhead_total.txt &: $(CSV_SOLUTION) experiment/tool/plot_overhead.py | $(VENV_DIR) $(SOLUTION_DIR)
 	$(PYTHON) experiment/tool/plot_overhead.py --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
 
 # --- Copy Results to Paper Directory ---
