@@ -2,6 +2,7 @@
 
 #include <ndn-cxx/face.hpp>
 #include <ndn-cxx/interest.hpp>
+#include <ndn-cxx/encoding/tlv.hpp>
 #include <ndn-cxx/security/validator-config.hpp>
 #include <ndn-cxx/util/scheduler.hpp>
 
@@ -113,11 +114,13 @@ private:
 #ifdef SOLUTION_ENABLED
       try {
         std::cout << "[" << timestamp << "] AP: build begin" << std::endl;
-        // Encode InterestFloodRequest with hopLimit（无 trace-hint）
+        // Encode InterestFloodRequest with hopLimit
         ndn::Block inner = ndn::optoflood::makeInterestFloodingParameters(std::optional<uint8_t>(DEFAULT_FLOOD_HOP_LIMIT));
         interest.setApplicationParameters(inner);
         std::cout << "[" << timestamp << "] AP: set ok, valueLen="
                   << interest.getApplicationParameters().value_size() << std::endl;
+        // Ensure the Name contains ParametersSha256DigestComponent paired with ApplicationParameters
+        interest.appendParametersDigestToName();
       }
       catch (const std::exception& ex) {
         std::cerr << "[" << timestamp << "] ERROR: Failed to set ApplicationParameters: " << ex.what() << std::endl;
@@ -130,6 +133,13 @@ private:
       
       // Reset failure counter after triggering flooding
       m_consecutiveFailures = 0;
+    }
+    else {
+      // Not flooding: ensure Name does NOT carry a stale ParametersSha256DigestComponent
+      const Name& currentName = interest.getName();
+      if (currentName.size() > 0 && currentName.get(-1).type() == tlv::ParametersSha256DigestComponent) {
+        interest.setName(currentName.getPrefix(currentName.size() - 1));
+      }
     }
     
     // Record send time for latency calculation
