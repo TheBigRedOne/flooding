@@ -119,8 +119,6 @@ private:
         interest.setApplicationParameters(inner);
         std::cout << "[" << timestamp << "] AP: set ok, valueLen="
                   << interest.getApplicationParameters().value_size() << std::endl;
-        // Ensure the Name contains ParametersSha256DigestComponent paired with ApplicationParameters
-        interest.appendParametersDigestToName();
       }
       catch (const std::exception& ex) {
         std::cerr << "[" << timestamp << "] ERROR: Failed to set ApplicationParameters: " << ex.what() << std::endl;
@@ -135,11 +133,8 @@ private:
       m_consecutiveFailures = 0;
     }
     else {
-      // Not flooding: ensure Name does NOT carry a stale ParametersSha256DigestComponent
-      const Name& currentName = interest.getName();
-      if (currentName.size() > 0 && currentName.get(-1).type() == tlv::ParametersSha256DigestComponent) {
-        interest.setName(currentName.getPrefix(currentName.size() - 1));
-      }
+      // Not flooding: ensure Interest has no ApplicationParameters and no params-sha256
+      interest.unsetApplicationParameters();
     }
     
     // Record send time for latency calculation
