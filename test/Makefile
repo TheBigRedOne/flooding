@@ -30,7 +30,7 @@ RSYNC_EXCLUDES := \
 	--exclude results \
 	--exclude paper/bin
 
-.PHONY: test-all prep sync test-s1 test-s2 test-s3 test-s4 test-s5 \
+.PHONY: test-all validate sync test-s1 test-s2 test-s3 test-s4 test-s5 \
         vm-up vm-halt vm-destroy
 
 # Ensure solution box exists (build via parent Makefile if missing)
@@ -52,8 +52,14 @@ sync: vm-up
 	$(VAGRANT_SOLUTION) ssh-config --host solution > .ssh_config_solution
 	$(RSYNC_SOLUTION) $(RSYNC_EXCLUDES) $(ROOT_DIR)/ solution:$(REMOTE_DIR)/
 
-# Prepare: build apps in-VM for test, run topology, and fetch artifacts
-prep: sync
+# Expected artifacts on host
+PCAP_DIR := $(ROOT_DIR)/test/pcap
+PCAPS := $(PCAP_DIR)/consumer.pcap $(PCAP_DIR)/producer.pcap $(PCAP_DIR)/r1.pcap $(PCAP_DIR)/r2.pcap $(PCAP_DIR)/r3.pcap $(PCAP_DIR)/r4.pcap $(PCAP_DIR)/r5.pcap
+RIBS  := $(ROOT_DIR)/test/r3_T1_rib.txt $(ROOT_DIR)/test/r3_T2_rib.txt
+VALIDATE_OK := $(ROOT_DIR)/test/.validate_ok
+
+# Produce test artifacts via one VM run, then rsync back (grouped target)
+$(PCAPS) $(RIBS) &: sync
 	# Build apps inside VM from rsynced sources under $(REMOTE_DIR)
 	$(VAGRANT_SOLUTION) ssh -c 'set -e; test -d $(REMOTE_DIR)/experiment/app || (echo "rsync failed: $(REMOTE_DIR)/experiment/app missing" && exit 1)'
 	$(VAGRANT_SOLUTION) ssh -c 'set -e; cd $(REMOTE_DIR)/test && rm -f producer consumer && PKG="$$(pkg-config --cflags --libs libndn-cxx)" && g++ -std=c++17 -g -O2 -DSOLUTION_ENABLED -o producer $(REMOTE_DIR)/experiment/app/producer.cpp $$PKG && chmod -v +x producer'
@@ -68,13 +74,24 @@ prep: sync
 	$(VAGRANT_SOLUTION) ssh -c 'EXPERIMENT_DIR=$(REMOTE_DIR)/test WIRESHARK_RUN_FROM_BUILD_DIRECTORY=1 WIRESHARK_PLUGIN_DIR= LUA_PATH="/usr/local/share/ndn-dissect-wireshark/?.lua;;" LUA_CPATH=";;" /usr/bin/sudo -E python3 $(REMOTE_DIR)/test/exp_test.py'
 	# Rsync back test artifacts to host test/ (only pcap and snapshots/logs)
 	$(VAGRANT_SOLUTION) ssh -c 'mkdir -p $(REMOTE_DIR)/test/pcap'
-	mkdir -p $(ROOT_DIR)/test/pcap
-	$(RSYNC_SOLUTION) solution:$(REMOTE_DIR)/test/pcap/ $(ROOT_DIR)/test/pcap/
+	mkdir -p $(PCAP_DIR)
+	$(RSYNC_SOLUTION) solution:$(REMOTE_DIR)/test/pcap/ $(PCAP_DIR)/
 	$(RSYNC_SOLUTION) --include "r*_rib.txt" --include "*producer.log" --include "*consumer.log" --include "tcpdump_*.log" --exclude "*" solution:$(REMOTE_DIR)/test/ $(ROOT_DIR)/test/
 	@echo "Artifacts synced to $(ROOT_DIR)/test/"
 
-# Test aggregator (ensures one experiment run, then checks)
-test-all: prep validate-s1 validate-s4 validate-s3 validate-s2 validate-s5
+# Validation stamp (runs all validations)
+$(VALIDATE_OK): $(PCAPS) $(RIBS)
+	python3 validate.py s1
+	python3 validate.py s4
+	python3 validate.py s3
+	python3 validate.py s2
+	python3 validate.py s5
+	@echo OK > $@
+
+validate: $(VALIDATE_OK)
+
+# Test aggregator
+test-all: $(VALIDATE_OK)
 
 # S1: Data-side controllable flooding (LP OptoHopLimit decremented per hop)
 validate-s1:
