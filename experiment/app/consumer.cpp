@@ -45,7 +45,7 @@ public:
   {
     // Load the trust schema for validation
     try {
-      m_validator.load("/home/vagrant/mini-ndn/flooding/trust-schema.conf");
+      m_validator.load("/home/vagrant/flooding/experiment/app/trust-schema.conf");
     }
     catch (const security::ValidationError& e) {
       std::cerr << "ERROR: Failed to load trust schema: " << e << std::endl;
