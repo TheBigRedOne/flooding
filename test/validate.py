@@ -9,9 +9,11 @@ Outputs:
 
 import json
 import os
+import struct
 import subprocess
 import sys
-from typing import List
+from collections import defaultdict
+from typing import Dict, Iterable, List, Optional, Tuple
 
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 PCAP_DIR = os.path.join(TEST_DIR, 'pcap')
@@ -53,6 +55,166 @@ def tshark_fields(pcap: str, display_filter: str, field: str) -> List[str]:
     return [ln.strip() for ln in res.stdout.splitlines() if ln.strip()]
 
 
+def _read_var_num(buf: bytes, offset: int) -> Tuple[int, int]:
+    if offset >= len(buf):
+        raise ValueError('var-num overflow')
+    first = buf[offset]
+    if first < 253:
+        return first, offset + 1
+    if first == 253:
+        if offset + 3 > len(buf):
+            raise ValueError('var-num truncated')
+        return int.from_bytes(buf[offset + 1:offset + 3], 'big'), offset + 3
+    if first == 254:
+        if offset + 5 > len(buf):
+            raise ValueError('var-num truncated')
+        return int.from_bytes(buf[offset + 1:offset + 5], 'big'), offset + 5
+    if offset + 9 > len(buf):
+        raise ValueError('var-num truncated')
+    return int.from_bytes(buf[offset + 1:offset + 9], 'big'), offset + 9
+
+
+def _read_tlv(buf: bytes, offset: int) -> Tuple[int, bytes, int]:
+    tlv_type, offset = _read_var_num(buf, offset)
+    length, offset = _read_var_num(buf, offset)
+    end = offset + length
+    if end > len(buf):
+        raise ValueError('tlv truncated')
+    return tlv_type, buf[offset:end], end
+
+
+_PCAP_MAGIC = {
+    b'\xd4\xc3\xb2\xa1': ('<', 1_000_000),
+    b'\xa1\xb2\xc3\xd4': ('>', 1_000_000),
+    b'\x4d\x3c\xb2\xa1': ('>', 1_000_000_000),
+    b'\xa1\xb2<\x4d': ('<', 1_000_000_000),
+}
+
+_LINKTYPE_ETHERNET = 1
+_LINKTYPE_LINUX_SLL = 113
+_LINKTYPE_LINUX_SLL2 = 276
+_ETHERTYPE_NDN = 0x8624
+_LP_PACKET_TLV = 100
+_LP_FRAGMENT_TLV = 80
+_LP_OPTO_HOP_TLV = 96
+_NDN_DATA_TLV = 0x06
+_TLV_METAINFO = 0x14
+_TLV_FLOOD_ID = 202
+
+
+def _iter_pcap_frames(pcap_path: str) -> Iterable[Tuple[float, bytes, int]]:
+    if not os.path.exists(pcap_path):
+        return
+    with open(pcap_path, 'rb') as fp:
+        header = fp.read(24)
+        if len(header) < 24:
+            return
+        magic = header[:4]
+        if magic not in _PCAP_MAGIC:
+            return
+        endian, ts_scale = _PCAP_MAGIC[magic]
+        version_major, version_minor, thiszone, sigfigs, snaplen, network = struct.unpack(
+            f'{endian}HHiiii', header[4:24])
+        while True:
+            pkt_hdr = fp.read(16)
+            if len(pkt_hdr) < 16:
+                break
+            ts_sec, ts_usec, incl_len, orig_len = struct.unpack(f'{endian}IIII', pkt_hdr)
+            data = fp.read(incl_len)
+            if len(data) < incl_len:
+                break
+            yield ts_sec + ts_usec / ts_scale, data, network
+
+
+def _strip_link_header(frame: bytes, linktype: int) -> Optional[Tuple[int, bytes]]:
+    if linktype == _LINKTYPE_ETHERNET:
+        if len(frame) < 18:
+            return None
+        eth_type = (frame[12] << 8) | frame[13]
+        return eth_type, frame[14:]
+    if linktype == _LINKTYPE_LINUX_SLL:
+        if len(frame) < 18:
+            return None
+        eth_type = (frame[14] << 8) | frame[15]
+        return eth_type, frame[16:]
+    if linktype == _LINKTYPE_LINUX_SLL2:
+        if len(frame) < 22:
+            return None
+        eth_type = (frame[0] << 8) | frame[1]
+        return eth_type, frame[20:]
+    return None
+
+
+def _decode_flood_and_hop(payload: bytes) -> Optional[Tuple[int, int]]:
+    try:
+        tlv_type, tlv_value, _ = _read_tlv(payload, 0)
+    except ValueError:
+        return None
+    if tlv_type != _LP_PACKET_TLV:
+        return None
+    offset = 0
+    hop = None
+    fragment = None
+    try:
+        while offset < len(tlv_value):
+            sub_type, sub_value, offset = _read_tlv(tlv_value, offset)
+            if sub_type == _LP_OPTO_HOP_TLV:
+                hop = int.from_bytes(sub_value, 'big')
+            elif sub_type == _LP_FRAGMENT_TLV:
+                fragment = sub_value
+    except ValueError:
+        return None
+    if fragment is None:
+        return None
+    try:
+        inner_type, inner_value, _ = _read_tlv(fragment, 0)
+    except ValueError:
+        return None
+    if inner_type != _NDN_DATA_TLV:
+        return None
+    offset = 0
+    try:
+        _, _, offset = _read_tlv(inner_value, offset)  # Name
+        meta_type, meta_value, offset = _read_tlv(inner_value, offset)
+    except ValueError:
+        return None
+    if meta_type != _TLV_METAINFO:
+        return None
+    meta_offset = 0
+    flood_id = None
+    try:
+        while meta_offset < len(meta_value):
+            tlv_t, tlv_v, meta_offset = _read_tlv(meta_value, meta_offset)
+            if tlv_t == _TLV_FLOOD_ID:
+                flood_id = int.from_bytes(tlv_v, 'big')
+                break
+    except ValueError:
+        return None
+    if flood_id is None or hop is None:
+        return None
+    return flood_id, hop
+
+
+def _collect_flood_hoplimits(pcap_files: List[str]) -> Dict[int, set]:
+    flood_map: Dict[int, set] = defaultdict(set)
+    for pcap in pcap_files:
+        if not os.path.exists(pcap):
+            continue
+        for _, frame, linktype in _iter_pcap_frames(pcap):
+            stripped = _strip_link_header(frame, linktype)
+            if not stripped:
+                continue
+            eth_type, payload = stripped
+            if eth_type != _ETHERTYPE_NDN:
+                continue
+            decoded = _decode_flood_and_hop(payload)
+            if not decoded:
+                continue
+            flood_id, hop = decoded
+            flood_map[flood_id].add(hop)
+    return flood_map
+
+
 def extract_hoplimits(json_packets: List[dict], is_data: bool) -> List[int]:
     hoplimits = []
     for pkt in json_packets:
@@ -82,43 +244,30 @@ def extract_hoplimits(json_packets: List[dict], is_data: bool) -> List[int]:
 
 
 def validate_s1() -> None:
-    # Expect Data OptoHopLimit to decrement across path and stop at 0 within <=4 hops.
+    # Expect at least one FloodId with OptoHopLimit values forming a contiguous chain down to 0.
     path_pcaps = [
         os.path.join(PCAP_DIR, 'r2.pcap'),
         os.path.join(PCAP_DIR, 'r3.pcap'),
         os.path.join(PCAP_DIR, 'r4.pcap'),
         os.path.join(PCAP_DIR, 'r5.pcap'),
     ]
-    seen = []
-    for p in path_pcaps:
-        if not os.path.exists(p):
-            continue
-        # Prefer direct field extraction for robustness
-        vals = tshark_fields(p, 'ndn.type==Data', 'ndn.lp.hoplimit')
-        if vals:
-            try:
-                seen.append(int(vals[0]))
-                continue
-            except Exception:
-                pass
-        # Fallback to JSON scan
-        j = tshark_json(p, [])
-        hls = extract_hoplimits(j, is_data=True)
-        if hls:
-            seen.append(hls[0])
-    if not seen:
-        print('FAIL: no Data hoplimit observed')
+    flood_map = _collect_flood_hoplimits(path_pcaps)
+    if not flood_map:
+        print('FAIL: S1 no Data flood hoplimit observed (check pcaps/dissector)')
         sys.exit(1)
-    # Check monotonic decrement by 1 and last <= 0
-    ok = True
-    for i in range(1, len(seen)):
-        if seen[i] != seen[i - 1] - 1:
-            ok = False
-            break
-    if ok and seen[-1] <= 0:
-        print('PASS: S1 Data OptoHopLimit decrement path =', seen)
-        return
-    print('FAIL: S1 hoplimit sequence invalid =', seen)
+    for flood_id, values in flood_map.items():
+        usable = {v for v in values if v >= 0}
+        if not usable or 0 not in usable:
+            continue
+        max_h = max(usable)
+        if max_h < 2:
+            continue
+        if all(val in usable for val in range(0, max_h + 1)):
+            chain = sorted(usable, reverse=True)
+            print(f'PASS: S1 Flood {flood_id} hoplimits {chain} show decrement to 0')
+            return
+    detail = '; '.join(f'{fid}:{sorted(sorted_vals)}' for fid, sorted_vals in ((fid, sorted(vals)) for fid, vals in flood_map.items()))
+    print('FAIL: S1 insufficient hoplimit coverage; need contiguous values down to 0. Observed =', detail)
     sys.exit(1)
 
 

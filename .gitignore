@@ -82,3 +82,9 @@ OptoFlood整合情况.md
 OptoFlood部署总结.md
 OptoFlood部署计划.md
 README_OptoFlood.md
+
+# Python bytecode caches
+__pycache__/
+
+# Experiment artifacts synced back from VMs
+test_results/
