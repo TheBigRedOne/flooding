@@ -81,11 +81,7 @@ $(PCAPS) $(RIBS) &: sync
 
 # Validation stamp (runs all validations)
 $(VALIDATE_OK): $(PCAPS) $(RIBS)
-	python3 validate.py s1
-	python3 validate.py s4
-	python3 validate.py s3
-	python3 validate.py s2
-	python3 validate.py s5
+	python3 validate.py
 	@echo OK > $@
 
 validate: $(VALIDATE_OK)

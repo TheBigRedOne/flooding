@@ -371,23 +371,24 @@ def validate_s5() -> None:
 
 
 def main():
-    if len(sys.argv) != 2:
-        print('Usage: python3 validate.py [s1|s2|s3|s4|s5]')
-        sys.exit(2)
-    which = sys.argv[1].lower()
-    if which == 's1':
-        validate_s1()
-    elif which == 's2':
-        validate_s2()
-    elif which == 's3':
-        validate_s3()
-    elif which == 's4':
-        validate_s4()
-    elif which == 's5':
-        validate_s5()
+    if len(sys.argv) <= 1:
+        requested = ['s1', 's2', 's3', 's4', 's5']
     else:
-        print('Unknown test id:', which)
-        sys.exit(2)
+        requested = [arg.lower() for arg in sys.argv[1:]]
+    for which in requested:
+        if which == 's1':
+            validate_s1()
+        elif which == 's2':
+            validate_s2()
+        elif which == 's3':
+            validate_s3()
+        elif which == 's4':
+            validate_s4()
+        elif which == 's5':
+            validate_s5()
+        else:
+            print('Unknown test id:', which)
+            sys.exit(2)
 
 
 if __name__ == '__main__':
