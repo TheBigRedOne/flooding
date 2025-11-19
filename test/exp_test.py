@@ -65,7 +65,7 @@ if __name__ == '__main__':
     ndn.start()
 
     info('Starting NFD on all nodes\n')
-    nfds = AppManager(ndn, ndn.net.hosts, Nfd, nfd-log-level=DEBUG)
+    nfds = AppManager(ndn, ndn.net.hosts, Nfd, log-level=DEBUG)
     info('Starting NLSR on all nodes\n')
     nlsrs = AppManager(ndn, ndn.net.hosts, Nlsr)
 
