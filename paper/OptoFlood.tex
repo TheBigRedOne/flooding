@@ -105,7 +105,7 @@ When an Interest arrives at a forwarder, it checks the Content Store and returns
 
 \begin{figure}[t]
     \centering
-    \includegraphics[width=1\linewidth]{figures/NDN_Packets_Processing_Flow.pdf}
+    \includegraphics[width=1\linewidth]{NDN_Packets_Processing_Flow.pdf}
     \caption{NDN Packets Processing Flow}
     \label{fig:NDN Packets Processing Flow}
 \end{figure}
@@ -114,17 +114,18 @@ The Named-Data Link State Routing protocol (NLSR) disseminates routing informati
 
 \begin{figure}[t]
     \centering
-    \includegraphics[width=1\linewidth]{figures/NDN_Producer_Mobility_Problem.pdf}
-    \caption{NDN Producer Mobility Problem. \csp{To illustrate the problem, the figure should show the topology with packets being misdirected somehow; the current figure doesn't help.}}
+    \includegraphics[width=1\linewidth]{NDN_Producer_Mobility_Problem.pdf}
+    \caption{NDN Producer Mobility Problem}
     \label{fig:NDN Producer Mobility Problem}
 \end{figure}
 
-Producer mobility in NDN poses significant challenges, especially in dynamic network environments. Each time a producer moves, it must re-register its data prefix so that NLSR can propagate the updated routing information across the network. However, routing convergence through NLSR is often not immediate; even when updates are generated, dissemination remains periodic and network-wide, which is slow relative to micro-mobility timescales (Figure~\ref{fig:NDN Producer Mobility Problem}).
-This results in the following:
-\begin{itemize}
-\item \textbf{Increased Latency:} When a producer changes its attachment point, its associated data prefixes must be re-advertised, initiating routing updates starting from the directly connected forwarder. These updates must propagate throughout the entire network before Interest Packets can be delivered to the producer at its new location. During this convergence period, consumers experience significant communication interruptions, often lasting several seconds or longer \cite{FIXME}. In scenarios requiring low latency, such as live video streaming or real-time conferencing, even brief interruptions degrade the user experience \cite{FIXME} and severely limit the practical utility of NDN.
+Producer mobility in NDN poses significant challenges, especially in dynamic environments. When a producer moves, it must re-register its data prefix so that NLSR can propagate the new route. Convergence is not immediate and is slow relative to mobility. As shown in Figure~\ref{fig:NDN Producer Mobility Problem}, Interest I-5 and I-6 issued before the move can remain pending throughout the handover; Data generated at the new PoA for these pending Interests (e.g., D-5) may be dropped due to no PIT match at R9; Interests sent after the move (I-7–I-9) are NACKed on the old path (e.g., at R3) until the LSAs from R9 spread towards R3 and the network reconverges.
 
-\item \textbf{Packet Loss:} During producer relocation and the subsequent routing convergence process, Interest packets arriving at the producer's previous attachment point are unable to reach the new location, causing these packets to expire and be discarded. Additionally, data packets responding to interest received prior to relocation may be stranded at nodes lacking proper PIT entries, as the reverse paths have been invalidated. Without a valid return path, these Data packets remain undeliverable until their lifetimes expire, leading to further packet loss and negatively affecting communication reliability.
+This results in the following.
+\begin{itemize}
+\item \textbf{Increased Latency:} When a producer changes its attachment point, its associated data prefixes must be re-advertised, initiating routing updates starting from the directly connected forwarder. These updates must propagate throughout the entire network before Interest Packets can be delivered to the producer at its new location. During this convergence period, consumers experience significant communication interruptions, often lasting several seconds or longer \cite{FIXME}. In scenarios requiring low latency, such as live video streaming or real-time conferencing, even brief interruptions degrade the user experience \cite{FIXME} and severely limit the practical utility of NDN. See Figure~\ref{fig:NDN Producer Mobility Problem} for an example timeline in which LSAs originate at R9 and spread throughout the network before service resumes.
+
+\item \textbf{Packet Loss:} During producer relocation and the subsequent routing convergence process, Interest packets arriving at the producer's previous attachment point are unable to reach the new location, causing these packets to expire and be discarded. Additionally, data packets responding to interest received prior to relocation may be stranded at nodes lacking proper PIT entries, as the reverse paths have been invalidated. Without a valid return path, these Data packets remain undeliverable until their lifetimes expire, leading to further packet loss and negatively affecting communication reliability. In Figure~\ref{fig:NDN Producer Mobility Problem}, I-7–I-9 are NACKed at R3 due to no FIB; while D-5 is dropped at R9 due to no PIT match, even though I-5/I-6 were issued before the move.
 
 \item \textbf{Increased Network Resource Usage:} Inefficiencies introduced by latency and packet loss also result in increased retransmissions of packets of Interest \cite{FIXME}. These retransmissions consume additional bandwidth and processing resources across the network, potentially impacting overall network performance and affecting other communications.
 
@@ -139,6 +140,13 @@ These problems highlight the limitations of traditional routing-based approaches
 \label{sec:solution}
 
 To address the challenges of producer mobility in NDN, particularly in latency-sensitive applications such as video conferencing or live streaming, we propose \textit{OptoFlood}, a novel controllable flooding mechanism. OptoFlood rapidly establishes temporary bidirectional communication paths following producer movements and leverages these paths to accelerate routing convergence.
+
+\begin{figure}
+    \centering
+    \includegraphics[width=1\linewidth]{Flooding_Solution.pdf}
+    \caption{Solution}
+    \label{fig:placeholder}
+\end{figure}
 
 \csp{Need a diagram showing the operation of the flooding, that the following can refer to.}
 
@@ -194,7 +202,7 @@ We evaluated OptoFlood in real-time video-based mobility scenarios, representing
 % ------------------------------------------------------------------------------
 \subsection{Methodology}
 
-We focus on campus micro-mobility with real-time video: a smartphone user walks across a campus network, with the connection handing over between nearby Points of Attachment (PoAs) under the same distribution domain while the video stream remains active. This is a common, real-world scenario that must work effectively with NDN and that is sensitive to latency, packet loss, and transient routing disruption.
+We focus on campus micro-mobility with real-time video: a smartphone user walks across a campus network, with the connection handing over between nearby Points of Attachment (PoAs) under the same distribution domain while the video stream remains active. This is a common, real-world scenario that must work effectively with NDN and is sensitive to latency, packet loss, and transient routing disruption.
 
 % In this local setting, the new attachment is typically within two to three hops of the previous path. OptoFlood scopes propagation accordingly (small hop limits) and writes short-lived temporary forwarding entries to form a transient bidirectional path; the confirmed path information is then used to speed up convergence of the routing plane.
 % 
@@ -218,7 +226,7 @@ Content prefixes are advertised via NLSR in the usual manner, with the extension
 % Data payloads in the current experiment use placeholder strings (e.g. "Hello, world!") to simulate real-time data characteristics. Although not employing actual video content, these payloads maintain consistent sizes to reflect realistic video packet profiles. Generated Data packets are digitally signed using the default keychain, ensuring integrity and security.
 % 
 % \textbf{Mobility Detection and Flooding Preparation:}
-On detecting changes in its network attachment point, the producer causes pending Data packets to be treated as in \emph{flooding mode} by relying on hop-by-hop Link Protocol (LP) fields: forwarders set an \texttt{LP--MobilityFlag} and apply an \texttt{LP--HopLimit}. Each marked packet also carries a unique Flood-ID (for duplicate suppression) and a NewFaceSeq (for temporary path state) in the signed portion (MetaInfo extension), ensuring integrity end-to-end. 
+On detecting changes in its network attachment point, the producer marks pending Data packets with a \texttt{MobilityFlag} within the MetaInfo TLV.of the packet. Additionally, each marked packet includes a unique Flood-ID (for duplicate detection), a sequence number (ensuring correct ordering and consistency), and a trace-hint (a lightweight path indicator derived from recent attachment points, guiding packet direction during flooding). 
 % These markings prepare Data packets for controlled flooding, rescuing pending Interests affected by mobility events.
 % 
 % \textbf{Controlled Data Packet Flooding:}
