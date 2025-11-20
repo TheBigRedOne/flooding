@@ -16,12 +16,13 @@ endif
 ROOT_DIR := ..
 SOLUTION_BOX := $(ROOT_DIR)/box/solution/solution.$(PROVIDER).box
 VAGRANT_SOLUTION := VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=$(ROOT_DIR)/test vagrant
+SSH_CONFIG := .ssh_config_solution
 
 # Remote working directory for rsync-based test runs
 REMOTE_DIR := /home/vagrant/flooding
 
 # Local rsync wrapper using ssh-config generated for the solution VM
-RSYNC_SOLUTION := rsync -avH -e "ssh -F .ssh_config_solution"
+RSYNC_SOLUTION := rsync -avH -e "ssh -F $(SSH_CONFIG)"
 
 # Files/dirs excluded from rsync push (keep host-only artifacts out of VM)
 RSYNC_EXCLUDES := \
@@ -39,7 +40,7 @@ $(SOLUTION_BOX):
 
 # Convenience VM lifecycle helpers (explicit; not auto-run unless invoked)
 vm-up: $(SOLUTION_BOX)
-	ACTUAL_SOLUTION_BOX_PATH="$(SOLUTION_BOX)" $(VAGRANT_SOLUTION) up
+	ACTUAL_SOLUTION_BOX_PATH="$(SOLUTION_BOX)" $(VAGRANT_SOLUTION) up --provision
 
 vm-halt:
 	$(VAGRANT_SOLUTION) halt -f || true
@@ -47,9 +48,15 @@ vm-halt:
 vm-destroy:
 	$(VAGRANT_SOLUTION) destroy -f || true
 
+# Ensure VM is recreated from the latest solution box and emit SSH config
+$(SSH_CONFIG): $(ROOT_DIR)/test/Vagrantfile $(SOLUTION_BOX)
+	# Force destroy to avoid stale base box snapshots
+	$(VAGRANT_SOLUTION) destroy -f || true
+	ACTUAL_SOLUTION_BOX_PATH="$(SOLUTION_BOX)" $(VAGRANT_SOLUTION) up --provision
+	$(VAGRANT_SOLUTION) ssh-config --host solution > $(SSH_CONFIG)
+
 # Sync sources from host to VM via rsync (standardized entry)
-sync: vm-up
-	$(VAGRANT_SOLUTION) ssh-config --host solution > .ssh_config_solution
+sync: $(SSH_CONFIG)
 	$(RSYNC_SOLUTION) $(RSYNC_EXCLUDES) $(ROOT_DIR)/ solution:$(REMOTE_DIR)/
 
 # Expected artifacts on host
