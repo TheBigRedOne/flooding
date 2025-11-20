@@ -275,7 +275,7 @@ def _collect_outbound_flood_counts(pcap_files: List[str]) -> Dict[str, Dict[Tupl
             '-Y', 'ndn.type==Data',
             '-T', 'fields',
             '-e', 'sll.pkttype',
-            '-e', 'sll.ifindex',
+            '-e', 'frame.interface_name',
             '-e', 'ndn.flood_id',
             '-e', 'ndn.fragindex',
         ])
