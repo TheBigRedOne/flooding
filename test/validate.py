@@ -263,18 +263,19 @@ def _collect_inbound_flood_counts(pcap_files: List[str]) -> Dict[str, Dict[int, 
     return inbound
 
 
-def _collect_outbound_flood_counts(pcap_files: List[str]) -> Dict[str, Dict[int, int]]:
-    outbound: Dict[str, Dict[int, int]] = {}
+def _collect_outbound_flood_counts(pcap_files: List[str]) -> Dict[str, Dict[Tuple[int, str], int]]:
+    outbound: Dict[str, Dict[Tuple[int, str], int]] = {}
     for pcap in pcap_files:
         if not os.path.exists(pcap):
             continue
         node = os.path.splitext(os.path.basename(pcap))[0]
-        counts: Dict[int, int] = defaultdict(int)
+        counts: Dict[Tuple[int, str], int] = defaultdict(int)
         cmd = tshark_cmd([
             '-r', pcap,
             '-Y', 'ndn.type==Data',
             '-T', 'fields',
             '-e', 'sll.pkttype',
+            '-e', 'sll.ifindex',
             '-e', 'ndn.flood_id',
         ])
         res = run(cmd)
@@ -282,17 +283,18 @@ def _collect_outbound_flood_counts(pcap_files: List[str]) -> Dict[str, Dict[int,
             continue
         for line in res.stdout.splitlines():
             cols = line.strip().split('\t')
-            if len(cols) < 2:
+            if len(cols) < 3:
                 continue
             pkttype = cols[0].strip()
-            fid = cols[1].strip()
+            iface = cols[1].strip() or '?'
+            fid = cols[2].strip()
             if pkttype != '4' or not fid:
                 continue
             try:
                 flood_id = int(fid)
             except ValueError:
                 continue
-            counts[flood_id] += 1
+            counts[(flood_id, iface)] += 1
         if counts:
             outbound[node] = counts
     return outbound
@@ -402,14 +404,14 @@ def validate_s2() -> None:
         sys.exit(1)
     offenders = []
     for node, counts in outbound.items():
-        dup_ids = [fid for fid, cnt in counts.items() if cnt > 1]
-        if dup_ids:
-            offenders.append((node, dup_ids))
+        dup_keys = [key for key, cnt in counts.items() if cnt > 1]
+        if dup_keys:
+            offenders.append((node, dup_keys))
     if offenders:
         details = '; '.join(f"{node}:{len(ids)} outbound duplicates" for node, ids in offenders)
         print('FAIL: S2 duplicate FloodId detected in outbound traffic ->', details)
         sys.exit(1)
-    print('PASS: S2 Data dedup verified (no outbound duplicates)')
+    print('PASS: S2 Data dedup verified (no outbound duplicates per interface)')
 
 
 def validate_s3() -> None:
