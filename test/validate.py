@@ -302,6 +302,23 @@ def _collect_outbound_flood_counts(pcap_files: List[str]) -> Dict[str, Dict[Tupl
             counts[(flood_id, iface)] += 1
         if counts:
             outbound[node] = counts
+            continue
+        # Fallback to manual parsing if tshark fields missing
+        manual_counts: Dict[Tuple[int, str], int] = defaultdict(int)
+        for _, frame, linktype in _iter_pcap_frames(pcap):
+            stripped = _strip_link_header(frame, linktype)
+            if not stripped:
+                continue
+            pkttype, _, payload = stripped
+            if pkttype != 4:
+                continue
+            decoded = _decode_flood_and_hop(payload)
+            if not decoded:
+                continue
+            flood_id, _ = decoded
+            manual_counts[(flood_id, '?')] += 1
+        if manual_counts:
+            outbound[node] = manual_counts
     return outbound
 
 
