@@ -277,18 +277,23 @@ def _collect_outbound_flood_counts(pcap_files: List[str]) -> Dict[str, Dict[Tupl
             '-e', 'sll.pkttype',
             '-e', 'sll.ifindex',
             '-e', 'ndn.flood_id',
+            '-e', 'ndn.fragindex',
         ])
         res = run(cmd)
         if res.returncode != 0:
             continue
         for line in res.stdout.splitlines():
             cols = line.strip().split('\t')
-            if len(cols) < 3:
+            if len(cols) < 4:
                 continue
             pkttype = cols[0].strip()
             iface = cols[1].strip() or '?'
             fid = cols[2].strip()
+            frag_index = cols[3].strip()
             if pkttype != '4' or not fid:
+                continue
+            # Only count first fragment (frag index 0 or absent)
+            if frag_index not in ('', '0'):
                 continue
             try:
                 flood_id = int(fid)
