@@ -126,22 +126,24 @@ def _iter_pcap_frames(pcap_path: str) -> Iterable[Tuple[float, bytes, int]]:
             yield ts_sec + ts_usec / ts_scale, data, network
 
 
-def _strip_link_header(frame: bytes, linktype: int) -> Optional[Tuple[int, bytes]]:
+def _strip_link_header(frame: bytes, linktype: int) -> Optional[Tuple[int, int, bytes]]:
     if linktype == _LINKTYPE_ETHERNET:
         if len(frame) < 18:
             return None
         eth_type = (frame[12] << 8) | frame[13]
-        return eth_type, frame[14:]
+        return 0, eth_type, frame[14:]
     if linktype == _LINKTYPE_LINUX_SLL:
         if len(frame) < 18:
             return None
+        packet_type = (frame[0] << 8) | frame[1]
         eth_type = (frame[14] << 8) | frame[15]
-        return eth_type, frame[16:]
+        return packet_type, eth_type, frame[16:]
     if linktype == _LINKTYPE_LINUX_SLL2:
         if len(frame) < 22:
             return None
-        eth_type = (frame[0] << 8) | frame[1]
-        return eth_type, frame[20:]
+        packet_type = (frame[8] << 8) | frame[9]
+        eth_type = (frame[20] << 8) | frame[21]
+        return packet_type, eth_type, frame[22:]
     return None
 
 
@@ -204,7 +206,7 @@ def _collect_flood_hoplimits(pcap_files: List[str]) -> Dict[int, set]:
             stripped = _strip_link_header(frame, linktype)
             if not stripped:
                 continue
-            eth_type, payload = stripped
+            _, eth_type, payload = stripped
             if eth_type != _ETHERTYPE_NDN:
                 continue
             decoded = _decode_flood_and_hop(payload)
@@ -213,6 +215,32 @@ def _collect_flood_hoplimits(pcap_files: List[str]) -> Dict[int, set]:
             flood_id, hop = decoded
             flood_map[flood_id].add(hop)
     return flood_map
+
+
+def _collect_inbound_flood_counts(pcap_files: List[str]) -> Dict[str, Dict[int, int]]:
+    inbound: Dict[str, Dict[int, int]] = {}
+    for pcap in pcap_files:
+        if not os.path.exists(pcap):
+            continue
+        node = os.path.splitext(os.path.basename(pcap))[0]
+        counts: Dict[int, int] = defaultdict(int)
+        for _, frame, linktype in _iter_pcap_frames(pcap):
+            stripped = _strip_link_header(frame, linktype)
+            if not stripped:
+                continue
+            pkttype, eth_type, payload = stripped
+            if eth_type != _ETHERTYPE_NDN:
+                continue
+            if pkttype == 4:  # outbound (Linux cooked header)
+                continue
+            decoded = _decode_flood_and_hop(payload)
+            if not decoded:
+                continue
+            flood_id, _ = decoded
+            counts[flood_id] += 1
+        if counts:
+            inbound[node] = counts
+    return inbound
 
 
 def extract_hoplimits(json_packets: List[dict], is_data: bool) -> List[int]:
@@ -312,23 +340,21 @@ def validate_s4() -> None:
 
 
 def validate_s2() -> None:
-    # Strong dedup by FloodId (MetaInfo TLV 202) via custom dissector field ndn.flood_id
-    any_checked = False
-    for node in ('r3', 'r4', 'r5'):
-        p = os.path.join(PCAP_DIR, f'{node}.pcap')
-        if not os.path.exists(p):
-            continue
-        res = run(tshark_cmd(['-r', p, '-Y', 'ndn.type==Data', '-T', 'fields', '-e', 'ndn.flood_id']))
-        lines = [ln.strip() for ln in res.stdout.splitlines() if ln.strip()]
-        if lines:
-            any_checked = True
-            if len(lines) != len(set(lines)):
-                print(f'FAIL: S2 duplicate FloodId detected on {node}')
-                sys.exit(1)
-    if not any_checked:
+    path_pcaps = [os.path.join(PCAP_DIR, f'{node}.pcap') for node in ('r2', 'r3', 'r4', 'r5')]
+    inbound = _collect_inbound_flood_counts(path_pcaps)
+    if not inbound:
         print('FAIL: S2 no FloodId observed in pcaps (check dissector)')
         sys.exit(1)
-    print('PASS: S2 Data dedup by FloodId (no duplicates)')
+    offenders = []
+    for node, counts in inbound.items():
+        dup_ids = [fid for fid, cnt in counts.items() if cnt > 1]
+        if dup_ids:
+            offenders.append((node, dup_ids))
+    if offenders:
+        details = '; '.join(f"{node}:{len(ids)} duplicates" for node, ids in offenders)
+        print('FAIL: S2 duplicate FloodId observed on inbound traffic ->', details)
+        sys.exit(1)
+    print('PASS: S2 Data dedup verified on inbound traffic (no duplicates)')
 
 
 def validate_s3() -> None:
@@ -393,5 +419,6 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
