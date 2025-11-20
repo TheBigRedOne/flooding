@@ -202,17 +202,25 @@ def _collect_flood_hoplimits(pcap_files: List[str]) -> Dict[int, set]:
     for pcap in pcap_files:
         if not os.path.exists(pcap):
             continue
-        for _, frame, linktype in _iter_pcap_frames(pcap):
-            stripped = _strip_link_header(frame, linktype)
-            if not stripped:
+        cmd = tshark_cmd([
+            '-r', pcap,
+            '-Y', 'ndn.type==Data',
+            '-T', 'fields',
+            '-e', 'ndn.flood_id',
+            '-e', 'ndn.lp.hoplimit',
+        ])
+        res = run(cmd)
+        if res.returncode != 0:
+            continue
+        for line in res.stdout.splitlines():
+            cols = [c for c in line.strip().split('\t') if c]
+            if len(cols) < 2:
                 continue
-            _, eth_type, payload = stripped
-            if eth_type != _ETHERTYPE_NDN:
+            try:
+                flood_id = int(cols[0])
+                hop = int(cols[1])
+            except ValueError:
                 continue
-            decoded = _decode_flood_and_hop(payload)
-            if not decoded:
-                continue
-            flood_id, hop = decoded
             flood_map[flood_id].add(hop)
     return flood_map
 
@@ -224,19 +232,31 @@ def _collect_inbound_flood_counts(pcap_files: List[str]) -> Dict[str, Dict[int, 
             continue
         node = os.path.splitext(os.path.basename(pcap))[0]
         counts: Dict[int, int] = defaultdict(int)
-        for _, frame, linktype in _iter_pcap_frames(pcap):
-            stripped = _strip_link_header(frame, linktype)
-            if not stripped:
+        cmd = tshark_cmd([
+            '-r', pcap,
+            '-Y', 'ndn.type==Data',
+            '-T', 'fields',
+            '-e', 'sll.pkttype',
+            '-e', 'ndn.flood_id',
+        ])
+        res = run(cmd)
+        if res.returncode != 0:
+            continue
+        for line in res.stdout.splitlines():
+            cols = line.strip().split('\t')
+            if len(cols) < 2:
                 continue
-            pkttype, eth_type, payload = stripped
-            if eth_type != _ETHERTYPE_NDN:
+            pkttype = cols[0].strip()
+            fid = cols[1].strip()
+            if not fid:
                 continue
-            if pkttype == 4:  # outbound (Linux cooked header)
+            # sll.pkttype: 0/1 inbound, 4 outbound; empty when not captured via SLL
+            if pkttype == '4':
                 continue
-            decoded = _decode_flood_and_hop(payload)
-            if not decoded:
+            try:
+                flood_id = int(fid)
+            except ValueError:
                 continue
-            flood_id, _ = decoded
             counts[flood_id] += 1
         if counts:
             inbound[node] = counts
