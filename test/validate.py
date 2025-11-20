@@ -263,21 +263,21 @@ def _collect_inbound_flood_counts(pcap_files: List[str]) -> Dict[str, Dict[int, 
     return inbound
 
 
-def _collect_outbound_flood_counts(pcap_files: List[str]) -> Dict[str, Dict[Tuple[int, str], int]]:
-    outbound: Dict[str, Dict[Tuple[int, str], int]] = {}
+def _collect_outbound_flood_counts(pcap_files: List[str]) -> Dict[str, Dict[Tuple[int, str, str], int]]:
+    outbound: Dict[str, Dict[Tuple[int, str, str], int]] = {}
     for pcap in pcap_files:
         if not os.path.exists(pcap):
             continue
         node = os.path.splitext(os.path.basename(pcap))[0]
-        counts: Dict[Tuple[int, str], int] = defaultdict(int)
+        counts: Dict[Tuple[int, str, str], int] = defaultdict(int)
         cmd = tshark_cmd([
             '-r', pcap,
             '-Y', 'ndn.type==Data',
             '-T', 'fields',
             '-e', 'sll.pkttype',
-            '-e', 'frame.interface_name',
+            '-e', 'sll.ifindex',
+            '-e', 'ip.dst',
             '-e', 'ndn.flood_id',
-            '-e', 'ndn.fragindex',
         ])
         res = run(cmd)
         if res.returncode != 0:
@@ -288,37 +288,17 @@ def _collect_outbound_flood_counts(pcap_files: List[str]) -> Dict[str, Dict[Tupl
                 continue
             pkttype = cols[0].strip()
             iface = cols[1].strip() or '?'
-            fid = cols[2].strip()
-            frag_index = cols[3].strip()
+            dst = cols[2].strip() or '?'
+            fid = cols[3].strip()
             if pkttype != '4' or not fid:
-                continue
-            # Only count first fragment (frag index 0 or absent)
-            if frag_index not in ('', '0'):
                 continue
             try:
                 flood_id = int(fid)
             except ValueError:
                 continue
-            counts[(flood_id, iface)] += 1
+            counts[(flood_id, iface, dst)] += 1
         if counts:
             outbound[node] = counts
-            continue
-        # Fallback to manual parsing if tshark fields missing
-        manual_counts: Dict[Tuple[int, str], int] = defaultdict(int)
-        for _, frame, linktype in _iter_pcap_frames(pcap):
-            stripped = _strip_link_header(frame, linktype)
-            if not stripped:
-                continue
-            pkttype, _, payload = stripped
-            if pkttype != 4:
-                continue
-            decoded = _decode_flood_and_hop(payload)
-            if not decoded:
-                continue
-            flood_id, _ = decoded
-            manual_counts[(flood_id, '?')] += 1
-        if manual_counts:
-            outbound[node] = manual_counts
     return outbound
 
 
