@@ -15,7 +15,9 @@ endif
 
 ROOT_DIR := ..
 SOLUTION_BOX := $(ROOT_DIR)/box/solution/solution.$(PROVIDER).box
+BOX_NAME := optoflood-solution-test
 VAGRANT_SOLUTION := VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=$(ROOT_DIR)/test vagrant
+VAGRANT_ENV := ACTUAL_SOLUTION_BOX_PATH="$(SOLUTION_BOX)" SOLUTION_BOX_NAME=$(BOX_NAME)
 SSH_CONFIG := .ssh_config_solution
 
 # Remote working directory for rsync-based test runs
@@ -40,7 +42,7 @@ $(SOLUTION_BOX):
 
 # Convenience VM lifecycle helpers (explicit; not auto-run unless invoked)
 vm-up: $(SOLUTION_BOX)
-	ACTUAL_SOLUTION_BOX_PATH="$(SOLUTION_BOX)" $(VAGRANT_SOLUTION) up --provision
+	$(VAGRANT_ENV) $(VAGRANT_SOLUTION) up --provision
 
 vm-halt:
 	$(VAGRANT_SOLUTION) halt -f || true
@@ -52,7 +54,9 @@ vm-destroy:
 $(SSH_CONFIG): $(ROOT_DIR)/test/Vagrantfile $(SOLUTION_BOX)
 	# Force destroy to avoid stale base box snapshots
 	$(VAGRANT_SOLUTION) destroy -f || true
-	ACTUAL_SOLUTION_BOX_PATH="$(SOLUTION_BOX)" $(VAGRANT_SOLUTION) up --provision
+	# Remove previously cached box to force reload from local package
+	$(VAGRANT_SOLUTION) box remove $(BOX_NAME) --provider=$(PROVIDER) || true
+	$(VAGRANT_ENV) $(VAGRANT_SOLUTION) up --provision
 	$(VAGRANT_SOLUTION) ssh-config --host solution > $(SSH_CONFIG)
 
 # Sync sources from host to VM via rsync (standardized entry)
