@@ -13,6 +13,7 @@ import struct
 import subprocess
 import sys
 from collections import defaultdict
+from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Tuple
 
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -263,13 +264,22 @@ def _collect_inbound_flood_counts(pcap_files: List[str]) -> Dict[str, Dict[int, 
     return inbound
 
 
-def _collect_outbound_flood_counts(pcap_files: List[str]) -> Dict[str, Dict[Tuple[int, str, str], int]]:
-    outbound: Dict[str, Dict[Tuple[int, str, str], int]] = {}
+@dataclass
+class OutboundFloodRecord:
+    flood_id: int
+    iface: str
+    dst: str
+    hoplimit: Optional[int]
+    frame_no: Optional[int]
+
+
+def _collect_outbound_flood_records(pcap_files: List[str]) -> Dict[str, Dict[Tuple[int, str, str], List[OutboundFloodRecord]]]:
+    outbound: Dict[str, Dict[Tuple[int, str, str], List[OutboundFloodRecord]]] = {}
     for pcap in pcap_files:
         if not os.path.exists(pcap):
             continue
         node = os.path.splitext(os.path.basename(pcap))[0]
-        counts: Dict[Tuple[int, str, str], int] = defaultdict(int)
+        records: Dict[Tuple[int, str, str], List[OutboundFloodRecord]] = defaultdict(list)
         cmd = tshark_cmd([
             '-r', pcap,
             '-Y', 'ndn.type==Data',
@@ -278,27 +288,50 @@ def _collect_outbound_flood_counts(pcap_files: List[str]) -> Dict[str, Dict[Tupl
             '-e', 'sll.ifindex',
             '-e', 'ip.dst',
             '-e', 'ndn.flood_id',
+            '-e', 'frame.number',
+            '-e', 'ndn.lp.hoplimit',
         ])
         res = run(cmd)
         if res.returncode != 0:
             continue
         for line in res.stdout.splitlines():
             cols = line.strip().split('\t')
-            if len(cols) < 4:
+            if len(cols) < 6:
                 continue
             pkttype = cols[0].strip()
             iface = cols[1].strip() or '?'
             dst = cols[2].strip() or '?'
             fid = cols[3].strip()
+            frame_no = cols[4].strip()
+            hop_raw = cols[5].strip()
             if pkttype != '4' or not fid:
+                continue
+            if dst == '?' or not dst:
                 continue
             try:
                 flood_id = int(fid)
             except ValueError:
                 continue
-            counts[(flood_id, iface, dst)] += 1
-        if counts:
-            outbound[node] = counts
+            hoplimit: Optional[int]
+            if hop_raw:
+                try:
+                    hoplimit = int(hop_raw)
+                except ValueError:
+                    hoplimit = None
+            else:
+                hoplimit = None
+            frame_idx: Optional[int]
+            if frame_no:
+                try:
+                    frame_idx = int(frame_no)
+                except ValueError:
+                    frame_idx = None
+            else:
+                frame_idx = None
+            key = (flood_id, iface, dst)
+            records[key].append(OutboundFloodRecord(flood_id, iface, dst, hoplimit, frame_idx))
+        if records:
+            outbound[node] = records
     return outbound
 
 
@@ -400,18 +433,24 @@ def validate_s4() -> None:
 
 def validate_s2() -> None:
     path_pcaps = [os.path.join(PCAP_DIR, f'{node}.pcap') for node in ('r2', 'r3', 'r4', 'r5')]
-    outbound = _collect_outbound_flood_counts(path_pcaps)
+    outbound = _collect_outbound_flood_records(path_pcaps)
     if not outbound:
         print('FAIL: S2 no FloodId observed in pcaps (check dissector)')
         sys.exit(1)
     offenders = []
-    for node, counts in outbound.items():
-        dup_keys = [key for key, cnt in counts.items() if cnt > 1]
-        if dup_keys:
-            offenders.append((node, dup_keys))
+    for node, rec_map in outbound.items():
+        dup = {key: recs for key, recs in rec_map.items() if len(recs) > 1}
+        if dup:
+            offenders.append((node, dup))
     if offenders:
-        details = '; '.join(f"{node}:{len(ids)} outbound duplicates" for node, ids in offenders)
-        print('FAIL: S2 duplicate FloodId detected in outbound traffic ->', details)
+        detail_items = []
+        for node, dup_map in offenders:
+            for (fid, iface, dst), recs in list(dup_map.items())[:3]:
+                frames = ','.join(str(r.frame_no) if r.frame_no is not None else '?' for r in recs)
+                hops = ','.join(str(r.hoplimit) if r.hoplimit is not None else '?' for r in recs)
+                detail_items.append(
+                    f"{node}:fid={fid},iface={iface},dst={dst},count={len(recs)},frames=[{frames}],hoplimit=[{hops}]")
+        print('FAIL: S2 duplicate FloodId detected in outbound traffic ->', '; '.join(detail_items))
         sys.exit(1)
     print('PASS: S2 Data dedup verified (no outbound duplicates per interface)')
 
