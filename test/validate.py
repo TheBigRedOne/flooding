@@ -406,11 +406,16 @@ def validate_s4() -> None:
         # Prefer direct field extraction for robustness
         vals = tshark_fields(p, 'ndn.type==Interest', 'ndn.hoplimit')
         if vals:
-            try:
-                seen.append(int(vals[0]))
+            hop = None
+            for raw in vals:
+                try:
+                    hop = int(raw)
+                    break
+                except ValueError:
+                    continue
+            if hop is not None:
+                seen.append(hop)
                 continue
-            except Exception:
-                pass
         # Fallback to JSON scan
         j = tshark_json(p, [])
         hls = extract_hoplimits(j, is_data=False)
