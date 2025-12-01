@@ -456,11 +456,15 @@ def validate_s4() -> None:
         vals = tshark_fields(p, 'ndn.type==Interest', 'ndn.hoplimit')
         if vals:
             for raw in vals:
-                try:
-                    hop_value = int(raw)
+                parts = [tok.strip() for tok in raw.replace(',', ' ').split() if tok.strip()]
+                for token in parts:
+                    try:
+                        hop_value = int(token)
+                        break
+                    except ValueError:
+                        continue
+                if hop_value is not None:
                     break
-                except ValueError:
-                    continue
         if hop_value is None:
             payload_hops = _collect_interest_hoplimits_from_payload(p)
             if payload_hops:
