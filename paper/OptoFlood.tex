@@ -114,7 +114,7 @@ The Named-Data Link State Routing protocol (NLSR) disseminates routing informati
 
 \begin{figure}[t]
     \centering
-    \includegraphics[width=1\linewidth]{NDN_Producer_Mobility_Problem.pdf}
+    \includegraphics[width=1\linewidth]{NDN_Producer_Mobility_Problem_Cloud.pdf}
     \caption{NDN Producer Mobility Problem}
     \label{fig:NDN Producer Mobility Problem}
 \end{figure}
@@ -253,17 +253,24 @@ The experiment simulates a handheld UE (e.g., a smartphone) in a campus network,
 The network follows a classic three-layer mobile architecture representative of carrier xHaul deployments:
 \begin{itemize}
     \item \textbf{Core layer:} One core switch, linking to the distribution layer with 1~Gbps bandwidth and 1~ms latency.
-    \item \textbf{Distribution layer:} Two aggregation switches, each connected to the core and providing 1~Gbps / 1~ms links to their access layer.
+    \item \textbf{Distribution layer:} Two aggregation switches, each connected to the core and providing 500~Mbps / 1~ms links to their access layer.
     \item \textbf{Access layer:} Three access switches (PoAs) per aggregation switch, each offering 100~Mbps bandwidth and 10~ms latency to the UE.
 \end{itemize}
 \csp{This information should be in the diagram}
 
+\begin{figure}
+    \centering
+    \includegraphics[width=1\linewidth]{Topology.pdf}
+    \caption{Experiment Topology}
+    \label{exp_topo}
+\end{figure}
+
 % - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 \subsubsection{Methodology}
 
-Simulations were conducted using Mini-NDN version \todo{minindn-version} \cite{FIXME} and repeated with identical topology, applications, and mobility patterns, both with and without the OptoFlood enhancements, to ensure that performance differences are attributable solely to the OptoFlood mechanism.
+Simulations were conducted using Mini-NDN version 0.7.0 and repeated with identical topology, applications, and mobility patterns, both with and without OptoFlood enhancements, to ensure that performance differences are attributable solely to the OptoFlood mechanism.
 
-For each run, all network nodes were initialised with NFD and NLSR, and allowed to reach a stable routing state (typically within 20~seconds). The consumer and producer applications were then launched simultaneously: the consumer periodically issued Interest packets for video segments, while the producer generated corresponding Data packets in real time, emulating a live video conference scenario.
+For each run, all network nodes were initialised with NFD and NLSR and allowed to reach a stable routing state (typically within 20~seconds). The consumer and producer applications were then launched simultaneously: the consumer periodically issued Interest packets for video segments, while the producer generated corresponding Data packets in real time, emulating a live video conference scenario.
 
 Producer mobility was simulated by sequentially reattaching the producer node to different access switches (PoAs), with a stable interval between movements chosen to the 120~second hand-off period expected for a walking UE. Each hand-off was implemented by disconnecting from the current PoA and immediately connecting to the next, representing movement across coverage zones under the same distribution domain.
 \csp{Needs a diagram - this is likely part of the network topology diagram}
@@ -335,7 +342,7 @@ Together, these results demonstrate that mobility introduces a clear disruption 
 
 The management of producer mobility in NDN has attracted significant research attention. Various solutions have emerged, generally categorised according to their underlying mechanisms. Here, we summarise three representative approaches—KITE, AFIRM, and MAP-Me—and highlight their respective strengths and limitations.
 
-\textbf{KITE} \cite{KITE} employs an anchor-based approach by establishing explicit tracking paths between a mobile producer and a stationary anchor node. The producer periodically issues authenticated trace Interests towards the anchor, creating a breadcrumb-like trail to its latest location, thus facilitating hop-by-hop routing. KITE is straightforward and robust, significantly reducing dependency on global routing updates by continuously maintaining explicit anchor-based paths. However, its reliance on anchor nodes inherently introduces potential bottlenecks and single point of failure, especially in scenarios involving intense or large-scale producer mobility.
+\textbf{KITE} \cite{KITE} employs an anchor-based approach by establishing explicit tracking paths between a mobile producer and a stationary anchor node. The producer periodically issues authenticated trace Interests towards the anchor, creating a breadcrumb-like trail to its latest location, thus facilitating hop-by-hop routing. KITE is straightforward and robust, significantly reducing the dependency on global routing updates by continuously maintaining explicit anchor-based paths. However, its reliance on anchor nodes inherently introduces potential bottlenecks and single point of failure, especially in scenarios involving intense or large-scale producer mobility.
 
 \textbf{AFIRM (Adaptive Forwarding-based Link Recovery for Mobility)} \cite{AFIRM} addresses producer mobility through adaptive repair of forwarding paths, without relying on an anchor node. Upon detecting producer mobility, AFIRM proactively sends special "recovery" packets carrying mobility indicators along both old and new forwarding paths, quickly updating Forwarding Information Base (FIB) entries at intermediate nodes. These rapid and localised updates effectively minimise disruptions, making AFIRM particularly suitable for scenarios involving frequent and localised movements. However, AFIRM's performance strongly depends on the timely and accurate detection of mobility events. In highly dynamic environments, the frequent generation and propagation of recovery packets may lead to increased signalling overhead.
 
@@ -343,9 +350,10 @@ The management of producer mobility in NDN has attracted significant research at
 
 In terms of route updates, KITE periodically disseminates authenticated trace Interests towards the anchor node, thereby maintaining a continuous breadcrumb trail. In contrast, AFIRM sends explicit "recovery" packets immediately upon detecting producer mobility events, ensuring rapid local path updates. MAP-Me proactively generates Interest notifications upon every movement, swiftly propagating new forwarding states throughout affected network segments. All three differ fundamentally from the baseline NDN, where routing updates rely primarily on periodic global advertisements, resulting in slow convergence and increased disruptions during mobility.
 
-In comparison, our OptoFlood solution offers a comprehensive flooding-based mechanism specifically designed for dynamic producer mobility scenarios, employing controlled flooding of both Data and Interest packets immediately following producer movement. Unlike KITE, OptoFlood does not depend on anchor nodes, avoiding potential single points of failure and path inefficiencies. Compared to AFIRM and MAP-Me, which rely heavily on explicit route-update packets, OptoFlood leverages a proactive flooding strategy to rescue pending Interests instantly, significantly reducing latency and retransmission overhead. Moreover, by integrating temporary flooding-based paths with Named-data Link State Routing (NLSR), OptoFlood generates short-lived local LSAs, accelerating global routing convergence compared to traditional periodic routing updates.
+\textbf{MoQ/QUICR (Media over QUIC)} \cite{MOQ-QUICR} proposes a relay-assisted publish/subscribe architecture over QUIC for low-latency media delivery. Producers publish named media objects (e.g., groups, tracks, objects), and consumers subscribe; relays cache and fan out objects. Mobility is handled mainly by QUIC connection migration and re-subscription to nearby relays. This gives fast application-level continuity, but it relies on relay selection and control-plane mapping rather than name-based data-plane forwarding state (e.g., PIT/FIB). In effect, relays can act as anchors; there is no in-network mechanism to rescue pending requests when the producer moves, and path updates are managed per connection rather than by localised data-plane repair. Thus, MoQ/QUICR shares NDN-like ideas (naming and in-network caching), but targets a different layer and problem scope.
 
-\csp{add discussion of Cullen Jennings' MoQ work, which has a very NDN flavour}
+In comparison, our OptoFlood solution offers a comprehensive flood-based mechanism specifically designed for dynamic producer mobility scenarios, employing controlled flooding of both Data and Interest packets immediately following producer movement. Unlike KITE, OptoFlood does not depend on anchor nodes, avoiding potential single points of failure and path inefficiencies. Compared to AFIRM and MAP-Me, which rely heavily on explicit route-update packets, OptoFlood leverages a proactive flooding strategy to rescue pending Interests instantly, significantly reducing latency and retransmission overhead. Moreover, by integrating temporary flooding-based paths with Named-data Link State Routing (NLSR), OptoFlood generates short-lived local LSAs, accelerating global routing convergence compared to traditional periodic routing updates.
+
 \ryo{Relevant links: \url{https://www.ietf.org/archive/id/draft-jennings-moq-quicr-arch-01.html} and \url{https://datatracker.ietf.org/meeting/116/materials/slides-116-icnrg-media-delivery-over-quicr-00.pdf}}
 
 % ==============================================================================

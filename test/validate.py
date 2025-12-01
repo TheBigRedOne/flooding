@@ -29,6 +29,7 @@ def run(cmd: List[str]) -> subprocess.CompletedProcess:
 def tshark_cmd(extra: List[str]) -> List[str]:
     args = ['tshark']
     if os.path.exists(LUA_DISS):
+        args += ['-o', 'lua_script_default:false']
         args += ['-X', f'lua_script:{LUA_DISS}']
     args += extra
     return args
@@ -357,32 +358,6 @@ def _collect_outbound_flood_records(pcap_files: List[str]) -> Dict[str, Dict[Tup
     return outbound
 
 
-def _collect_interest_hoplimits_from_payload(pcap: str) -> List[int]:
-    hops: List[int] = []
-    cmd = tshark_cmd([
-        '-r', pcap,
-        '-Y', 'ndn.type==Interest',
-        '-T', 'fields',
-        '-e', 'udp.payload',
-    ])
-    res = run(cmd)
-    if res.returncode != 0:
-        return hops
-    for line in res.stdout.splitlines():
-        payload_hex = line.strip()
-        if not payload_hex:
-            continue
-        raw_hex = payload_hex.replace(':', '')
-        try:
-            payload = bytes.fromhex(raw_hex)
-        except ValueError:
-            continue
-        hop = _extract_interest_hoplimit(payload)
-        if hop is not None:
-            hops.append(hop)
-    return hops
-
-
 def extract_hoplimits(json_packets: List[dict], is_data: bool) -> List[int]:
     hoplimits = []
     for pkt in json_packets:
@@ -465,10 +440,6 @@ def validate_s4() -> None:
                         continue
                 if hop_value is not None:
                     break
-        if hop_value is None:
-            payload_hops = _collect_interest_hoplimits_from_payload(p)
-            if payload_hops:
-                hop_value = payload_hops[0]
         if hop_value is None:
             # Fallback to JSON scan
             j = tshark_json(p, [])
