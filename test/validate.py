@@ -98,9 +98,11 @@ _ETHERTYPE_NDN = 0x8624
 _LP_PACKET_TLV = 100
 _LP_FRAGMENT_TLV = 80
 _LP_OPTO_HOP_TLV = 96
+_NDN_INTEREST_TLV = 0x05
 _NDN_DATA_TLV = 0x06
 _TLV_METAINFO = 0x14
 _TLV_FLOOD_ID = 202
+_TLV_INTEREST_HOPLIMIT = 34
 
 
 def _iter_pcap_frames(pcap_path: str) -> Iterable[Tuple[float, bytes, int]]:
@@ -196,6 +198,26 @@ def _decode_flood_and_hop(payload: bytes) -> Optional[Tuple[int, int]]:
     if flood_id is None or hop is None:
         return None
     return flood_id, hop
+
+
+def _extract_interest_hoplimit(payload: bytes) -> Optional[int]:
+    try:
+        tlv_type, tlv_value, _ = _read_tlv(payload, 0)
+    except ValueError:
+        return None
+    if tlv_type != _NDN_INTEREST_TLV:
+        return None
+    offset = 0
+    try:
+        while offset < len(tlv_value):
+            sub_type, sub_value, offset = _read_tlv(tlv_value, offset)
+            if sub_type == _TLV_INTEREST_HOPLIMIT:
+                if not sub_value:
+                    return None
+                return int.from_bytes(sub_value, 'big')
+    except ValueError:
+        return None
+    return None
 
 
 def _collect_flood_hoplimits(pcap_files: List[str]) -> Dict[int, set]:
@@ -335,6 +357,32 @@ def _collect_outbound_flood_records(pcap_files: List[str]) -> Dict[str, Dict[Tup
     return outbound
 
 
+def _collect_interest_hoplimits_from_payload(pcap: str) -> List[int]:
+    hops: List[int] = []
+    cmd = tshark_cmd([
+        '-r', pcap,
+        '-Y', 'ndn.type==Interest',
+        '-T', 'fields',
+        '-e', 'udp.payload',
+    ])
+    res = run(cmd)
+    if res.returncode != 0:
+        return hops
+    for line in res.stdout.splitlines():
+        payload_hex = line.strip()
+        if not payload_hex:
+            continue
+        raw_hex = payload_hex.replace(':', '')
+        try:
+            payload = bytes.fromhex(raw_hex)
+        except ValueError:
+            continue
+        hop = _extract_interest_hoplimit(payload)
+        if hop is not None:
+            hops.append(hop)
+    return hops
+
+
 def extract_hoplimits(json_packets: List[dict], is_data: bool) -> List[int]:
     hoplimits = []
     for pkt in json_packets:
@@ -404,23 +452,27 @@ def validate_s4() -> None:
         if not os.path.exists(p):
             continue
         # Prefer direct field extraction for robustness
+        hop_value: Optional[int] = None
         vals = tshark_fields(p, 'ndn.type==Interest', 'ndn.hoplimit')
         if vals:
-            hop = None
             for raw in vals:
                 try:
-                    hop = int(raw)
+                    hop_value = int(raw)
                     break
                 except ValueError:
                     continue
-            if hop is not None:
-                seen.append(hop)
-                continue
-        # Fallback to JSON scan
-        j = tshark_json(p, [])
-        hls = extract_hoplimits(j, is_data=False)
-        if hls:
-            seen.append(hls[0])
+        if hop_value is None:
+            payload_hops = _collect_interest_hoplimits_from_payload(p)
+            if payload_hops:
+                hop_value = payload_hops[0]
+        if hop_value is None:
+            # Fallback to JSON scan
+            j = tshark_json(p, [])
+            hls = extract_hoplimits(j, is_data=False)
+            if hls:
+                hop_value = hls[0]
+        if hop_value is not None:
+            seen.append(hop_value)
     if not seen:
         print('FAIL: no Interest hoplimit observed')
         sys.exit(1)
