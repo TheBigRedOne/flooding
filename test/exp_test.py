@@ -51,9 +51,9 @@ if __name__ == '__main__':
         print("Error: EXPERIMENT_DIR environment variable is not set")
         exit(1)
 
-    # Prepare output paths (directly under test/)
-    results_dir = experiment_dir
-    pcap_dir = os.path.join(experiment_dir, 'pcap')
+    # Prepare output paths
+    results_dir = os.path.join(experiment_dir, 'results')
+    pcap_dir = os.path.join(results_dir, 'pcap')
     os.makedirs(pcap_dir, exist_ok=True)
 
     # Clean and verify Mini-NDN

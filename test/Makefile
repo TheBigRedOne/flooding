@@ -84,10 +84,11 @@ $(PCAPS) $(RIBS) &: sync
 	$(VAGRANT_SOLUTION) ssh -c 'EXPERIMENT_DIR=$(REMOTE_DIR)/test WIRESHARK_RUN_FROM_BUILD_DIRECTORY=1 WIRESHARK_PLUGIN_DIR= /usr/bin/sudo -E tshark -v >/dev/null 2>&1'
 	# Run test topology; generate artifacts under $(REMOTE_DIR)/test
 	$(VAGRANT_SOLUTION) ssh -c 'EXPERIMENT_DIR=$(REMOTE_DIR)/test WIRESHARK_RUN_FROM_BUILD_DIRECTORY=1 WIRESHARK_PLUGIN_DIR= LUA_PATH="/usr/local/share/ndn-dissect-wireshark/?.lua;;" LUA_CPATH=";;" /usr/bin/sudo -E python3 $(REMOTE_DIR)/test/exp_test.py'
-	# Rsync back test artifacts to host test/ (only pcap and snapshots/logs)
-	$(VAGRANT_SOLUTION) ssh -c 'mkdir -p $(REMOTE_DIR)/test/pcap'
+	# Ensure result directories exist in VM
+	$(VAGRANT_SOLUTION) ssh -c 'mkdir -p $(REMOTE_DIR)/test/results/pcap'
+	# Rsync back test artifacts to host test/results
 	mkdir -p $(RESULTS_DIR)
-	$(RSYNC_SOLUTION) --include "pcap/**" --include "r*_T*_*.txt" --include "r*_rib.txt" --include "*producer.log" --include "*consumer.log" --include "tcpdump_*.log" --include "minindn/**" --exclude "*" solution:$(REMOTE_DIR)/test/ $(RESULTS_DIR)/
+	$(RSYNC_SOLUTION) solution:$(REMOTE_DIR)/test/results/ $(RESULTS_DIR)/
 	@echo "Artifacts synced to $(RESULTS_DIR)/"
 
 # Validation stamp (runs all validations)
