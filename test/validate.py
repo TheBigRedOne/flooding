@@ -17,7 +17,8 @@ from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Tuple
 
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
-PCAP_DIR = os.path.join(TEST_DIR, 'pcap')
+RESULTS_DIR = os.path.join(TEST_DIR, 'results')
+PCAP_DIR = os.path.join(RESULTS_DIR, 'pcap')
 # Load custom dissector explicitly for tshark
 LUA_DISS = os.path.abspath(os.path.join(TEST_DIR, '..', 'experiment', 'tool', 'ndn.lua'))
 
@@ -29,7 +30,6 @@ def run(cmd: List[str]) -> subprocess.CompletedProcess:
 def tshark_cmd(extra: List[str]) -> List[str]:
     args = ['tshark']
     if os.path.exists(LUA_DISS):
-        args += ['-o', 'lua_script_default:false']
         args += ['-X', f'lua_script:{LUA_DISS}']
     args += extra
     return args
@@ -489,8 +489,8 @@ def validate_s2() -> None:
 
 def validate_s3() -> None:
     # Strong TFIB window evidence via RIB snapshots (T1 vs T2) and Interest presence
-    r3_rib_T1 = os.path.join(TEST_DIR, 'r3_T1_rib.txt')
-    r3_rib_T2 = os.path.join(TEST_DIR, 'r3_T2_rib.txt')
+    r3_rib_T1 = os.path.join(RESULTS_DIR, 'r3_T1_rib.txt')
+    r3_rib_T2 = os.path.join(RESULTS_DIR, 'r3_T2_rib.txt')
     if not (os.path.exists(r3_rib_T1) and os.path.exists(r3_rib_T2)):
         print('FAIL: S3 missing RIB snapshots (r3_T1_rib.txt/r3_T2_rib.txt)')
         sys.exit(1)
@@ -511,8 +511,8 @@ def validate_s3() -> None:
 
 def validate_s5() -> None:
     # Strong Fast-LSA check via RIB snapshots: detect short-lived route between T1 and T2
-    r3_rib_T1 = os.path.join(TEST_DIR, 'r3_T1_rib.txt')
-    r3_rib_T2 = os.path.join(TEST_DIR, 'r3_T2_rib.txt')
+    r3_rib_T1 = os.path.join(RESULTS_DIR, 'r3_T1_rib.txt')
+    r3_rib_T2 = os.path.join(RESULTS_DIR, 'r3_T2_rib.txt')
     if not (os.path.exists(r3_rib_T1) and os.path.exists(r3_rib_T2)):
         print('FAIL: S5 missing RIB snapshots (r3_T1_rib.txt/r3_T2_rib.txt)')
         sys.exit(1)

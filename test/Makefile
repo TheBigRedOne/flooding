@@ -63,10 +63,11 @@ $(SSH_CONFIG): $(ROOT_DIR)/test/Vagrantfile $(SOLUTION_BOX)
 sync: $(SSH_CONFIG)
 	$(RSYNC_SOLUTION) $(RSYNC_EXCLUDES) $(ROOT_DIR)/ solution:$(REMOTE_DIR)/
 
-# Expected artifacts on host
-PCAP_DIR := $(ROOT_DIR)/test/pcap
+# Expected artifacts on host (collected under test/results)
+RESULTS_DIR := $(ROOT_DIR)/test/results
+PCAP_DIR := $(RESULTS_DIR)/pcap
 PCAPS := $(PCAP_DIR)/consumer.pcap $(PCAP_DIR)/producer.pcap $(PCAP_DIR)/r1.pcap $(PCAP_DIR)/r2.pcap $(PCAP_DIR)/r3.pcap $(PCAP_DIR)/r4.pcap $(PCAP_DIR)/r5.pcap
-RIBS  := $(ROOT_DIR)/test/r3_T1_rib.txt $(ROOT_DIR)/test/r3_T2_rib.txt
+RIBS  := $(RESULTS_DIR)/r3_T1_rib.txt $(RESULTS_DIR)/r3_T2_rib.txt
 VALIDATE_OK := $(ROOT_DIR)/test/.validate_ok
 
 # Produce test artifacts via one VM run, then rsync back (grouped target)
@@ -85,10 +86,9 @@ $(PCAPS) $(RIBS) &: sync
 	$(VAGRANT_SOLUTION) ssh -c 'EXPERIMENT_DIR=$(REMOTE_DIR)/test WIRESHARK_RUN_FROM_BUILD_DIRECTORY=1 WIRESHARK_PLUGIN_DIR= LUA_PATH="/usr/local/share/ndn-dissect-wireshark/?.lua;;" LUA_CPATH=";;" /usr/bin/sudo -E python3 $(REMOTE_DIR)/test/exp_test.py'
 	# Rsync back test artifacts to host test/ (only pcap and snapshots/logs)
 	$(VAGRANT_SOLUTION) ssh -c 'mkdir -p $(REMOTE_DIR)/test/pcap'
-	mkdir -p $(PCAP_DIR)
-	$(RSYNC_SOLUTION) solution:$(REMOTE_DIR)/test/pcap/ $(PCAP_DIR)/
-	$(RSYNC_SOLUTION) --include "r*_rib.txt" --include "*producer.log" --include "*consumer.log" --include "tcpdump_*.log" --exclude "*" solution:$(REMOTE_DIR)/test/ $(ROOT_DIR)/test/
-	@echo "Artifacts synced to $(ROOT_DIR)/test/"
+	mkdir -p $(RESULTS_DIR)
+	$(RSYNC_SOLUTION) --include "pcap/**" --include "r*_T*_*.txt" --include "r*_rib.txt" --include "*producer.log" --include "*consumer.log" --include "tcpdump_*.log" --include "minindn/**" --exclude "*" solution:$(REMOTE_DIR)/test/ $(RESULTS_DIR)/
+	@echo "Artifacts synced to $(RESULTS_DIR)/"
 
 # Validation stamp (runs all validations)
 $(VALIDATE_OK): $(PCAPS) $(RIBS)
