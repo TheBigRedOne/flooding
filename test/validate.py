@@ -419,20 +419,41 @@ def validate_s4() -> None:
     observations: List[Tuple[str, int]] = []
 
     def _first_interest_hoplimit(pcap_path: str) -> Optional[int]:
-        vals = tshark_fields(pcap_path, 'ndn.type==Interest', 'ndn.hoplimit')
+        filter_expr = 'ndn.type==Interest && ndn.name contains "/example/LiveStream"'
+        vals = tshark_fields(pcap_path, filter_expr, 'ndn.hoplimit')
         if vals:
+            candidates: List[int] = []
             for raw in vals:
-                parts = [tok.strip() for tok in raw.replace(',', ' ').split() if tok.strip()]
-                for token in parts:
+                tokens = [tok.strip() for tok in raw.replace(',', ' ').split() if tok.strip()]
+                local_vals = []
+                for token in tokens:
                     try:
-                        return int(token)
+                        local_vals.append(int(token))
                     except ValueError:
                         continue
+                if local_vals:
+                    candidates.append(max(local_vals))
+            if candidates:
+                return max(candidates)
         # Fallback to JSON if fields are unavailable
         data = tshark_json(pcap_path, []) if os.path.exists(pcap_path) else []
-        hls = extract_hoplimits(data, is_data=False)
-        if hls:
-            return hls[0]
+        hoplimits = []
+        for pkt in data:
+            layers = pkt.get('_source', {}).get('layers', {})
+            name_entries = layers.get('ndn.name', []) + layers.get('ndn_name', [])
+            name_hit = any('/example/LiveStream' in entry for entry in name_entries)
+            if not name_hit:
+                continue
+            for key in ('ndn.hoplimit', 'ndn_interest_hoplimit'):
+                if key in layers:
+                    entry = layers[key]
+                    try:
+                        hoplimits.append(int(entry[0]))
+                        break
+                    except Exception:
+                        continue
+        if hoplimits:
+            return max(hoplimits)
         return None
 
     def _has_rib_entry(node: str, prefix: str) -> bool:
