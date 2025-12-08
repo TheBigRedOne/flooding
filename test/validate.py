@@ -420,21 +420,36 @@ def validate_s4() -> None:
 
     def _first_interest_hoplimit(pcap_path: str) -> Optional[int]:
         filter_expr = 'ndn.type==Interest && ndn.name contains "/example/LiveStream"'
-        vals = tshark_fields(pcap_path, filter_expr, 'ndn.hoplimit')
-        if vals:
-            candidates: List[int] = []
-            for raw in vals:
-                tokens = [tok.strip() for tok in raw.replace(',', ' ').split() if tok.strip()]
-                local_vals = []
-                for token in tokens:
+        cmd = tshark_cmd([
+            '-r', pcap_path,
+            '-Y', filter_expr,
+            '-T', 'fields',
+            '-e', 'sll.pkttype',
+            '-e', 'ndn.hoplimit',
+        ])
+        res = run(cmd)
+        if res.returncode == 0:
+            inbound: List[int] = []
+            outbound: List[int] = []
+            for line in res.stdout.splitlines():
+                cols = [col.strip() for col in line.split('\t')]
+                if len(cols) < 2:
+                    continue
+                pkttype, hop_raw = cols[0], cols[1]
+                hop_candidates: List[int] = []
+                for token in hop_raw.replace(',', ' ').split():
                     try:
-                        local_vals.append(int(token))
+                        hop_candidates.append(int(token))
                     except ValueError:
                         continue
-                if local_vals:
-                    candidates.append(max(local_vals))
-            if candidates:
-                return max(candidates)
+                if not hop_candidates:
+                    continue
+                target = inbound if pkttype != '4' else outbound
+                target.append(max(hop_candidates))
+            if inbound:
+                return max(inbound)
+            if outbound:
+                return max(outbound)
         # Fallback to JSON if fields are unavailable
         data = tshark_json(pcap_path, []) if os.path.exists(pcap_path) else []
         hoplimits = []
