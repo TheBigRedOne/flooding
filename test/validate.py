@@ -415,65 +415,63 @@ def validate_s1() -> None:
 
 
 def validate_s4() -> None:
-    # Expect Interest HopLimit to show controlled decrement
-    path_pcaps = [
-        os.path.join(PCAP_DIR, 'r2.pcap'),
-        os.path.join(PCAP_DIR, 'r3.pcap'),
-        os.path.join(PCAP_DIR, 'r4.pcap'),
-        os.path.join(PCAP_DIR, 'r5.pcap'),
-    ]
-    seen = []
-    for p in path_pcaps:
-        if not os.path.exists(p):
-            continue
-        # Prefer direct field extraction for robustness
-        hop_value: Optional[int] = None
-        vals = tshark_fields(p, 'ndn.type==Interest', 'ndn.hoplimit')
+    nodes = ['r2', 'r3', 'r4', 'r5']
+    observations: List[Tuple[str, int]] = []
+
+    def _first_interest_hoplimit(pcap_path: str) -> Optional[int]:
+        vals = tshark_fields(pcap_path, 'ndn.type==Interest', 'ndn.hoplimit')
         if vals:
             for raw in vals:
                 parts = [tok.strip() for tok in raw.replace(',', ' ').split() if tok.strip()]
                 for token in parts:
                     try:
-                        hop_value = int(token)
-                        break
+                        return int(token)
                     except ValueError:
                         continue
-                if hop_value is not None:
-                    break
-        if hop_value is None:
-            # Fallback to JSON scan
-            j = tshark_json(p, [])
-            hls = extract_hoplimits(j, is_data=False)
-            if hls:
-                hop_value = hls[0]
-        if hop_value is not None:
-            seen.append(hop_value)
-    if not seen:
-        print('FAIL: no Interest hoplimit observed')
+        # Fallback to JSON if fields are unavailable
+        data = tshark_json(pcap_path, []) if os.path.exists(pcap_path) else []
+        hls = extract_hoplimits(data, is_data=False)
+        if hls:
+            return hls[0]
+        return None
+
+    def _has_rib_entry(node: str, prefix: str) -> bool:
+        for label in ('T2', 'T1', 'T0'):
+            rib_path = os.path.join(RESULTS_DIR, f'{node}_{label}_rib.txt')
+            if os.path.exists(rib_path):
+                with open(rib_path, 'r', encoding='utf-8', errors='ignore') as fp:
+                    if prefix in fp.read():
+                        return True
+        return False
+
+    for node in nodes:
+        pc = os.path.join(PCAP_DIR, f'{node}.pcap')
+        if not os.path.exists(pc):
+            continue
+        hop = _first_interest_hoplimit(pc)
+        if hop is not None:
+            observations.append((node, hop))
+
+    if len(observations) < 2:
+        print('FAIL: S4 insufficient Interest observations; need at least two hops, observed =', observations)
         sys.exit(1)
 
-    # Controlled flooding evidence:
-    # 1) longest strictly decreasing sub-sequence (LDS) length >= 2
-    # 2) tail value <= 1 (already near exhaustion)
-    # 3) global sequence is non-increasing (no hoplimit increase)
-    non_increasing = all(seen[i] <= seen[i - 1] for i in range(1, len(seen)))
+    hop_chain = [hop for _, hop in observations]
+    is_monotonic = all(hop_chain[i] == hop_chain[i - 1] - 1 for i in range(1, len(hop_chain)))
+    if not is_monotonic:
+        print('FAIL: S4 hoplimit sequence invalid =', hop_chain, 'observations=', observations)
+        sys.exit(1)
 
-    best = []
-    for i in range(len(seen)):
-        cur = [seen[i]]
-        last = seen[i]
-        for j in range(i + 1, len(seen)):
-            if seen[j] < last:
-                cur.append(seen[j])
-                last = seen[j]
-        if len(cur) > len(best):
-            best = cur
-
-    if len(best) >= 2 and best[-1] <= 1 and non_increasing:
-        print('PASS: S4 controlled Interest HopLimit chain =', best, 'full_seq=', seen)
+    last_node, last_hop = observations[-1]
+    if last_hop <= 0:
+        print(f'PASS: S4 Interest HopLimit decrement path = {hop_chain} (observed through {last_node})')
         return
 
-    print('FAIL: S4 hoplimit sequence insufficient; observed =', seen, 'best_chain=', best)
+    if _has_rib_entry(last_node, '/example/LiveStream'):
+        print(f'PASS: S4 Interest HopLimit chain={hop_chain} stopped at {last_node} due to existing route')
+        return
+
+    print(f'FAIL: S4 hoplimit chain={hop_chain} stopped at {last_node} without route evidence')
     sys.exit(1)
 
 
