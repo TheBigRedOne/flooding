@@ -13,13 +13,6 @@
 #include <chrono>
 #include <unistd.h>
 
-#ifdef SOLUTION_ENABLED
-#include <ndn-cxx/optoflood.hpp>
-#include <optional>
-// Defines the fixed hop limit for controlled Interest flooding.
-static constexpr uint8_t DEFAULT_FLOOD_HOP_LIMIT = 3;
-#endif
-
 namespace ndn {
 namespace examples {
 
@@ -31,15 +24,7 @@ public:
     , m_validator(m_face)
     , m_scheduler(m_ioContext)
   {
-#ifdef SOLUTION_ENABLED
-    // Default enable OptoFlood behavior in solution builds
-    m_enableOptoFlood = true;
-#endif
   }
-
-  void enableOptoFlood(bool enable = false) { m_enableOptoFlood = enable; }
-  void setFloodThreshold(uint32_t threshold) { m_floodThreshold = threshold; }
-  void forceFloodOnce() { m_forceFloodInitially = true; m_enableOptoFlood = true; }
 
   void
   run()
@@ -104,38 +89,6 @@ private:
     interest.setCanBePrefix(false);
     interest.setMustBeFresh(true);
     interest.setInterestLifetime(6_s); // As per .tex description
-    
-    // Check if we should enable Interest flooding (OptoFlood solution mode)
-    if (shouldEnableFlooding()) {
-      auto timestamp = std::chrono::system_clock::now().time_since_epoch().count();
-      std::cout << "[" << timestamp << "] OPTOFLOOD: Enabling Interest flooding due to consecutive failures" << std::endl;
-      
-      // Enable ApplicationParameters
-#ifdef SOLUTION_ENABLED
-      try {
-        std::cout << "[" << timestamp << "] AP: build begin" << std::endl;
-        // Encode InterestFloodRequest with hopLimit
-        ndn::Block inner = ndn::optoflood::makeInterestFloodingParameters(std::optional<uint8_t>(DEFAULT_FLOOD_HOP_LIMIT));
-        interest.setApplicationParameters(inner);
-        std::cout << "[" << timestamp << "] AP: set ok, valueLen="
-                  << interest.getApplicationParameters().value_size() << std::endl;
-      }
-      catch (const std::exception& ex) {
-        std::cerr << "[" << timestamp << "] ERROR: Failed to set ApplicationParameters: " << ex.what() << std::endl;
-      }
-#endif
-#ifdef SOLUTION_ENABLED
-      // Set native HopLimit (TLV 34) to control propagation range
-      interest.setHopLimit(DEFAULT_FLOOD_HOP_LIMIT);
-#endif
-      
-      // Reset failure counter after triggering flooding
-      m_consecutiveFailures = 0;
-    }
-    else {
-      // Not flooding: ensure Interest has no ApplicationParameters and no params-sha256
-      interest.unsetApplicationParameters();
-    }
     
     // Record send time for latency calculation
     m_sendTimeMap[name] = std::chrono::system_clock::now().time_since_epoch().count();
@@ -243,19 +196,6 @@ private:
                 << std::endl;
     }
   }
-  
-  bool
-  shouldEnableFlooding()
-  {
-    if (!m_enableOptoFlood) {
-      return false;
-    }
-    if (m_forceFloodInitially && !m_forceFloodConsumed) {
-      m_forceFloodConsumed = true;
-      return true;
-    }
-    return m_consecutiveFailures >= m_floodThreshold;
-  }
 
 private:
   boost::asio::io_context m_ioContext;
@@ -275,12 +215,8 @@ private:
   // Map to track RTT for each Interest
   std::map<Name, uint64_t> m_sendTimeMap;
   
-  // OptoFlood support (runtime-configurable)
-  bool m_enableOptoFlood = false;
+  // Failure tracking for logging/debug
   uint32_t m_consecutiveFailures = 0;
-  uint32_t m_floodThreshold = 3;
-  bool m_forceFloodInitially = false;
-  bool m_forceFloodConsumed = false;
 };
 
 } // namespace examples
@@ -298,27 +234,6 @@ main(int argc, char** argv)
   try {
     ndn::examples::Consumer consumer;
 
-    // Parse simple CLI flags to control OptoFlood behavior
-    // --solution                Enable OptoFlood features
-    // --flood-threshold=N       Set consecutive-failure threshold (default 3)
-    // --force-flood             Force flooding for the next Interest immediately
-    for (int i = 1; i < argc; ++i) {
-      std::string arg = argv[i];
-      if (arg == "--solution" || arg == "--mode=solution") {
-        consumer.enableOptoFlood(true);
-      }
-      else if (arg.rfind("--flood-threshold=", 0) == 0) {
-        auto value = arg.substr(std::string("--flood-threshold=").size());
-        try {
-          uint32_t t = static_cast<uint32_t>(std::stoul(value));
-          consumer.setFloodThreshold(t);
-        }
-        catch (...) {}
-      }
-      else if (arg == "--force-flood") {
-        consumer.forceFloodOnce();
-      }
-    }
     std::cout << "[" << startTime << "] STARTUP: Consumer initialized, starting Interest generation" << std::endl;
     consumer.run();
   }

@@ -118,7 +118,7 @@ if __name__ == '__main__':
     consumer_log = os.path.join(results_dir, 'consumer.log')
 
     producer.cmd(f"{producer_exec} --solution &> {producer_log} &")
-    consumer.cmd(f"{consumer_exec} --solution --force-flood &> {consumer_log} &")
+    consumer.cmd(f"{consumer_exec} &> {consumer_log} &")
 
     # Warm-up period, then take T0 snapshot
     sleep(60)

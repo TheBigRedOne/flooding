@@ -242,7 +242,7 @@ As described in Section \ref{sec:solution}, marked Data packets are flooded in a
 % - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 \subsubsection{Consumer Application}
 
-The consumer issues Interests every 33~ms (30~fps) with freshness and a 6~s lifetime, validates returned Data using a trust schema, and logs basic metrics. It remains mobility-agnostic: after a small number of consecutive failures, the consumer includes an explicit flood request in the Interest \textit{ApplicationParameters}. Forwarders then enforce flooding only under FIB/TFIB miss and set the native HopLimit, keeping overhead bounded while enabling rapid recovery.
+The consumer issues Interests every 33~ms (30~fps) with freshness and a 6~s lifetime, validates returned Data using a trust schema, and logs basic metrics.
 
 % - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 \subsubsection{Network Topology}
