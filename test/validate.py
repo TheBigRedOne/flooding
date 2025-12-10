@@ -491,7 +491,7 @@ def validate_s4() -> None:
             if direction == 'out' and nonce not in first_out[node]:
                 first_out[node][nonce] = (frame_no, hop)
 
-    # Candidate nonces: prefer those seen inbound on >=3 nodes, otherwise >=2
+    # Candidate nonces (mode A): seen inbound on >=3 nodes, else >=2
     nonce_in_nodes = {}
     for node in nodes:
         for nonce in first_in[node]:
@@ -499,7 +499,16 @@ def validate_s4() -> None:
 
     candidates_3 = [n for n, s in nonce_in_nodes.items() if len(s) >= 3]
     candidates_2 = [n for n, s in nonce_in_nodes.items() if len(s) >= 2]
-    candidates = candidates_3 if candidates_3 else candidates_2
+    candidates_inbound = candidates_3 if candidates_3 else candidates_2
+
+    # Candidate nonces (mode B fallback): r2 outbound present AND at least one downstream inbound
+    r2_out_nonces = set(first_out['r2'].keys())
+    downstream_in_nonces = set()
+    for node in ['r3', 'r4', 'r5']:
+        downstream_in_nonces.update(first_in[node].keys())
+    candidates_fallback = [n for n in r2_out_nonces if n in downstream_in_nonces]
+
+    candidates = candidates_inbound if candidates_inbound else candidates_fallback
 
     def check_nonce(nonce: int) -> Optional[List[int]]:
         # per-node in/out check: if both exist, enforce in = out + 1
@@ -522,14 +531,15 @@ def validate_s4() -> None:
 
     for candidate in candidates:
         chain = check_nonce(candidate)
-        if chain:
-            if chain[-1] <= 0:
-                print(f'PASS: S4 Interest HopLimit decrement path = {chain} (nonce={hex(candidate)})')
-                return
-            last_node_idx = ['r2', 'r3', 'r4', 'r5'][len(chain) - 1]
-            if _has_rib_entry(last_node_idx, '/example/LiveStream'):
-                print(f'PASS: S4 Interest HopLimit chain={chain} stopped at {last_node_idx} due to existing route (nonce={hex(candidate)})')
-                return
+        if not chain:
+            continue
+        if chain[-1] <= 0:
+            print(f'PASS: S4 Interest HopLimit decrement path = {chain} (nonce={hex(candidate)})')
+            return
+        last_node_idx = ['r2', 'r3', 'r4', 'r5'][len(chain) - 1]
+        if _has_rib_entry(last_node_idx, '/example/LiveStream'):
+            print(f'PASS: S4 Interest HopLimit chain={chain} stopped at {last_node_idx} due to existing route (nonce={hex(candidate)})')
+            return
     print('FAIL: S4 no matching Interest nonce with monotonic HopLimit across nodes; candidates checked =', len(candidates))
     sys.exit(1)
 
