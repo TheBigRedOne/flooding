@@ -419,13 +419,14 @@ def validate_s4() -> None:
     observations: List[Tuple[str, int]] = []
 
     def _first_interest_hoplimit(pcap_path: str) -> Optional[int]:
-        filter_expr = 'ndn.type==Interest && ndn.name contains "/example/LiveStream"'
+        filter_expr = 'ndn.type==Interest && ndn.name contains "/example/LiveStream" && !(ndn.name contains "/localhost/")'
         cmd = tshark_cmd([
             '-r', pcap_path,
             '-Y', filter_expr,
             '-T', 'fields',
             '-e', 'sll.pkttype',
             '-e', 'ndn.hoplimit',
+            '-e', 'ndn.name',
         ])
         res = run(cmd)
         if res.returncode == 0:
@@ -433,9 +434,11 @@ def validate_s4() -> None:
             outbound: List[int] = []
             for line in res.stdout.splitlines():
                 cols = [col.strip() for col in line.split('\t')]
-                if len(cols) < 2:
+                if len(cols) < 3:
                     continue
-                pkttype, hop_raw = cols[0], cols[1]
+                pkttype, hop_raw, name_raw = cols[0], cols[1], cols[2]
+                if not name_raw.startswith('/example/LiveStream'):
+                    continue
                 hop_candidates: List[int] = []
                 for token in hop_raw.replace(',', ' ').split():
                     try:
@@ -456,7 +459,7 @@ def validate_s4() -> None:
         for pkt in data:
             layers = pkt.get('_source', {}).get('layers', {})
             name_entries = layers.get('ndn.name', []) + layers.get('ndn_name', [])
-            name_hit = any('/example/LiveStream' in entry for entry in name_entries)
+            name_hit = any(entry.startswith('/example/LiveStream') for entry in name_entries)
             if not name_hit:
                 continue
             for key in ('ndn.hoplimit', 'ndn_interest_hoplimit'):

@@ -116,7 +116,7 @@ validate-s3:
 	@echo "[S3] Validating TFIB insert/hit/expire";
 	python3 validate.py s3 || (echo "S3 FAIL" && exit 1)
 
-# S4: Interest-side controllable flooding
+# S4: Interest-side controllable flooding (filters mgmt interests)
 validate-s4:
 	@echo "[S4] Validating Interest HopLimit decrement under miss";
 	python3 validate.py s4 || (echo "S4 FAIL" && exit 1)
