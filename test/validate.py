@@ -418,61 +418,111 @@ def validate_s4() -> None:
     nodes = ['r2', 'r3', 'r4', 'r5']
     observations: List[Tuple[str, int]] = []
 
-    def _first_interest_hoplimit(pcap_path: str) -> Optional[int]:
+    def _collect_interest_records(pcap_path: str) -> List[Tuple[int, str, int, int, str]]:
+        """
+        Return list of (frame_no, dir, hop, nonce, name)
+        dir: 'in' (pkttype!=4) or 'out' (pkttype==4)
+        """
+        records: List[Tuple[int, str, int, int, str]] = []
+        if not os.path.exists(pcap_path):
+            return records
         filter_expr = 'ndn.type==Interest && ndn.name contains "/example/LiveStream" && !(ndn.name contains "/localhost/")'
         cmd = tshark_cmd([
             '-r', pcap_path,
             '-Y', filter_expr,
             '-T', 'fields',
             '-e', 'sll.pkttype',
+            '-e', 'frame.number',
             '-e', 'ndn.hoplimit',
+            '-e', 'ndn.nonce',
             '-e', 'ndn.name',
         ])
         res = run(cmd)
-        if res.returncode == 0:
-            inbound: List[int] = []
-            outbound: List[int] = []
-            for line in res.stdout.splitlines():
-                cols = [col.strip() for col in line.split('\t')]
-                if len(cols) < 3:
-                    continue
-                pkttype, hop_raw, name_raw = cols[0], cols[1], cols[2]
-                if not name_raw.startswith('/example/LiveStream'):
-                    continue
-                hop_candidates: List[int] = []
-                for token in hop_raw.replace(',', ' ').split():
-                    try:
-                        hop_candidates.append(int(token))
-                    except ValueError:
-                        continue
-                if not hop_candidates:
-                    continue
-                target = inbound if pkttype != '4' else outbound
-                target.append(max(hop_candidates))
-            if inbound:
-                return max(inbound)
-            if outbound:
-                return max(outbound)
-        # Fallback to JSON if fields are unavailable
-        data = tshark_json(pcap_path, []) if os.path.exists(pcap_path) else []
-        hoplimits = []
-        for pkt in data:
-            layers = pkt.get('_source', {}).get('layers', {})
-            name_entries = layers.get('ndn.name', []) + layers.get('ndn_name', [])
-            name_hit = any(entry.startswith('/example/LiveStream') for entry in name_entries)
-            if not name_hit:
+        if res.returncode != 0:
+            return records
+        for line in res.stdout.splitlines():
+            cols = [col.strip() for col in line.split('\t')]
+            if len(cols) < 5:
                 continue
-            for key in ('ndn.hoplimit', 'ndn_interest_hoplimit'):
-                if key in layers:
-                    entry = layers[key]
-                    try:
-                        hoplimits.append(int(entry[0]))
-                        break
-                    except Exception:
-                        continue
-        if hoplimits:
-            return max(hoplimits)
-        return None
+            pkttype, frame_raw, hop_raw, nonce_raw, name_raw = cols[:5]
+            if not name_raw.startswith('/example/LiveStream'):
+                continue
+            hop_val: Optional[int] = None
+            for token in hop_raw.replace(',', ' ').split():
+                try:
+                    hop_val = int(token)
+                    break
+                except ValueError:
+                    continue
+            if hop_val is None:
+                continue
+            try:
+                frame_no = int(frame_raw)
+            except ValueError:
+                continue
+            try:
+                nonce_val = int(nonce_raw, 16)
+            except ValueError:
+                continue
+            direction = 'out' if pkttype == '4' else 'in'
+            records.append((frame_no, direction, hop_val, nonce_val, name_raw))
+        records.sort(key=lambda x: x[0])
+        return records
+
+    nodes = ['r2', 'r3', 'r4', 'r5']
+    records_by_node = {node: _collect_interest_records(os.path.join(PCAP_DIR, f'{node}.pcap')) for node in nodes}
+
+    # Build first in/out per nonce per node
+    first_in = {node: {} for node in nodes}
+    first_out = {node: {} for node in nodes}
+    for node in nodes:
+        for frame_no, direction, hop, nonce, name in records_by_node[node]:
+            if direction == 'in' and nonce not in first_in[node]:
+                first_in[node][nonce] = (frame_no, hop)
+            if direction == 'out' and nonce not in first_out[node]:
+                first_out[node][nonce] = (frame_no, hop)
+
+    # Candidate nonces: prefer those seen inbound on >=3 nodes, otherwise >=2
+    nonce_in_nodes = {}
+    for node in nodes:
+        for nonce in first_in[node]:
+            nonce_in_nodes.setdefault(nonce, set()).add(node)
+
+    candidates_3 = [n for n, s in nonce_in_nodes.items() if len(s) >= 3]
+    candidates_2 = [n for n, s in nonce_in_nodes.items() if len(s) >= 2]
+    candidates = candidates_3 if candidates_3 else candidates_2
+
+    def check_nonce(nonce: int) -> Optional[List[int]]:
+        # per-node in/out check: if both exist, enforce in = out + 1
+        for node in nodes:
+            if nonce in first_in[node] and nonce in first_out[node]:
+                hop_in = first_in[node][nonce][1]
+                hop_out = first_out[node][nonce][1]
+                if hop_in != hop_out + 1:
+                    return None
+        # build inbound chain in node order
+        inbound_chain: List[int] = []
+        for node in nodes:
+            if nonce in first_in[node]:
+                inbound_chain.append(first_in[node][nonce][1])
+        if len(inbound_chain) < 2:
+            return None
+        if not all(inbound_chain[i] == inbound_chain[i - 1] - 1 for i in range(1, len(inbound_chain))):
+            return None
+        return inbound_chain
+
+    for candidate in candidates:
+        chain = check_nonce(candidate)
+        if chain:
+            if chain[-1] <= 0:
+                print(f'PASS: S4 Interest HopLimit decrement path = {chain} (nonce={hex(candidate)})')
+                return
+            last_node_idx = ['r2', 'r3', 'r4', 'r5'][len(chain) - 1]
+            if _has_rib_entry(last_node_idx, '/example/LiveStream'):
+                print(f'PASS: S4 Interest HopLimit chain={chain} stopped at {last_node_idx} due to existing route (nonce={hex(candidate)})')
+                return
+    print('FAIL: S4 no matching Interest nonce with monotonic HopLimit across nodes; candidates checked =', len(candidates))
+    sys.exit(1)
 
     def _has_rib_entry(node: str, prefix: str) -> bool:
         for label in ('T2', 'T1', 'T0'):
@@ -482,36 +532,6 @@ def validate_s4() -> None:
                     if prefix in fp.read():
                         return True
         return False
-
-    for node in nodes:
-        pc = os.path.join(PCAP_DIR, f'{node}.pcap')
-        if not os.path.exists(pc):
-            continue
-        hop = _first_interest_hoplimit(pc)
-        if hop is not None:
-            observations.append((node, hop))
-
-    if len(observations) < 2:
-        print('FAIL: S4 insufficient Interest observations; need at least two hops, observed =', observations)
-        sys.exit(1)
-
-    hop_chain = [hop for _, hop in observations]
-    is_monotonic = all(hop_chain[i] == hop_chain[i - 1] - 1 for i in range(1, len(hop_chain)))
-    if not is_monotonic:
-        print('FAIL: S4 hoplimit sequence invalid =', hop_chain, 'observations=', observations)
-        sys.exit(1)
-
-    last_node, last_hop = observations[-1]
-    if last_hop <= 0:
-        print(f'PASS: S4 Interest HopLimit decrement path = {hop_chain} (observed through {last_node})')
-        return
-
-    if _has_rib_entry(last_node, '/example/LiveStream'):
-        print(f'PASS: S4 Interest HopLimit chain={hop_chain} stopped at {last_node} due to existing route')
-        return
-
-    print(f'FAIL: S4 hoplimit chain={hop_chain} stopped at {last_node} without route evidence')
-    sys.exit(1)
 
 
 def validate_s2() -> None:
