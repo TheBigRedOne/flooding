@@ -472,6 +472,15 @@ def validate_s4() -> None:
     nodes = ['r2', 'r3', 'r4', 'r5']
     records_by_node = {node: _collect_interest_records(os.path.join(PCAP_DIR, f'{node}.pcap')) for node in nodes}
 
+    def _has_rib_entry(node: str, prefix: str) -> bool:
+        for label in ('T2', 'T1', 'T0'):
+            rib_path = os.path.join(RESULTS_DIR, f'{node}_{label}_rib.txt')
+            if os.path.exists(rib_path):
+                with open(rib_path, 'r', encoding='utf-8', errors='ignore') as fp:
+                    if prefix in fp.read():
+                        return True
+        return False
+
     # Build first in/out per nonce per node
     first_in = {node: {} for node in nodes}
     first_out = {node: {} for node in nodes}
@@ -523,15 +532,6 @@ def validate_s4() -> None:
                 return
     print('FAIL: S4 no matching Interest nonce with monotonic HopLimit across nodes; candidates checked =', len(candidates))
     sys.exit(1)
-
-    def _has_rib_entry(node: str, prefix: str) -> bool:
-        for label in ('T2', 'T1', 'T0'):
-            rib_path = os.path.join(RESULTS_DIR, f'{node}_{label}_rib.txt')
-            if os.path.exists(rib_path):
-                with open(rib_path, 'r', encoding='utf-8', errors='ignore') as fp:
-                    if prefix in fp.read():
-                        return True
-        return False
 
 
 def validate_s2() -> None:
