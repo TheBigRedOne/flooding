@@ -3,13 +3,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 import argparse
 import os
-import re
 
 def main():
     parser = argparse.ArgumentParser(description="Analyze service disruption time from NDN pcap CSV.")
     parser.add_argument('--input', type=str, required=True, help='Input CSV file from tshark.')
     parser.add_argument('--output-dir', type=str, default='.', help='Directory to save output files.')
     parser.add_argument('--handoff-times', type=str, required=True, help='Comma-separated list of handoff event times in seconds.')
+    parser.add_argument('--prefix', type=str, default='/example/LiveStream', help='Application prefix to include.')
     args = parser.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
@@ -27,10 +27,19 @@ def main():
 
     df.rename(columns={'frame.time_epoch': 'time', 'ndn.type': 'type', 'ndn.name': 'name'}, inplace=True)
     df = df.dropna().copy()
-    
-    # Filter out NLSR sync packets, which are not part of the experiment data
-    df = df[~df['name'].str.startswith('/localhop/ndn/nlsr/sync')]
-    
+
+    # App traffic only
+    app_prefix = args.prefix
+    df = df[df['name'].astype(str).str.startswith(app_prefix)]
+    df = df[~df['name'].astype(str).str.startswith('/localhost/')]
+    df = df[~df['name'].astype(str).str.startswith('/localhop/ndn/nlsr/')]
+
+    if df.empty:
+        print(f"Warning: No packets under prefix {app_prefix}. Skipping analysis.")
+        open(os.path.join(args.output_dir, 'disruption_times.pdf'), 'w').close()
+        open(os.path.join(args.output_dir, 'disruption_metrics.txt'), 'w').close()
+        return
+
     # Convert type to lowercase string
     df['type'] = df['type'].str.lower()
     

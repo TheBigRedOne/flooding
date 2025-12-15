@@ -27,6 +27,7 @@ def main():
     parser.add_argument('--output-dir', type=str, default='.', help='Directory to save the output files.')
     parser.add_argument('--handoff-times', type=str, required=True, help='Comma-separated list of handoff event times.')
     parser.add_argument('--window', type=float, default=10.0, help='Analysis window duration in seconds after each handoff.')
+    parser.add_argument('--prefix', type=str, default='/example/LiveStream', help='Application prefix to include.')
     args = parser.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
@@ -45,7 +46,18 @@ def main():
 
     df.rename(columns={'frame.time_epoch': 'time', 'ndn.type': 'type', 'ndn.name': 'name'}, inplace=True)
     df = df.dropna().copy()
-    df = df[~df['name'].str.startswith('/localhop/ndn/nlsr/sync')]
+    app_prefix = args.prefix
+    df = df[df['name'].astype(str).str.startswith(app_prefix)]
+    df = df[~df['name'].astype(str).str.startswith('/localhost/')]
+    df = df[~df['name'].astype(str).str.startswith('/localhop/ndn/nlsr/')]
+    if df.empty:
+        print(f"Warning: No packets under prefix {app_prefix}. No loss calculated.")
+        with open(os.path.join(args.output_dir, 'loss_ratio.txt'), 'w') as f:
+            f.write("Handoff Window Ratio: 1.0\n")
+            f.write("Steady State Ratio: 1.0\n")
+        open(os.path.join(args.output_dir, 'loss_comparison.pdf'), 'w').close()
+        return
+
     df['type'] = df['type'].str.lower()
     df['seq'] = df['name'].apply(parse_seq_num)
     df = df.dropna(subset=['seq'])

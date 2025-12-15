@@ -1,7 +1,6 @@
 import pandas as pd
 import argparse
 import os
-import re
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -11,6 +10,7 @@ def main():
     parser.add_argument('--output-dir', type=str, default='.', help='Directory to save output files.')
     parser.add_argument('--handoff-times', type=str, help='Comma-separated list of handoff event times in seconds.')
     parser.add_argument('--window', type=int, default=10, help='Time window in seconds after a handoff for analysis.')
+    parser.add_argument('--prefix', type=str, default='/example/LiveStream', help='Application prefix to count as overhead.')
     args = parser.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
@@ -28,10 +28,13 @@ def main():
         
     df.rename(columns={'frame.time_epoch': 'time', 'ndn.type': 'type', 'ndn.name': 'name'}, inplace=True)
     df = df.dropna().copy()
-    
-    # We are interested in ALL interests for overhead, including NLSR.
-    # But we should still filter for application-specific interests if needed.
-    # For now, let's assume any Interest is part of the overhead calculation.
+
+    # Interest traffic only
+    app_prefix = args.prefix
+    df = df[df['name'].astype(str).str.startswith(app_prefix)]
+    df = df[~df['name'].astype(str).str.startswith('/localhost/')]
+    df = df[~df['name'].astype(str).str.startswith('/localhop/ndn/nlsr/')]
+
     df['type'] = df['type'].str.lower()
     interests_df = df[df['type'] == 'interest'].copy()
     
