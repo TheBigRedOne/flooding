@@ -11,9 +11,11 @@ LATEXMK := latexmk
 LATEXMK_FLAGS := -pdf -interaction=nonstopmode -output-directory=$(BIN_DIR)
 
 # Static figures are explicitly listed, regardless of type.
-STATIC_FIGURES := $(FIGURES_DIR)/NDN_Packets_Processing_Flow.pdf \
-				  $(FIGURES_DIR)/NDN_Producer_Mobility_Problem.pdf
-				  $(FIGURES_DIR)/Topology.pdf \
+STATIC_FIGURES := \
+	$(FIGURES_DIR)/NDN_Packets_Processing_Flow.pdf \
+	$(FIGURES_DIR)/NDN_Producer_Mobility_Problem.pdf \
+	$(FIGURES_DIR)/NDN_Producer_Mobility_Problem_Solution.pdf \
+	$(FIGURES_DIR)/Topology.pdf
 
 # Dynamic figures are all other PDFs in the directory.
 ALL_PDFS := $(wildcard $(FIGURES_DIR)/*.pdf)

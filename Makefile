@@ -53,6 +53,7 @@ SOLUTION_PAPER_FIGURES := $(SOLUTION_DISRUPTION_FIGURE) $(SOLUTION_LOSS_FIGURE) 
 PAPER_PDF := paper/OptoFlood.pdf
 STATIC_FIGURES := paper/figures/NDN_Packets_Processing_Flow.pdf \
                   paper/figures/NDN_Producer_Mobility_Problem.pdf \
+                  paper/figures/NDN_Producer_Mobility_Problem_Solution.pdf \
                   paper/figures/Topology.pdf
 ALL_FIGURES := $(STATIC_FIGURES) $(BASELINE_PAPER_FIGURES) $(SOLUTION_PAPER_FIGURES)
 

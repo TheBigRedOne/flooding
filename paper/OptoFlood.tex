@@ -164,10 +164,10 @@ When moving to a new Point of Attachment (PoA), the producer immediately starts 
 
 Flooded Data packets \emph{first} follow available FIB next hops. If no valid FIB next hop exists, forwarders fall back to \emph{scoped expansion} over data-plane adjacent faces under LP--HopLimit, with duplicate suppression by Flood-ID and rate limiting. The aim is to reach a node that still holds a valid Pending Interest Table (PIT) entry along the original path so that the Data can return to the consumer without waiting for global routing updates.
 
-\subsection{Consumer-Triggered Interest Flooding with Forwarder Gating}
+\subsection{Forwarder-Triggered Interest Flooding}
 \label{sec:solution:interest-flooding}
 
-The consumer explicitly triggers the first batch of \emph{controlled} floods after a small number of consecutive failures (e.g., timeouts or NoRoute NACKs). It does so by issuing Interests with a conservative native \emph{HopLimit} (default~3). Forwarders act as enforcement points: they only execute the flood when both PIT lookup fails and no FIB/TFIB next hop is available; otherwise, they forward via TFIB/FIB without flooding. Flooding remains strictly scoped by HopLimit and is subject to duplicate suppression and per-producer rate limiting. This design reduces misfires due to transient fluctuations and keeps the mechanism under tight control.
+The forwarder automatically converts an unsatisfied Interest into a scoped flood when PIT lookup fails and no FIB/TFIB next hop exists. It sets and enforces the native \emph{HopLimit} (default~3) before flooding, decrementing it at each hop.
 
 \subsection{Temporary Bidirectional Path Establishment}
 \label{sec:solution:bidir}
