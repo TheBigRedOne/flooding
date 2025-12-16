@@ -51,9 +51,9 @@ BASELINE_PAPER_FIGURES := $(BASELINE_DISRUPTION_FIGURE) $(BASELINE_LOSS_FIGURE) 
 SOLUTION_PAPER_FIGURES := $(SOLUTION_DISRUPTION_FIGURE) $(SOLUTION_LOSS_FIGURE) $(SOLUTION_OVERHEAD_FIGURE)
 
 PAPER_PDF := paper/OptoFlood.pdf
-STATIC_FIGURES := paper/figures/NLSR_Work_Flow.png \
-                  paper/figures/Producer_Mobility_Problems.png \
-                  paper/figures/Topology.png
+STATIC_FIGURES := paper/figures/NDN_Packets_Processing_Flow.pdf \
+                  paper/figures/NDN_Producer_Mobility_Problem.pdf \
+                  paper/figures/Topology.pdf
 ALL_FIGURES := $(STATIC_FIGURES) $(BASELINE_PAPER_FIGURES) $(SOLUTION_PAPER_FIGURES)
 
 # Common application source files
