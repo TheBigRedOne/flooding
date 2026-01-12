@@ -74,10 +74,10 @@ Named Data Networking, Producer Mobility, Controlled Flooding, TFIB, NLSR
 \label{sec:introduction}
 
 % Paragraph 1: Motivation.
-The use of Named Data Networking (NDN) protocols optimises the network for content delivery. Rather than relying on an indirect name-to-location mapping via the DNS, as is done in the Internet today, NDN protocols make name-based routing, content delivery, and pervasive caching core services of the network.
+The use of Named Data Networking (NDN) protocols optimises the network for content delivery \cite{jacobson:2009:named-content, zhang:2014:ndn}. Rather than relying on an indirect name-to-location mapping via the DNS, as is done in the Internet today, NDN protocols make name-based routing, content delivery, and pervasive caching core services of the network.
 
 % Paragraph 2: Specific problem.
-However, a limitation of current NDN protocols is that they do not effectively support producer mobility. Each time a content producer moves, the network must quickly discover its new location and ensure continuous data delivery without introducing delays or packet loss. For applications such as live video streaming and video conferencing, even short interruptions can degrade user experience and reliability. In practice, producer movement invalidates previously valid forwarding paths, while routing updates may take seconds to converge. During this period, Interest packets can be misrouted, timed out, or discarded due to a stale forwarding state. Previous works have improved the behaviour of NDN in these scenarios, but still lag behind what is needed \cite{abrar:2023:systematic}.
+However, a limitation of current NDN protocols is that they do not effectively support producer mobility. Each time a content producer moves, the network must quickly discover its new location and ensure continuous data delivery without introducing delays or packet loss. For applications such as live video streaming and video conferencing, even short interruptions can degrade user experience and reliability. In practice, producer movement invalidates previously valid forwarding paths, while routing updates may take seconds to converge. During this period, Interest packets can be misrouted, timed out, or discarded due to a stale forwarding state. Previous works have improved the behaviour of NDN in these scenarios, but still lag behind what is needed \cite{abrar:2023:systematic, feng:2016:survey, tyson:2012:mobility-survey, zhang:2016:mobility-survey}.
 
 % Paragraph 3: Contributions.
 In this paper, we introduce OptoFlood, a novel controlled flooding scheme that can establish temporary bidirectional communication paths to accelerate network convergence after producer mobility events. OptoFlood proactively manages controlled local flooding of both \emph{Data} and \emph{Interest} packets, enabling rapid recovery from disruptions caused by producer movements. 
@@ -102,9 +102,9 @@ Finally, Section \ref{sec:conclusion} concludes the paper and briefly discusses 
 \section{Producer Mobility in NDN}
 \label{sec:problem}
 
-NDN shifts from a host-centric model to a data-centric model, where content is identified by names rather than addresses. In NDN, communication relies on two core packet types: Interest Packets, sent by consumers to request data by specifying the content name, and Data Packets, returned by producers containing the requested content and related metadata. Both packet types follow a concise Type-Length-Value (TLV) encoding, enabling efficient processing and extendability.
+NDN shifts from a host-centric model to a data-centric model, where content is identified by names rather than addresses \cite{trossen:2012:icn-internet, xylomenos:2014:icn-survey}. In NDN, communication relies on two core packet types: Interest Packets, sent by consumers to request data by specifying the content name, and Data Packets, returned by producers containing the requested content and related metadata. Both types of packets follow a concise Type-Length-Value (TLV) encoding, allowing efficient processing and extendability \cite{jacobson:2009:named-content, zhang:2014:ndn}.
 
-NDN packet forwarders maintain a Content Store that caches Data packets; a Pending Interest Table (PIT) that records forwarded Interest packets awaiting the corresponding Data packets, ensuring accurate reverse path forwarding; and a Forwarding Information Base (FIB) that guides Interest packet forwarding.
+NDN packet forwarders maintain a Content Store that caches Data packets; a Pending Interest Table (PIT) that records forwarded Interest packets awaiting the corresponding Data packets, ensuring accurate reverse path forwarding; and a Forwarding Information Base (FIB) that guides Interest packet forwarding \cite{yi:2013:stateful-forwarding, zhang:2014:ndn}.
 When an Interest arrives at a forwarder, it checks the Content Store and returns the cached Data, if it is available. Otherwise, the PIT is checked to aggregate Interests, and if the Interest is new, it is forwarded based on the FIB. Figure~\ref{fig:NDN Packets Processing Flow} illustrates packet forwarding.
 
 \begin{figure}[t]
@@ -114,7 +114,7 @@ When an Interest arrives at a forwarder, it checks the Content Store and returns
     \label{fig:NDN Packets Processing Flow}
 \end{figure}
 
-The Named-Data Link State Routing protocol (NLSR) disseminates routing information via Link State Advertisements (LSAs) that carry link status and available data prefix information that are used to populate the FIB. NLSR adapts to network changes, such as node failures, new node attachments, or topology changes through periodic updates.
+The Named-Data Link State Routing protocol (NLSR) disseminates routing information via Link State Advertisements (LSAs) that carry link status and available data prefix information that are used to populate the FIB. NLSR adapts to network changes, such as node failures, new node attachments, or topology changes through periodic updates \cite{hoque:2013:nlsr, zhu:2013:chronosync}.
 
 Producer mobility in NDN poses significant challenges, especially in dynamic environments. When a producer moves, it must re-register its data prefix so that NLSR can propagate the new route. Convergence is not immediate and is slow relative to mobility. During the convergence period, Interests may continue to follow stale forwarding state towards the producer's previous attachment point, while the producer begins responding at the new location. This mismatch can leave pre-move Interests pending for an extended time, and can also prevent newly generated Data from being returned successfully along the reverse path. Figure~\ref{fig:NDN Producer Mobility Problem} provides an illustrative example of this handover behaviour.
 
@@ -169,8 +169,8 @@ To address the challenges of producer mobility in NDN, particularly in latency-s
 \subsection{Producer Mobility Detection and Data Packet Flooding}
 \label{sec:solution:data-flooding}
 
-In our implementation, producer mobility is detected at the application layer (e.g., via interface-up events), and the producer marks subsequent Data packets to indicate a mobility event. Flooding is then executed by forwarders when they process such mobility-marked Data, rather than by the producer directly. \cite{FIXME}
-%
+In our implementation, producer mobility is detected at the application layer (e.g., via interface-up events), and the producer marks subsequent Data packets to indicate a mobility event. Flooding is then executed by forwarders when they process such mobility-marked Data, rather than by the producer directly; mobility triggers based on attachment/interface events are commonly used in mobility systems \cite{johnson:2004:mipv6, gundavelli:2008:pmipv6}.
+
 Each mobility-marked Data packet carries the following markings:
 
 \begin{itemize}
@@ -207,13 +207,13 @@ We also retain an explicit triggering path: if an Interest already carries a Hop
 
 A key goal of OptoFlood is to establish a temporary \emph{bidirectional} communication capability quickly after handover. In the downstream direction (consumer $\rightarrow$ producer), Interest flooding can locate a viable path toward the producer's new attachment point when unicast forwarding fails. In the upstream direction (producer $\rightarrow$ consumer), mobility-marked Data flooding increases the likelihood that Data corresponding to Interests issued shortly before handover can reach a forwarder that still maintains the appropriate PIT state.
 
-In addition, forwarders opportunistically create short-lived forwarding hints via a \emph{Temporary FIB (TFIB)}. Upon receiving mobility-marked Data, a forwarder creates or updates a TFIB entry (separate from the standard FIB) mapping the relevant prefix to the incoming face, annotated with NewFaceSeq/FloodId, and with a short TTL (about one second). Subsequent Interests can then switch to unicast via TFIB immediately, reducing the need for repeated Interest flooding while global routing converges. \cite{FIXME}
+In addition, forwarders opportunistically create short-lived forwarding hints via a \emph{Temporary FIB (TFIB)}. Upon receiving mobility-marked Data, a forwarder creates or updates a TFIB entry (separate from the standard FIB) mapping the relevant prefix to the incoming face, annotated with NewFaceSeq/FloodId, and with a short TTL (about one second). Subsequent Interests can then switch to unicast via TFIB immediately, reducing the need for repeated Interest flooding while global routing converges \cite{zhang:2018:kite, auge:2018:map-me}.
 
 \subsection{Accelerated Network Convergence}
 \label{sec:solution:convergence}
 
-OptoFlood integrates temporary flooding-based paths with faster global convergence via NLSR. When a forwarder successfully establishes or updates a TFIB entry, it triggers an NLSR management command at \texttt{/localhost/nlsr/fast-lsa/trigger}. This command installs a short-lived routing entry (Fast-LSA style) with an expiration period of approximately one second, and employs throttling (500~ms per prefix) and de-duplication (by Prefix+NewFaceSeq) to limit control-plane overhead. \cite{FIXME}
-%
+OptoFlood integrates temporary flooding-based paths with faster global convergence via NLSR. When a forwarder successfully establishes or updates a TFIB entry, it triggers an NLSR management command at \texttt{/localhost/nlsr/fast-lsa/trigger}. This command installs a short-lived routing entry (Fast-LSA style) with an expiration period of approximately one second, and employs throttling (500~ms per prefix) and de-duplication (by Prefix+NewFaceSeq) to limit control-plane overhead \cite{hoque:2013:nlsr}.
+
 Regular periodic LSAs later supersede short-lived updates, and TFIB entries expire naturally.
 
 \subsection{Security and Flooding Control}
@@ -226,7 +226,7 @@ To mitigate risks associated with flooding, OptoFlood uses complementary control
 
 \textbf{Rate limiting and duplicate suppression.} Forwarders enforce a per-producer flood rate limit (e.g. 100~packets/s for flooded traffic) and maintain a FloodId-based cache for duplicate suppression. Together these controls bound overhead and reduce the attack surface for denial-of-service attempts, while still allowing enough exploration to rescue pending Interests.
 
-Together, these controls keep flooding local, short, and safe, while enabling rapid recovery in mobility events.
+Together, these controls bound overhead and reduce the attack surface for denial-of-service attempts, while still allowing enough exploration to rescue pending Interests \cite{afanasyev:2013:interest-flooding}.
 
 % ==============================================================================
 \section{Evaluation}
@@ -254,6 +254,7 @@ The consumer issues Interests every 33~ms (30~fps) with freshness and a 6~s life
 
 % - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 \subsubsection{Network Topology}
+\ryo{this needs a diagram of the testbed/topology}
 
 The experiment simulates a handheld UE (e.g., a smartphone) in a campus network, maintaining a real-time video meeting while handing over between nearby Points of Attachment (PoAs) under the same distribution domain. Based on a typical walking speed of approximately 1.4~m/s and a PoA spacing of 60--80~m across roads and buildings, the UE performs a handover roughly every 45--60~seconds. This micro-mobility setting keeps movements local (within two to three hops) and provides a realistic basis for evaluating OptoFlood’s low-latency recovery after producer movements.
 
@@ -274,7 +275,7 @@ The network follows a classic three-layer mobile architecture representative of 
 % - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 \subsubsection{Methodology}
 
-Simulations were conducted using Mini-NDN version 0.7.0 and repeated with identical topology, applications, and mobility patterns, both with and without OptoFlood enhancements, to ensure that performance differences are attributable solely to the OptoFlood mechanism.
+The simulations were conducted using Mini-NDN version 0.7.0 and repeated with identical topology, applications, and mobility patterns, with and without OptoFlood enhancements, to ensure that performance differences are attributable solely to the OptoFlood mechanism \cite{lantz:2010:mininet}.
 
 For each run, all network nodes were initialised with NFD and NLSR and allowed to reach a stable routing state (typically within 20~seconds). The consumer and producer applications were then launched simultaneously: the consumer periodically issued Interest packets for video segments, while the producer generated corresponding Data packets in real time, emulating a live video conference scenario.
 
@@ -336,13 +337,13 @@ Together, these results demonstrate that mobility introduces a clear disruption 
 \section{Related Work}
 \label{sec:related}
 
-The management of producer mobility in NDN has attracted significant research attention. Various solutions have emerged, generally categorised according to their underlying mechanisms. Here, we summarise three representative approaches—KITE, AFIRM, and MAP-Me—and highlight their respective strengths and limitations.
+The management of producer mobility in NDN has attracted significant research attention \cite{abrar:2023:systematic, feng:2016:survey, zhang:2016:mobility-survey}. Various solutions have emerged, generally categorised according to their underlying mechanisms. Here, we summarise three representative approaches—KITE, AFIRM, and MAP-Me—and highlight their respective strengths and limitations.
 
 \textbf{KITE} \cite{zhang:2018:kite} is a trace-based mobility support scheme that leverages an immobile rendezvous point and the stateful NDN forwarding plane. A mobile producer maintains soft state by exchanging authenticated Interest/Data messages that establish a hop-by-hop trace toward its latest attachment point, allowing subsequent Interests to follow the trace after reaching the rendezvous point. This approach reduces the reliance on slow global routing convergence and keeps data retrieval largely transparent to applications. However, KITE introduces a dependency on a reachable rendezvous point and periodic signalling to refresh soft state, which can become a scalability concern under frequent mobility or large numbers of mobile producers.
 
 \textbf{AFIRM (Adaptive Forwarding-based Link Recovery for Mobility)} \cite{meddeb:2018:afirm} addresses producer mobility by repairing forwarding behaviour through adaptive forwarding and local recovery, aiming to re-establish usable paths without introducing a permanent anchor. By reacting to mobility-induced disruptions and adjusting forwarding decisions, AFIRM can reduce service interruption for localised micro-mobility. However, its effectiveness depends on the timely detection and stability of local recovery in highly dynamic conditions; frequent mobility may also introduce additional signalling and forwarding overhead.
 
-\textbf{MAP-Me (Managing Anchor-less Producer Mobility)} \cite{auge:2016:map-me} provides anchor-less mobility support by handling producer location updates in the data plane. Upon producer movement, MAP-Me propagates update information hop-by-hop to re-direct affected forwarding paths, avoiding the delays associated with purely routing-plane convergence. MAP-Me is therefore well-suited to latency-sensitive micro-mobility scenarios. However, in frequent or high-intensity mobility, repeated updates can generate noticeable overhead and may require careful tuning to balance responsiveness against network cost.
+\textbf{MAP-Me (Managing Anchor-less Producer Mobility)} \cite{auge:2016:map-me, auge:2018:map-me} provides anchor-less mobility support by handling producer location updates in the data plane. Upon producer movement, MAP-Me propagates update information hop-by-hop to re-direct affected forwarding paths, avoiding the delays associated with purely routing-plane convergence. MAP-Me is therefore well-suited to latency-sensitive micro-mobility scenarios. However, in frequent or high-intensity mobility, repeated updates can generate noticeable overhead and may require careful tuning to balance responsiveness against network cost.
 
 In terms of route updates, KITE maintains soft-state traces rooted at a rendezvous point, while AFIRM focusses on local forwarding recovery, and MAP-Me proactively updates forwarding state in the data plane upon movement. All three differ fundamentally from baseline NDN deployments where producer relocation requires routing-plane updates (e.g., NLSR prefix re-advertisement) and subsequent global convergence.
 
@@ -386,4 +387,3 @@ This work was supported in part by Rakuten Mobile.
 \bibliographystyle{IEEEtran}
 \bibliography{OptoFlood}
 \end{document}
-
