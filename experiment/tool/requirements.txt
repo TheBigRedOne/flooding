@@ -1,3 +1,4 @@
 pandas
 matplotlib
 numpy<2.0
+mypy

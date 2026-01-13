@@ -98,7 +98,7 @@ DISABLE_TEST ?=
 all: box experiment $(if $(DISABLE_TEST),,test) result paper
 
 # High-level orchestration targets (provider must be set via `make kvm ...` or `make vb ...`)
-.PHONY: box box-initial box-baseline box-solution experiment experiment-baseline experiment-solution result paper test
+.PHONY: box box-initial box-baseline box-solution experiment experiment-baseline experiment-solution result paper test mypy
 
 # Boxes
 box-initial: box/initial/initial.$(PROVIDER).box
@@ -140,6 +140,10 @@ results/solution: | results
 
 paper/figures:
 	mkdir $@
+
+# Type checking (mypy) using host venv
+mypy: | $(VENV_DIR)
+	$(PYTHON) -m mypy --config-file mypy.ini test/validate.py experiment/tool/plot_throughput.py experiment/tool/plot_latency.py experiment/tool/plot_loss.py experiment/tool/plot_overhead.py
 
 # Boxes check
 box/initial/initial.$(PROVIDER).box: box/initial/Vagrantfile
