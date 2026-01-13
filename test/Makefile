@@ -69,6 +69,7 @@ PCAP_DIR := $(RESULTS_DIR)/pcap
 PCAPS := $(PCAP_DIR)/consumer.pcap $(PCAP_DIR)/producer.pcap $(PCAP_DIR)/r1.pcap $(PCAP_DIR)/r2.pcap $(PCAP_DIR)/r3.pcap $(PCAP_DIR)/r4.pcap $(PCAP_DIR)/r5.pcap
 RIBS  := $(RESULTS_DIR)/r3_T1_rib.txt $(RESULTS_DIR)/r3_T2_rib.txt
 VALIDATE_OK := $(ROOT_DIR)/test/.validate_ok
+VM_VALIDATE_STAMP := $(RESULTS_DIR)/.validate_ok_vm
 
 # Produce test artifacts via one VM run, then rsync back (grouped target)
 $(PCAPS) $(RIBS) &: sync
@@ -86,14 +87,17 @@ $(PCAPS) $(RIBS) &: sync
 	$(VAGRANT_SOLUTION) ssh -c 'EXPERIMENT_DIR=$(REMOTE_DIR)/test WIRESHARK_RUN_FROM_BUILD_DIRECTORY=1 WIRESHARK_PLUGIN_DIR= LUA_PATH="/usr/local/share/ndn-dissect-wireshark/?.lua;;" LUA_CPATH=";;" /usr/bin/sudo -E python3 $(REMOTE_DIR)/test/exp_test.py'
 	# Ensure result directories exist in VM
 	$(VAGRANT_SOLUTION) ssh -c 'mkdir -p $(REMOTE_DIR)/test/results/pcap'
-	# Rsync back test artifacts to host test/results
+	# Run validation inside VM (uses system python3 + tshark in box)
+	$(VAGRANT_SOLUTION) ssh -c 'cd $(REMOTE_DIR)/test && /usr/bin/sudo -E python3 validate.py'
+	$(VAGRANT_SOLUTION) ssh -c 'cd $(REMOTE_DIR)/test && echo OK > results/.validate_ok_vm'
+	# Rsync back test artifacts (including VM validate stamp) to host test/results
 	mkdir -p $(RESULTS_DIR)
 	$(RSYNC_SOLUTION) solution:$(REMOTE_DIR)/test/results/ $(RESULTS_DIR)/
 	@echo "Artifacts synced to $(RESULTS_DIR)/"
 
 # Validation stamp (runs all validations)
-$(VALIDATE_OK): $(PCAPS) $(RIBS)
-	python3 validate.py
+$(VALIDATE_OK): $(PCAPS) $(RIBS) $(VM_VALIDATE_STAMP)
+	@test -f $(VM_VALIDATE_STAMP) || (echo "VM validation missing: $(VM_VALIDATE_STAMP)" && exit 1)
 	@echo OK > $@
 
 validate: $(VALIDATE_OK)
