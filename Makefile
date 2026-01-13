@@ -40,6 +40,9 @@ SOLUTION_OVERHEAD_PDF := results/solution/overhead_timeseries.pdf
 # --- Paper Figure Dependencies ---
 # These variables link the experiment outputs to the figures in the paper.
 MAIN_TEX := paper/OptoFlood.tex
+PAPER_BIN := paper/bin
+LATEXMK := latexmk
+LATEXMK_FLAGS := -pdf -interaction=nonstopmode -output-directory=$(PAPER_BIN)
 
 # Define final figure paths for the paper
 BASELINE_DISRUPTION_FIGURE := paper/figures/baseline_disruption.pdf
@@ -279,14 +282,21 @@ $(SOLUTION_THROUGHPUT_FIGURE): $(SOLUTION_THROUGHPUT_PDF) | paper/figures
 	cp $(SOLUTION_THROUGHPUT_PDF) $@
 
 # Generate the paper
-$(PAPER_PDF): $(MAIN_TEX) $(ALL_FIGURES) | paper
-	$(MAKE) -C paper
+$(PAPER_PDF): $(MAIN_TEX) $(ALL_FIGURES) | $(PAPER_BIN)
+	@echo "Compiling LaTeX with latexmk..."
+	$(LATEXMK) $(LATEXMK_FLAGS) $(MAIN_TEX)
+	cp $(PAPER_BIN)/$(notdir $(PAPER_PDF)) $(PAPER_PDF)
+
+$(PAPER_BIN):
+	mkdir -p $(PAPER_BIN)
 
 
 # Cleanup
 clean: clean-ssh-config
 	rm -rf results
-	cd paper && $(MAKE) clean
+	$(LATEXMK) -c -output-directory=$(PAPER_BIN)
+	rm -f $(PAPER_PDF)
+	rm -rf $(PAPER_BIN)
 
 # Unified deep-clean (use with provider wrapper: `make kvm deep-clean` or `make vb deep-clean`)
 deep-clean: _deep-clean_provider
