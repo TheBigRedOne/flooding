@@ -298,7 +298,7 @@ $(PAPER_BIN):
 # Cleanup
 clean: clean-ssh-config
 	rm -rf results
-	$(LATEXMK) -c -output-directory=$(PAPER_BIN)
+	$(LATEXMK) -c $(MAIN_TEX)
 	rm -f $(PAPER_PDF)
 	rm -rf $(PAPER_BIN)
 
