@@ -1,6 +1,6 @@
 PROVIDER ?= virtualbox
 
-# Provider goal rewriting: allow `make kvm …` or `make vb …` without double execution
+# Provider goal rewriting: allow `make kvm ...` or `make vb ...` without double execution
 ifeq ($(firstword $(MAKECMDGOALS)),kvm)
   PROVIDER := libvirt
   override MAKECMDGOALS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
