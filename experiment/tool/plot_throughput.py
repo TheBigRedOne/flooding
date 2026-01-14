@@ -5,10 +5,14 @@ from collections import defaultdict
 from typing import Dict, Iterable, List, Tuple
 
 import matplotlib.pyplot as plt
+from matplotlib.ticker import ScalarFormatter
+
+
+APP_PREFIX = "/example/LiveStream"
 
 
 def _load_packets(csv_path: str) -> List[Tuple[float, int]]:
-    """Load (time, length) tuples from a tshark CSV."""
+    """Load (time, length) tuples from a tshark CSV, filtering to app prefix."""
     with open(csv_path, "r", newline="") as csv_file:
         reader = csv.DictReader(csv_file)
         required = {"frame.time_epoch", "frame.len"}
@@ -17,6 +21,12 @@ def _load_packets(csv_path: str) -> List[Tuple[float, int]]:
 
         packets: List[Tuple[float, int]] = []
         for row in reader:
+            name = row.get("ndn.name")
+            if name:
+                if name.startswith("/localhost/") or name.startswith("/localhop/ndn/nlsr/"):
+                    continue
+                if not name.startswith(APP_PREFIX):
+                    continue
             try:
                 time_val = float(row["frame.time_epoch"])
                 length_val = int(row["frame.len"])
@@ -37,6 +47,16 @@ def _aggregate_per_second(packets: Iterable[Tuple[float, int]]) -> Dict[int, int
         second = int(time_val)
         throughput[second] += length_val
     return throughput
+
+
+def _fill_missing_seconds(per_second: Dict[int, int]) -> Tuple[List[int], List[int]]:
+    """Expand to continuous seconds, filling gaps with zero."""
+    seconds = sorted(per_second.keys())
+    if not seconds:
+        return [], []
+    full_seconds: List[int] = list(range(seconds[0], seconds[-1] + 1))
+    values: List[int] = [per_second.get(sec, 0) for sec in full_seconds]
+    return full_seconds, values
 
 
 def _percentile(values: List[int], percentile: float) -> float:
@@ -118,16 +138,19 @@ def main() -> None:
         _safe_empty_outputs(args.output_dir)
         return
 
-    sorted_seconds = sorted(per_second.keys())
-    start_second = sorted_seconds[0]
-    rel_times = [sec - start_second for sec in sorted_seconds]
-    values = [per_second[sec] for sec in sorted_seconds]
+    full_seconds, values = _fill_missing_seconds(per_second)
+    if not full_seconds:
+        _safe_empty_outputs(args.output_dir)
+        return
 
-    _write_metrics(args.output_dir, values, sorted_seconds)
+    start_second = full_seconds[0]
+    rel_times = [sec - start_second for sec in full_seconds]
+
+    _write_metrics(args.output_dir, values, full_seconds)
 
     plt.style.use("seaborn-v0_8-whitegrid")
     fig, ax = plt.subplots(figsize=(12, 6))
-    ax.plot(rel_times, values, color="steelblue", label="Bytes per second")
+    ax.plot(rel_times, values, color="steelblue", label="Bytes per second", linewidth=1.6)
 
     if args.handoff_times:
         handoffs = [float(t.strip()) for t in args.handoff_times.split(",") if t.strip()]
@@ -142,6 +165,8 @@ def main() -> None:
     ax.set_title("Throughput Over Time")
     ax.legend()
     ax.grid(True)
+    ax.yaxis.set_major_formatter(ScalarFormatter(useMathText=False))
+    ax.ticklabel_format(style="plain", axis="y")
 
     max_time = int(max(rel_times)) if rel_times else 0
     tick_step = 20 if max_time >= 20 else max(1, max_time or 1)
