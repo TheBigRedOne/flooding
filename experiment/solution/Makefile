@@ -21,7 +21,7 @@ all: $(CSV_FILE)
 
 # Convert PCAP to CSV using tshark
 $(CSV_FILE): $(PCAP_FILE)
-	tshark -r $< -T fields -e frame.time_epoch -e ndn.type -e ndn.name -E separator=, -E header=y -E quote=d > $@
+	tshark -r $< -T fields -e frame.time_epoch -e frame.len -e ndn.type -e ndn.name -E separator=, -E header=y -E quote=d > $@
 
 # The PCAP result depends on the experiment script and the compiled apps.
 $(PCAP_FILE): $(TOOL_DIR)/exp.py producer consumer

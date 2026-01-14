@@ -1,96 +1,183 @@
 import argparse
+import csv
 import os
-import pandas as pd
+from collections import defaultdict
+from typing import Dict, Iterable, List, Tuple
+
 import matplotlib.pyplot as plt
+from matplotlib.ticker import ScalarFormatter
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Plot end-to-end throughput (bytes/s) from tshark CSV.")
-    parser.add_argument('--input', type=str, required=True, help='Input CSV file from tshark.')
-    parser.add_argument('--output-dir', type=str, default='.', help='Directory to save output files.')
-    parser.add_argument('--handoff-times', type=str, help='Comma-separated list of handoff event times in seconds.')
-    parser.add_argument('--window', type=int, default=10, help='Time window in seconds after a handoff for shading.')
-    parser.add_argument('--prefix', type=str, default='/example/LiveStream', help='Application prefix to include.')
-    args = parser.parse_args()
+APP_PREFIX = "/example/LiveStream"
 
-    os.makedirs(args.output_dir, exist_ok=True)
-    plt.style.use('seaborn-v0_8-whitegrid')
 
-    try:
-        df = pd.read_csv(args.input)
-        if df.empty:
-            raise pd.errors.EmptyDataError
-    except (pd.errors.EmptyDataError, FileNotFoundError):
-        print(f"Warning: Input file {args.input} is empty or not found. Skipping.")
-        open(os.path.join(args.output_dir, 'throughput_timeseries.pdf'), 'w').close()
-        with open(os.path.join(args.output_dir, 'throughput_metrics.txt'), 'w') as f:
-            f.write("Average: 0.0 bytes/s\nPeak: 0.0 bytes/s\nP95: 0.0 bytes/s\nTotalBytes: 0\nDuration: 0\n")
-        return
+def _load_packets(csv_path: str) -> List[Tuple[float, int]]:
+    """Load (time, length) tuples from a tshark CSV, filtering to app prefix."""
+    with open(csv_path, "r", newline="") as csv_file:
+        reader = csv.DictReader(csv_file)
+        required = {"frame.time_epoch", "frame.len"}
+        if not required.issubset(reader.fieldnames or set()):
+            raise ValueError("Missing frame.time_epoch or frame.len; cannot compute throughput.")
 
-    df.rename(columns={'frame.time_epoch': 'time', 'frame.len': 'length', 'ndn.name': 'name'}, inplace=True)
-    df = df.dropna(subset=['time', 'length']).copy()
+        packets: List[Tuple[float, int]] = []
+        for row in reader:
+            name = row.get("ndn.name")
+            if name:
+                if name.startswith("/localhost/") or name.startswith("/localhop/ndn/nlsr/"):
+                    continue
+                if not name.startswith(APP_PREFIX):
+                    continue
+            try:
+                time_val = float(row["frame.time_epoch"])
+                length_val = int(row["frame.len"])
+            except (ValueError, KeyError):
+                continue
+            packets.append((time_val, length_val))
 
-    app_prefix = args.prefix
-    if 'name' in df.columns:
-        df['name'] = df['name'].astype(str)
-        df = df[df['name'].str.startswith(app_prefix)]
-        df = df[~df['name'].str.startswith('/localhost/')]
-        df = df[~df['name'].str.startswith('/localhop/ndn/nlsr/')]
+    if not packets:
+        raise ValueError("No valid rows available; throughput cannot be plotted.")
 
-    if df.empty:
-        print(f"Warning: No packets under prefix {app_prefix}. Skipping.")
-        open(os.path.join(args.output_dir, 'throughput_timeseries.pdf'), 'w').close()
-        with open(os.path.join(args.output_dir, 'throughput_metrics.txt'), 'w') as f:
-            f.write("Average: 0.0 bytes/s\nPeak: 0.0 bytes/s\nP95: 0.0 bytes/s\nTotalBytes: 0\nDuration: 0\n")
-        return
+    return packets
 
-    df['timestamp'] = pd.to_datetime(df['time'], unit='s')
-    df.set_index('timestamp', inplace=True)
-    per_second = df['length'].resample('1S').sum()
 
-    if per_second.empty:
-        print("Warning: No per-second samples after resampling. Skipping.")
-        open(os.path.join(args.output_dir, 'throughput_timeseries.pdf'), 'w').close()
-        with open(os.path.join(args.output_dir, 'throughput_metrics.txt'), 'w') as f:
-            f.write("Average: 0.0 bytes/s\nPeak: 0.0 bytes/s\nP95: 0.0 bytes/s\nTotalBytes: 0\nDuration: 0\n")
-        return
+def _aggregate_per_second(packets: Iterable[Tuple[float, int]]) -> Dict[int, int]:
+    """Accumulate bytes per whole-second timestamp."""
+    throughput: Dict[int, int] = defaultdict(int)
+    for time_val, length_val in packets:
+        second = int(time_val)
+        throughput[second] += length_val
+    return throughput
 
-    # Metrics
-    total_bytes = per_second.sum()
-    duration = max((per_second.index.max() - per_second.index.min()).total_seconds(), 1)
-    avg_throughput = total_bytes / duration
-    peak_throughput = per_second.max()
-    p95_throughput = per_second.quantile(0.95)
 
-    metrics_path = os.path.join(args.output_dir, 'throughput_metrics.txt')
-    with open(metrics_path, 'w') as f:
-        f.write(f"Average: {avg_throughput:.2f} bytes/s\n")
-        f.write(f"Peak: {peak_throughput:.2f} bytes/s\n")
-        f.write(f"P95: {p95_throughput:.2f} bytes/s\n")
-        f.write(f"TotalBytes: {int(total_bytes)}\n")
-        f.write(f"Duration: {duration:.2f} s\n")
+def _fill_missing_seconds(per_second: Dict[int, int]) -> Tuple[List[int], List[int]]:
+    """Expand to continuous seconds, filling gaps with zero."""
+    seconds = sorted(per_second.keys())
+    if not seconds:
+        return [], []
+    full_seconds: List[int] = list(range(seconds[0], seconds[-1] + 1))
+    values: List[int] = [per_second.get(sec, 0) for sec in full_seconds]
+    return full_seconds, values
 
-    # Plot
-    fig, ax = plt.subplots(figsize=(12, 6))
-    per_second.plot(ax=ax, color='steelblue', label='Bytes per second')
 
-    if args.handoff_times:
-        handoffs = [float(t.strip()) for t in args.handoff_times.split(',')]
-        for i, t in enumerate(handoffs):
-            label = 'Handoff Window' if i == 0 else None
-            ax.axvspan(per_second.index[0] + pd.to_timedelta(t, unit='s'),
-                       per_second.index[0] + pd.to_timedelta(t + args.window, unit='s'),
-                       color='orange', alpha=0.3, label=label)
+def _percentile(values: List[int], percentile: float) -> float:
+    """Compute percentile with linear interpolation."""
+    if not values:
+        return 0.0
+    if percentile <= 0:
+        return float(min(values))
+    if percentile >= 100:
+        return float(max(values))
 
-    ax.set_xlabel('Time')
-    ax.set_ylabel('Bytes per second')
-    ax.set_title('Throughput Over Time')
-    ax.legend()
-    ax.grid(True, which="both", ls="--")
-    fig.tight_layout()
-    plt.savefig(os.path.join(args.output_dir, 'throughput_timeseries.pdf'))
+    sorted_vals = sorted(values)
+    rank = (percentile / 100) * (len(sorted_vals) - 1)
+    lower = int(rank)
+    upper = min(lower + 1, len(sorted_vals) - 1)
+    fraction = rank - lower
+    return sorted_vals[lower] + (sorted_vals[upper] - sorted_vals[lower]) * fraction
+
+
+def _write_metrics(out_dir: str, values: List[int], seconds: List[int]) -> None:
+    """Write throughput metrics to throughput_metrics.txt."""
+    if not values or not seconds:
+        avg = peak = p95 = total_bytes = 0
+        duration = 0
+    else:
+        total_bytes = sum(values)
+        duration = max(seconds[-1] - seconds[0] + 1, 1)
+        avg = total_bytes / duration
+        peak = max(values)
+        p95 = _percentile(values, 95)
+
+    metrics_path = os.path.join(out_dir, "throughput_metrics.txt")
+    with open(metrics_path, "w", encoding="utf-8") as metrics_file:
+        metrics_file.write(f"Average: {avg:.2f} bytes/s\n")
+        metrics_file.write(f"Peak: {peak:.2f} bytes/s\n")
+        metrics_file.write(f"P95: {p95:.2f} bytes/s\n")
+        metrics_file.write(f"TotalBytes: {int(total_bytes)}\n")
+        metrics_file.write(f"Duration: {duration:.2f} s\n")
+
+
+def _safe_empty_outputs(out_dir: str) -> None:
+    """Create empty outputs when input data is unusable."""
+    os.makedirs(out_dir, exist_ok=True)
+    metrics_path = os.path.join(out_dir, "throughput_metrics.txt")
+    with open(metrics_path, "w", encoding="utf-8") as metrics_file:
+        metrics_file.write("Average: 0.00 bytes/s\n")
+        metrics_file.write("Peak: 0.00 bytes/s\n")
+        metrics_file.write("P95: 0.00 bytes/s\n")
+        metrics_file.write("TotalBytes: 0\n")
+        metrics_file.write("Duration: 0.00 s\n")
+    fig, _ = plt.subplots(figsize=(10, 5))
+    empty_pdf = os.path.join(out_dir, "throughput_timeseries.pdf")
+    fig.savefig(empty_pdf)
     plt.close(fig)
 
 
-if __name__ == '__main__':
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Plot throughput from tshark CSV.")
+    parser.add_argument("--input", required=True, help="Path to tshark CSV.")
+    parser.add_argument("--output-dir", required=True, help="Directory to write outputs.")
+    parser.add_argument("--handoff-times", help="Comma-separated handoff times in seconds (relative).")
+    parser.add_argument("--window", type=int, default=10, help="Shaded window length after each handoff (seconds).")
+    args = parser.parse_args()
+
+    os.makedirs(args.output_dir, exist_ok=True)
+
+    if not os.path.exists(args.input):
+        _safe_empty_outputs(args.output_dir)
+        return
+
+    try:
+        packets = _load_packets(args.input)
+    except Exception:
+        _safe_empty_outputs(args.output_dir)
+        return
+
+    per_second = _aggregate_per_second(packets)
+    if not per_second:
+        _safe_empty_outputs(args.output_dir)
+        return
+
+    full_seconds, values = _fill_missing_seconds(per_second)
+    if not full_seconds:
+        _safe_empty_outputs(args.output_dir)
+        return
+
+    start_second = full_seconds[0]
+    rel_times = [sec - start_second for sec in full_seconds]
+
+    _write_metrics(args.output_dir, values, full_seconds)
+
+    plt.style.use("seaborn-v0_8-whitegrid")
+    fig, ax = plt.subplots(figsize=(12, 6))
+    ax.plot(rel_times, values, color="steelblue", label="Bytes per second", linewidth=1.6)
+
+    if args.handoff_times:
+        handoffs = [float(t.strip()) for t in args.handoff_times.split(",") if t.strip()]
+        for idx, handoff in enumerate(handoffs):
+            start = handoff
+            end = handoff + args.window
+            label = "Handoff Window" if idx == 0 else None
+            ax.axvspan(start, end, color="orange", alpha=0.3, label=label)
+
+    ax.set_xlabel("Time (seconds)")
+    ax.set_ylabel("Throughput (bytes/s)")
+    ax.set_title("Throughput Over Time")
+    ax.legend()
+    ax.grid(True)
+    ax.yaxis.set_major_formatter(ScalarFormatter(useMathText=False))
+    ax.ticklabel_format(style="plain", axis="y")
+
+    max_time = int(max(rel_times)) if rel_times else 0
+    tick_step = 20 if max_time >= 20 else max(1, max_time or 1)
+    ax.set_xticks(list(range(0, max_time + tick_step, tick_step)))
+    ax.get_xaxis().get_major_formatter().set_useOffset(False)
+
+    fig.tight_layout()
+    output_pdf = os.path.join(args.output_dir, "throughput_timeseries.pdf")
+    plt.savefig(output_pdf)
+    plt.close(fig)
+
+
+if __name__ == "__main__":
     main()

@@ -89,7 +89,7 @@ $(PCAPS) $(RIBS) &: sync
 	$(VAGRANT_SOLUTION) ssh -c 'mkdir -p $(REMOTE_DIR)/test/results/pcap'
 	# Run validation inside VM (uses system python3 + tshark in box)
 	$(VAGRANT_SOLUTION) ssh -c 'cd $(REMOTE_DIR)/test && /usr/bin/sudo -E python3 validate.py'
-	$(VAGRANT_SOLUTION) ssh -c 'cd $(REMOTE_DIR)/test && echo OK > results/.validate_ok_vm'
+	$(VAGRANT_SOLUTION) ssh -c 'cd $(REMOTE_DIR)/test && /usr/bin/sudo chown -R vagrant:vagrant $(REMOTE_DIR)/test/results && echo OK > results/.validate_ok_vm'
 	# Rsync back test artifacts (including VM validate stamp) to host test/results
 	mkdir -p $(RESULTS_DIR)
 	$(RSYNC_SOLUTION) solution:$(REMOTE_DIR)/test/results/ $(RESULTS_DIR)/

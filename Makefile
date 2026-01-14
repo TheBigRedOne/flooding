@@ -98,7 +98,7 @@ DISABLE_TEST ?=
 all: box experiment $(if $(DISABLE_TEST),,test) result paper
 
 # High-level orchestration targets (provider must be set via `make kvm ...` or `make vb ...`)
-.PHONY: box box-initial box-baseline box-solution experiment experiment-baseline experiment-solution result paper test mypy
+.PHONY: box box-initial box-baseline box-solution experiment experiment-baseline experiment-solution result plot paper test mypy
 
 # Boxes
 box-initial: box/initial/initial.$(PROVIDER).box
@@ -124,6 +124,19 @@ result: $(BASELINE_PAPER_FIGURES) $(SOLUTION_PAPER_FIGURES)
 # Run the test experiment
 test:
 	$(MAKE) -C test PROVIDER=$(PROVIDER) test-all
+
+# Plot only (reuse existing CSVs; no VM run)
+plot: | $(VENV_DIR)
+	@test -f $(CSV_BASELINE) || (echo "Missing CSV: $(CSV_BASELINE). Run 'make experiment-baseline' first." && exit 1)
+	@test -f $(CSV_SOLUTION) || (echo "Missing CSV: $(CSV_SOLUTION). Run 'make experiment-solution' first." && exit 1)
+	$(PYTHON) experiment/tool/plot_latency.py --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
+	$(PYTHON) experiment/tool/plot_loss.py --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
+	$(PYTHON) experiment/tool/plot_overhead.py --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
+	$(PYTHON) experiment/tool/plot_throughput.py --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
+	$(PYTHON) experiment/tool/plot_latency.py --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
+	$(PYTHON) experiment/tool/plot_loss.py --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
+	$(PYTHON) experiment/tool/plot_overhead.py --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
+	$(PYTHON) experiment/tool/plot_throughput.py --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
 
 # Build the paper PDF (follow dependencies; do not hand-check and exit)
 paper: $(PAPER_PDF)
@@ -301,6 +314,11 @@ clean: clean-ssh-config
 	$(LATEXMK) -c $(MAIN_TEX)
 	rm -f $(PAPER_PDF)
 	rm -rf $(PAPER_BIN)
+	# remove copied paper figures
+	rm -f $(BASELINE_PAPER_FIGURES) $(SOLUTION_PAPER_FIGURES)
+	# remove test artifacts on host
+	rm -rf test/pcap test/results
+	rm -f test/consumer test/producer test/*.txt test/*.conf test/.ssh_config_solution
 
 # Unified deep-clean (use with provider wrapper: `make kvm deep-clean` or `make vb deep-clean`)
 deep-clean: _deep-clean_provider
