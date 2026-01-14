@@ -27,7 +27,22 @@ def main():
             f.write("Average: 0.0 bytes/s\nPeak: 0.0 bytes/s\nP95: 0.0 bytes/s\nTotalBytes: 0\nDuration: 0\n")
         return
 
-    df.rename(columns={'frame.time_epoch': 'time', 'frame.len': 'length', 'ndn.name': 'name'}, inplace=True)
+    # map columns from tshark output (frame.time_epoch, frame.len, ndn.name)
+    rename_map = {
+        'frame.time_epoch': 'time',
+        'frame.len': 'length',
+        'ndn.name': 'name',
+    }
+    df = df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns})
+
+    # require time and length to compute throughput
+    if 'time' not in df.columns or 'length' not in df.columns:
+        print(f"Warning: Missing required columns (frame.time_epoch/frame.len) in {args.input}. Skipping throughput plot.")
+        open(os.path.join(args.output_dir, 'throughput_timeseries.pdf'), 'w').close()
+        with open(os.path.join(args.output_dir, 'throughput_metrics.txt'), 'w') as f:
+            f.write("Average: 0.0 bytes/s\nPeak: 0.0 bytes/s\nP95: 0.0 bytes/s\nTotalBytes: 0\nDuration: 0\n")
+        return
+
     df = df.dropna(subset=['time', 'length']).copy()
 
     app_prefix = args.prefix
