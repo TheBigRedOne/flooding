@@ -301,6 +301,11 @@ clean: clean-ssh-config
 	$(LATEXMK) -c $(MAIN_TEX)
 	rm -f $(PAPER_PDF)
 	rm -rf $(PAPER_BIN)
+	# remove copied paper figures
+	rm -f $(BASELINE_PAPER_FIGURES) $(SOLUTION_PAPER_FIGURES)
+	# remove test artifacts on host
+	rm -rf test/pcap test/results
+	rm -f test/consumer test/producer test/*.txt test/*.conf test/.ssh_config_solution
 
 # Unified deep-clean (use with provider wrapper: `make kvm deep-clean` or `make vb deep-clean`)
 deep-clean: _deep-clean_provider
