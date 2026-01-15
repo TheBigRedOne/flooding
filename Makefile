@@ -98,7 +98,7 @@ DISABLE_TEST ?=
 all: box experiment $(if $(DISABLE_TEST),,test) result paper
 
 # High-level orchestration targets (provider must be set via `make kvm ...` or `make vb ...`)
-.PHONY: box box-initial box-baseline box-solution experiment experiment-baseline experiment-solution result plot paper test mypy
+.PHONY: box box-initial box-baseline box-solution experiment experiment-baseline experiment-solution result plot paper test mypy vm-clean
 
 # Boxes
 box-initial: box/initial/initial.$(PROVIDER).box
@@ -342,6 +342,15 @@ _deep-clean_provider: clean
 # Clean SSH config file
 clean-ssh-config:
 	rm -f .ssh_config_baseline .ssh_config_solution
+
+# Destroy all VMs (keep boxes)
+vm-clean: clean-ssh-config
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant destroy -f || true
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant destroy -f || true
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=test vagrant destroy -f || true
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/baseline vagrant destroy -f || true
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/solution vagrant destroy -f || true
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/initial vagrant destroy -f || true
 
 
 .PHONY: all build-boxes clean deep-clean _deep-clean_provider clean-ssh-config kvm vb deep-clean-kvm deep-clean-vb box box-initial box-baseline box-solution experiment experiment-baseline experiment-solution result paper

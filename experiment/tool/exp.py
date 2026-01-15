@@ -11,7 +11,7 @@ import os
 class CustomTopo(Topo):
     def build(self):
         # add core switch
-        core = self.addHost('core1')
+        core = self.addHost('core')
 
         # add aggregation switches
         agg1 = self.addHost('agg1')
