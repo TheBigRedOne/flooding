@@ -87,3 +87,4 @@ __pycache__/
 # Experiment artifacts synced back from VMs
 test/results/
 test/minindn/
+results
