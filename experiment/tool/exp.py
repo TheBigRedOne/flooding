@@ -30,13 +30,8 @@ class CustomTopo(Topo):
         consumer = self.addHost('consumer')
 
         # set links
-        self.addLink(core1, core2, bw=1000, delay='1ms')
-
-        self.addLink(core1, agg1, bw=1000, delay='1ms')
-        self.addLink(core1, agg2, bw=1000, delay='1ms')
-
-        self.addLink(core2, agg1, bw=1000, delay='1ms')
-        self.addLink(core2, agg2, bw=1000, delay='1ms')
+        self.addLink(core, agg1, bw=1000, delay='1ms')
+        self.addLink(core, agg2, bw=1000, delay='1ms')
 
         self.addLink(agg1, acc1, bw=500, delay='5ms')
         self.addLink(agg1, acc2, bw=500, delay='5ms')
