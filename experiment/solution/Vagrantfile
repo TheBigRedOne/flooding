@@ -24,6 +24,7 @@ Vagrant.configure("2") do |config|
     lv.default_prefix = "#{Etc.getpwuid.uid}-#{dirname}-"
     lv.cpus   = common_cpus
     lv.memory = common_memory
+    lv.cpu_mode = "host-passthrough"
   end
 
 end
