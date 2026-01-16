@@ -16,6 +16,9 @@ ifneq ($(filter -disable_test,$(MAKECMDGOALS)),)
   override MAKECMDGOALS := $(filter-out -disable_test,$(MAKECMDGOALS))
 endif
 
+export PROVIDER
+export DISABLE_TEST
+
 # Master Control Makefile
 
 BOXES = box/initial/initial.$(PROVIDER).box \
@@ -313,9 +316,9 @@ _deep-clean_provider: clean
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/baseline vagrant destroy -f || true
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/solution vagrant destroy -f || true
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/initial  vagrant destroy -f || true
-	vagrant box remove box/baseline/baseline.$(PROVIDER).box || true
-	vagrant box remove box/solution/solution.$(PROVIDER).box || true
-	vagrant box remove box/initial/initial.$(PROVIDER).box || true
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) vagrant box remove box/baseline/baseline.$(PROVIDER).box || true
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) vagrant box remove box/solution/solution.$(PROVIDER).box || true
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) vagrant box remove box/initial/initial.$(PROVIDER).box || true
 	rm -f box/baseline/baseline.$(PROVIDER).box
 	rm -f box/solution/solution.$(PROVIDER).box
 	rm -f box/initial/initial.$(PROVIDER).box
