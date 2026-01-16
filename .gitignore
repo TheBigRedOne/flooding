@@ -46,6 +46,8 @@ bld/
 # Temporary files generated during LaTeX compilation
 *.aux
 *.log
+*.pcap
+*.csv
 *.synctex.gz
 *.synctex(busy)
 *.toc
