@@ -7,6 +7,7 @@ config.vm.box = box_name
 config.vm.box_url = solution_box_path
 
   config.vm.network "private_network", type: "dhcp"
+  config.vm.synced_folder ".", "/vagrant", disabled: true
 
   common_cpus   = 8
   common_memory = 16384
