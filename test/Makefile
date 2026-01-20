@@ -1,14 +1,5 @@
 PROVIDER ?= virtualbox
-
-# Provider goal rewriting: allow `make kvm …` or `make vb …` without double execution
-ifeq ($(firstword $(MAKECMDGOALS)),kvm)
-  PROVIDER := libvirt
-  override MAKECMDGOALS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
-endif
-ifeq ($(firstword $(MAKECMDGOALS)),vb)
-  PROVIDER := virtualbox
-  override MAKECMDGOALS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
-endif
+export PROVIDER
 
 # Purpose: Run solution VM validations (S1–S5) and manage VM lifecycle
 # Interface: test-all, validate-s[1..5], vm-up|vm-halt|vm-destroy; PROVIDER=kvm|vb
