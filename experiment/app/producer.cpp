@@ -6,6 +6,7 @@
 #include <ndn-cxx/meta-info.hpp>
 #include <ndn-cxx/encoding/block.hpp>
 #include <ndn-cxx/encoding/tlv.hpp>
+#include <ndn-cxx/util/scheduler.hpp>
 
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/posix/stream_descriptor.hpp>
@@ -19,6 +20,7 @@
 #include <chrono>
 #include <thread>
 #include <iomanip>
+#include <deque>
 
 // Only available in solution build
 #ifdef SOLUTION_ENABLED
@@ -173,6 +175,7 @@ class Producer : noncopyable
 public:
   Producer()
     : m_face(m_ioContext)
+    , m_scheduler(m_ioContext)
     , m_keyChain()
   {
     // Default to disabled; enable automatically in solution builds
@@ -182,7 +185,7 @@ public:
   }
 
   void enableOptoFlood(bool enable = true) { m_enableOptoFlood = enable; }
-  void forceMobilityOnce() { m_enableOptoFlood = true; m_hasMoved = true; m_forceMobilityOnceFlag = true; }
+  void forceMobilityOnce() { m_enableOptoFlood = true; m_forceMobilityOnceFlag = true; }
 
   void
   run()
@@ -206,6 +209,7 @@ public:
       std::cerr << "ERROR: Failed to start Netlink listener: " << e.what() << std::endl;
     }
     }
+    scheduleDataSend();
     m_ioContext.run();
   }
 
@@ -244,10 +248,64 @@ private:
   {
     auto timestamp = std::chrono::system_clock::now().time_since_epoch().count();
     std::cout << "[" << timestamp << "] MOBILITY: Producer mobility event triggered" << std::endl;
-    std::cout << "[" << timestamp << "] MOBILITY: Setting mobility flag for subsequent Data packets" << std::endl;
-    m_hasMoved = true;
     m_mobilityEventCount++;
+    for (auto& pending : m_pendingInterests) {
+      pending.markMobility = true;
+      pending.mobilitySeq = m_mobilityEventCount;
+    }
     std::cout << "[" << timestamp << "] MOBILITY: Total mobility events: " << m_mobilityEventCount << std::endl;
+    std::cout << "[" << timestamp << "] MOBILITY: Pending Interests marked: " << m_pendingInterests.size() << std::endl;
+  }
+
+  void
+  scheduleDataSend()
+  {
+    m_scheduler.schedule(33_ms, [this] { this->sendPendingData(); });
+  }
+
+  void
+  sendPendingData()
+  {
+    if (m_pendingInterests.empty()) {
+      scheduleDataSend();
+      return;
+    }
+
+    PendingInterest pending = std::move(m_pendingInterests.front());
+    m_pendingInterests.pop_front();
+
+    auto data = make_shared<Data>(pending.name);
+    data->setFreshnessPeriod(10_s);
+    data->setContent(std::string_view("OptoFlood Test Data"));
+
+#ifdef SOLUTION_ENABLED
+    if (m_enableOptoFlood && pending.markMobility) {
+      MetaInfo metaInfo = data->getMetaInfo();
+      uint64_t floodId = ++m_floodIdSeq;
+      metaInfo.addAppMetaInfo(optoflood::makeFloodIdBlock(floodId));
+      metaInfo.addAppMetaInfo(optoflood::makeNewFaceSeqBlock(pending.mobilitySeq));
+      data->setMetaInfo(metaInfo);
+      std::cout << "[" << std::chrono::system_clock::now().time_since_epoch().count()
+                << "] DATA: Attaching OptoFlood mobility markers"
+                << " NewFaceSeq: " << pending.mobilitySeq
+                << " FloodId: " << floodId << std::endl;
+    }
+#endif
+
+    m_keyChain.sign(*data);
+
+    auto sendTimestamp = std::chrono::system_clock::now().time_since_epoch().count();
+    std::cout << "[" << sendTimestamp << "] DATA: Sending response"
+              << " Size: " << data->wireEncode().size() << " bytes"
+              << " Name: " << data->getName() << std::endl;
+
+    m_face.put(*data);
+    m_dataCount++;
+
+    std::cout << "[" << sendTimestamp << "] STATS: Total Interests: " << m_interestCount
+              << " Total Data sent: " << m_dataCount << std::endl;
+
+    scheduleDataSend();
   }
 
   void
@@ -261,60 +319,32 @@ private:
               << " CanBePrefix: " << interest.getCanBePrefix()
               << " MustBeFresh: " << interest.getMustBeFresh() << std::endl;
 
-    auto data = make_shared<Data>(interest.getName());
-    data->setFreshnessPeriod(10_s);
-    data->setContent(std::string_view("OptoFlood Test Data"));
+    PendingInterest pending{interest.getName(), false, 0};
+    m_pendingInterests.push_back(std::move(pending));
 
-    if (m_hasMoved) {
-      std::cout << "[" << timestamp << "] DATA: Attaching OptoFlood mobility markers" << std::endl;
-
-      // Use OptoFlood API to create immutable MetaInfo blocks for dedup/TFIB
-      MetaInfo metaInfo = data->getMetaInfo();
-      
-#ifdef SOLUTION_ENABLED
-      // Add FloodID (using timestamp as unique ID)
-      uint64_t floodId = static_cast<uint64_t>(timestamp);
-      metaInfo.addAppMetaInfo(optoflood::makeFloodIdBlock(floodId));
-      
-      // Add NewFaceSeq (using mobility event count as sequence)
-      metaInfo.addAppMetaInfo(optoflood::makeNewFaceSeqBlock(m_mobilityEventCount));
-#endif
-      
-      data->setMetaInfo(metaInfo);
-      
-      // Log additional OptoFlood fields
-      std::cout << "[" << timestamp << "] DATA: Mobility packet marked"
-                << " NewFaceSeq: " << m_mobilityEventCount << std::endl;
-
-      // Reset the flag after processing
-      m_hasMoved = false; 
+    if (m_forceMobilityOnceFlag) {
       m_forceMobilityOnceFlag = false;
-      std::cout << "[" << timestamp << "] DATA: Mobility flag cleared for producer" << std::endl;
+      onMobilityEvent();
     }
-
-    m_keyChain.sign(*data);
-    
-    auto sendTimestamp = std::chrono::system_clock::now().time_since_epoch().count();
-    std::cout << "[" << sendTimestamp << "] DATA: Sending response"
-              << " Size: " << data->wireEncode().size() << " bytes"
-              << " Name: " << data->getName() << std::endl;
-              
-    m_face.put(*data);
-    m_dataCount++;
-    
-    std::cout << "[" << sendTimestamp << "] STATS: Total Interests: " << m_interestCount 
-              << " Total Data sent: " << m_dataCount << std::endl;
   }
 
 private:
+  struct PendingInterest {
+    Name name;
+    bool markMobility = false;
+    uint32_t mobilitySeq = 0;
+  };
+
   boost::asio::io_context m_ioContext;
   Face m_face{m_ioContext};
+  Scheduler m_scheduler;
   KeyChain m_keyChain;
 
-  std::atomic<bool> m_hasMoved{false};
   std::unique_ptr<NetlinkListener> m_netlinkListener;
   bool m_enableOptoFlood = false;
   bool m_forceMobilityOnceFlag = false;
+  std::deque<PendingInterest> m_pendingInterests;
+  uint64_t m_floodIdSeq = 0;
   
   // Statistics counters for experiment analysis
   uint64_t m_interestCount = 0;

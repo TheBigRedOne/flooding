@@ -64,9 +64,9 @@ if __name__ == '__main__':
     ndn.start()
 
     info('Starting NFD on nodes\n')
-    nfds = AppManager(ndn, ndn.net.hosts, Nfd)
+    nfds = AppManager(ndn, ndn.net.hosts, Nfd, logLevel='DEBUG')
     info('Starting NLSR on nodes\n')
-    nlsrs = AppManager(ndn, ndn.net.hosts, Nlsr)
+    nlsrs = AppManager(ndn, ndn.net.hosts, Nlsr, logLevel='DEBUG')
     sleep(30)  # wait for NLSR
 
     # disable producer-acc3&4 at beginning

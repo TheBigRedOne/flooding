@@ -29,10 +29,9 @@ $INSTALL_BASE = <<EOF
 EOF
 
 Vagrant.configure("2") do |config|
-  initial_box_path = ENV['ACTUAL_INITIAL_BOX_PATH'] || "box/initial/initial.box"
-  config.vm.box = initial_box_path
-  
+  config.vm.box = "box/initial/initial." + ENV["PROVIDER"] + ".box"
   config.vm.network "private_network", type: "dhcp"
+  config.vm.synced_folder ".", "/vagrant", disabled: true
 
   # The --jobs= parameter to ./install.sh (above) should match common_cpus
   common_cpus   = 8

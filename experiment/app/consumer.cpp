@@ -59,21 +59,22 @@ private:
                 << " Name: " << name 
                 << " Queue size: " << m_retransmissionQueue.size() << std::endl;
       expressInterest(name);
-      
-      // Schedule the next retransmission check
-      m_scheduler.schedule(1_s, [this] { this->sendInterest(); });
-      return;
     }
     
     // Otherwise, send a new Interest for the next sequence number
-    Name interestName("/example/LiveStream");
-    interestName.appendVersion(m_sequenceNo);
+    else {
+      Name interestName("/example/LiveStream");
+      interestName.appendVersion(m_sequenceNo);
 
-    std::cout << "[" << timestamp << "] INTEREST: Sending new Interest #" << m_sequenceNo << std::endl;
-    expressInterest(interestName);
-    
-    // Increment sequence number for the next new interest
-    m_sequenceNo++;
+      std::cout << "[" << timestamp << "] INTEREST: Sending new Interest #" << m_sequenceNo << std::endl;
+      expressInterest(interestName);
+      
+      // Increment sequence number for the next new interest
+      m_sequenceNo++;
+    }
+
+    // Temporarily set to 200ms for testing
+    m_scheduler.schedule(200_ms, [this] { this->sendInterest(); });
   }
 
   void
@@ -127,13 +128,9 @@ private:
     m_validator.validate(data,
                        [this, recvTimestamp] (const Data&) {
                          std::cout << "[" << recvTimestamp << "] VALIDATE: Data signature verified" << std::endl;
-                         // Schedule the next interest to maintain the request interval
-                         m_scheduler.schedule(33_ms, [this] { this->sendInterest(); });
                        },
                        [this, recvTimestamp] (const Data&, const security::ValidationError& error) {
                          std::cerr << "[" << recvTimestamp << "] ERROR: Data validation failed: " << error << std::endl;
-                         // Also schedule the next interest on validation failure
-                         m_scheduler.schedule(33_ms, [this] { this->sendInterest(); });
                        });
   }
 
@@ -157,9 +154,6 @@ private:
     m_retransmissionQueue.push(interest.getName());
     std::cout << "[" << timestamp << "] NACK: Added to retransmission queue"
               << " Queue size: " << m_retransmissionQueue.size() + 1 << std::endl;
-
-    // Schedule the next interest cycle
-    m_scheduler.schedule(33_ms, [this] { this->sendInterest(); });
   }
 
   void
@@ -181,9 +175,6 @@ private:
     m_retransmissionQueue.push(interest.getName());
     std::cout << "[" << timestamp << "] TIMEOUT: Added to retransmission queue"
               << " Queue size: " << m_retransmissionQueue.size() + 1 << std::endl;
-
-    // Schedule the next interest cycle
-    m_scheduler.schedule(33_ms, [this] { this->sendInterest(); });
     
     // Log statistics periodically
     if (m_timeouts % 10 == 0) {

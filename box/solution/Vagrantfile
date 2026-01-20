@@ -11,7 +11,7 @@ $INSTALL_BASE = <<EOF
   --cxx=https://github.com/TheBigRedOne/ndn-cxx.git@141b96a03fd28c278c9635595f65bae77f4aad0b \
   --nfd=https://github.com/TheBigRedOne/NFD.git@9f27fdac0bf431b4f76ea14a72958194def4c9f4 \
   --psync=https://github.com/named-data/PSync.git@0.5.0 \
-  --nlsr=https://github.com/TheBigRedOne/NLSR.git@de1fefe92dc5dc39ae5f47d256197dbeea81210f \
+  --nlsr=https://github.com/TheBigRedOne/NLSR.git@1a2ad2e6dbc79c215c586019df81543c220d1371 \
   --tools=https://github.com/named-data/ndn-tools.git@ndn-tools-24.07 \
   --traffic=https://github.com/named-data/ndn-traffic-generator.git@9bec15ac63ae2ac225c4e514daa9fc1366889d62 \
   --infoedit=https://github.com/NDN-Routing/infoedit.git@cecfe583f5d2df974f5cbd50996f91b9d321be99 \
@@ -38,10 +38,9 @@ $INSTALL_BASE = <<EOF
 EOF
 
 Vagrant.configure("2") do |config|
-  initial_box_path = ENV['ACTUAL_INITIAL_BOX_PATH'] || "box/initial/initial.box"
-  config.vm.box = initial_box_path
-
+  config.vm.box = "box/initial/initial." + ENV["PROVIDER"] + ".box"
   config.vm.network "private_network", type: "dhcp"
+  config.vm.synced_folder ".", "/vagrant", disabled: true
 
   # The --jobs= parameter to ./install.sh (above) should match common_cpus
   common_cpus   = 8
