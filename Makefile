@@ -1,24 +1,25 @@
+# =============================================================================
+# Options to control the build
+
+# By default, running Vagrant will use the virtualbox provider. To use the
+# libvirt provider with KVM, add PROVIDER=libvirt to the make invocation.
+
 PROVIDER ?= virtualbox
 
-# Provider goal rewriting: allow `make kvm ...` or `make vb ...` without double execution
-ifeq ($(firstword $(MAKECMDGOALS)),kvm)
-  PROVIDER := libvirt
-  override MAKECMDGOALS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
-endif
-ifeq ($(firstword $(MAKECMDGOALS)),vb)
-  PROVIDER := virtualbox
-  override MAKECMDGOALS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
-endif
+# By default, tests are run to demonstrate that the flooding mechanisms is
+# working. To disable the tests, add DISABLE_TEST=1 to the make invocation.
 
-# Optional flag-like goal to disable tests: allow `make kvm all -disable_test`
-ifneq ($(filter -disable_test,$(MAKECMDGOALS)),)
-  DISABLE_TEST := 1
-  override MAKECMDGOALS := $(filter-out -disable_test,$(MAKECMDGOALS))
-endif
+DISABLE_TEST ?=
+
+# Example invocations:
+#    make                                  -- build using virtualbox
+#    make PROVIDER=libvirt DISABLE_TEST=1  -- build using KVM without tests
+#    make PROVIDER=libvirt deep-clean      -- deep-clean using KVM
 
 export PROVIDER
 export DISABLE_TEST
 
+# =============================================================================
 # Master Control Makefile
 
 BOXES = box/initial/initial.$(PROVIDER).box \
@@ -331,11 +332,7 @@ clean: clean-ssh-config
 	rm -rf test/pcap test/results
 	rm -f test/consumer test/producer test/*.txt test/*.conf test/.ssh_config_solution
 
-# Unified deep-clean (use with provider wrapper: `make kvm deep-clean` or `make vb deep-clean`)
-deep-clean: _deep-clean_provider
-
-# Renamed target for actual implementation
-_deep-clean_provider: clean
+deep-clean: clean
 	rm -rf $(BASELINE_FIGURE) $(SOLUTION_FIGURE) $(PAPER_PDF)
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant destroy -f || true
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant destroy -f || true
@@ -364,7 +361,7 @@ vm-clean: clean-ssh-config
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/initial vagrant destroy -f || true
 
 
-.PHONY: all build-boxes clean deep-clean _deep-clean_provider clean-ssh-config kvm vb deep-clean-kvm deep-clean-vb box box-initial box-baseline box-solution experiment experiment-baseline experiment-solution result paper
+.PHONY: all build-boxes clean deep-clean clean-ssh-config box box-initial box-baseline box-solution experiment experiment-baseline experiment-solution result paper
 
 .DELETE_ON_ERROR:
 
