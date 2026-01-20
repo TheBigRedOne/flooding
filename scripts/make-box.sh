@@ -21,7 +21,6 @@ echo "*** Creating Vagrant box: $BOX ($PROVIDER, dir=$DIR)"
 if [ -f $LOCK ]; then
   echo "*** Cleaning-up after interrupted build"
   VAGRANT_DEFAULT_PROVIDER=$PROVIDER VAGRANT_CWD=$DIR vagrant destroy -f
-  rm -f $BOX
   echo "*** Clean-up finished"
 fi
 
@@ -29,6 +28,7 @@ touch $LOCK
 
 if [ -f $BOX ]; then
   VAGRANT_DEFAULT_PROVIDER=$PROVIDER VAGRANT_CWD=$DIR vagrant box remove $BOX
+  rm -f $BOX
 fi
 
 VAGRANT_DEFAULT_PROVIDER=$PROVIDER VAGRANT_CWD=$DIR vagrant up --provision
