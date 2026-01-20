@@ -73,7 +73,8 @@ private:
       m_sequenceNo++;
     }
 
-    m_scheduler.schedule(33_ms, [this] { this->sendInterest(); });
+    // Temporarily set to 200ms for testing
+    m_scheduler.schedule(200_ms, [this] { this->sendInterest(); });
   }
 
   void
