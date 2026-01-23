@@ -9,9 +9,9 @@ $INSTALL_BASE = <<EOF
   git checkout 73add71f860979426aef63136bf78ed525862e5c
   ./install.sh -y \
   --cxx=https://github.com/TheBigRedOne/ndn-cxx.git@141b96a03fd28c278c9635595f65bae77f4aad0b \
-  --nfd=https://github.com/TheBigRedOne/NFD.git@9f27fdac0bf431b4f76ea14a72958194def4c9f4 \
+  --nfd=https://github.com/TheBigRedOne/NFD.git@7c062294e19b81f8f870152ce8a89f792582b2ab \
   --psync=https://github.com/named-data/PSync.git@0.5.0 \
-  --nlsr=https://github.com/TheBigRedOne/NLSR.git@1a2ad2e6dbc79c215c586019df81543c220d1371 \
+  --nlsr=https://github.com/TheBigRedOne/NLSR.git@b4216e01d13e7afa743862bb76faee6f087a8a8b \
   --tools=https://github.com/named-data/ndn-tools.git@ndn-tools-24.07 \
   --traffic=https://github.com/named-data/ndn-traffic-generator.git@9bec15ac63ae2ac225c4e514daa9fc1366889d62 \
   --infoedit=https://github.com/NDN-Routing/infoedit.git@cecfe583f5d2df974f5cbd50996f91b9d321be99 \
