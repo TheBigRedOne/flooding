@@ -21,6 +21,7 @@
 #include <thread>
 #include <iomanip>
 #include <deque>
+#include <unordered_set>
 
 // Only available in solution build
 #ifdef SOLUTION_ENABLED
@@ -301,6 +302,7 @@ private:
 
     m_face.put(*data);
     m_dataCount++;
+    m_pendingNames.erase(pending.name);
 
     std::cout << "[" << sendTimestamp << "] STATS: Total Interests: " << m_interestCount
               << " Total Data sent: " << m_dataCount << std::endl;
@@ -319,8 +321,16 @@ private:
               << " CanBePrefix: " << interest.getCanBePrefix()
               << " MustBeFresh: " << interest.getMustBeFresh() << std::endl;
 
-    PendingInterest pending{interest.getName(), false, 0};
+    const Name& interestName = interest.getName();
+    if (m_pendingNames.find(interestName) != m_pendingNames.end()) {
+      std::cout << "[" << timestamp << "] INTEREST: Duplicate pending Interest ignored Name: "
+                << interestName << std::endl;
+      return;
+    }
+
+    PendingInterest pending{interestName, false, 0};
     m_pendingInterests.push_back(std::move(pending));
+    m_pendingNames.insert(interestName);
 
     if (m_forceMobilityOnceFlag) {
       m_forceMobilityOnceFlag = false;
@@ -344,6 +354,7 @@ private:
   bool m_enableOptoFlood = false;
   bool m_forceMobilityOnceFlag = false;
   std::deque<PendingInterest> m_pendingInterests;
+  std::unordered_set<Name> m_pendingNames;
   uint64_t m_floodIdSeq = 0;
   
   // Statistics counters for experiment analysis
