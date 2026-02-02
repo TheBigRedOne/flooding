@@ -8,6 +8,7 @@ Outputs:
 """
 
 import json
+import ipaddress
 import os
 import struct
 import subprocess
@@ -149,6 +150,44 @@ def _strip_link_header(frame: bytes, linktype: int) -> Optional[Tuple[int, int, 
         packet_type = frame[10]
         eth_type = (frame[0] << 8) | frame[1]
         return packet_type, eth_type, frame[20:]
+    return None
+
+
+def _parse_link_header(frame: bytes, linktype: int) -> Optional[Tuple[int, Optional[int], int, bytes]]:
+    """
+    Return (pkttype, ifindex, eth_type, payload).
+    pkttype: 4 = outgoing (Linux cooked); ifindex only available on SLL2.
+    """
+    if linktype == _LINKTYPE_LINUX_SLL2:
+        if len(frame) < 20:
+            return None
+        protocol = (frame[0] << 8) | frame[1]
+        ifindex = int.from_bytes(frame[4:8], 'big')
+        pkttype = frame[10]
+        return pkttype, ifindex, protocol, frame[20:]
+    if linktype == _LINKTYPE_LINUX_SLL:
+        if len(frame) < 16:
+            return None
+        pkttype = (frame[0] << 8) | frame[1]
+        protocol = (frame[14] << 8) | frame[15]
+        return pkttype, None, protocol, frame[16:]
+    if linktype == _LINKTYPE_ETHERNET:
+        if len(frame) < 14:
+            return None
+        eth_type = (frame[12] << 8) | frame[13]
+        return None, None, eth_type, frame[14:]
+    return None
+
+
+def _extract_ip_dst(eth_type: int, payload: bytes) -> Optional[str]:
+    if eth_type == 0x0800:  # IPv4
+        if len(payload) < 20:
+            return None
+        return str(ipaddress.ip_address(payload[16:20]))
+    if eth_type == 0x86DD:  # IPv6
+        if len(payload) < 40:
+            return None
+        return str(ipaddress.ip_address(payload[24:40]))
     return None
 
 
@@ -326,56 +365,51 @@ def _collect_outbound_flood_records(pcap_files: List[str]) -> Dict[str, Dict[Tup
             continue
         node = os.path.splitext(os.path.basename(pcap))[0]
         records: Dict[Tuple[int, str, str], List[OutboundFloodRecord]] = defaultdict(list)
+        frame_map: Dict[int, Tuple[int, Optional[int]]] = {}
+
         cmd = tshark_cmd([
             '-r', pcap,
             '-Y', 'ndn.type==Data',
             '-T', 'fields',
-            '-e', 'sll.pkttype',
-            '-e', 'sll.ifindex',
-            '-e', 'ip.dst',
-            '-e', 'ndn.flood_id',
             '-e', 'frame.number',
+            '-e', 'ndn.flood_id',
             '-e', 'ndn.lp.hoplimit',
         ])
         res = run(cmd)
         if res.returncode != 0:
             continue
         for line in res.stdout.splitlines():
-            cols = line.strip().split('\t')
-            if len(cols) < 6:
-                continue
-            pkttype = cols[0].strip()
-            iface = cols[1].strip() or '?'
-            dst = cols[2].strip() or '?'
-            fid = cols[3].strip()
-            frame_no = cols[4].strip()
-            hop_raw = cols[5].strip()
-            if pkttype != '4' or not fid:
-                continue
-            if dst == '?' or not dst:
-                continue
+            cols = line.rstrip('\n').split('\t')
+            cols += [''] * (3 - len(cols))
+            frame_raw, fid_raw, hop_raw = cols[:3]
             try:
-                flood_id = int(fid)
+                frame_no = int(frame_raw)
             except ValueError:
                 continue
-            hoplimit: Optional[int]
-            if hop_raw:
-                try:
-                    hoplimit = int(hop_raw)
-                except ValueError:
-                    hoplimit = None
-            else:
-                hoplimit = None
-            frame_idx: Optional[int]
-            if frame_no:
-                try:
-                    frame_idx = int(frame_no)
-                except ValueError:
-                    frame_idx = None
-            else:
-                frame_idx = None
+            fid_tokens = _parse_int_tokens([fid_raw])
+            if not fid_tokens:
+                continue
+            hop_tokens = _parse_int_tokens([hop_raw])
+            hoplimit = hop_tokens[0] if hop_tokens else None
+            frame_map[frame_no] = (fid_tokens[0], hoplimit)
+
+        if not frame_map:
+            continue
+
+        for idx, (_, frame, linktype) in enumerate(_iter_pcap_frames(pcap), start=1):
+            if idx not in frame_map:
+                continue
+            parsed = _parse_link_header(frame, linktype)
+            if parsed is None:
+                continue
+            pkttype, ifindex, eth_type, payload = parsed
+            if pkttype is not None and pkttype != 4:
+                continue
+            dst = _extract_ip_dst(eth_type, payload) or '?'
+            flood_id, hoplimit = frame_map[idx]
+            iface = str(ifindex) if ifindex is not None else '?'
             key = (flood_id, iface, dst)
-            records[key].append(OutboundFloodRecord(flood_id, iface, dst, hoplimit, frame_idx))
+            records[key].append(OutboundFloodRecord(flood_id, iface, dst, hoplimit, idx))
         if records:
             outbound[node] = records
     return outbound
