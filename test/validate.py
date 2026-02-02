@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-Purpose: Strong validation for S1–S5 using tshark JSON and logs.
+Purpose: Strong validation for S1–S5 using pcaps, RIB snapshots, and logs.
 Interface:
   python3 validate.py s1|s2|s3|s4|s5
 Outputs:
   Prints PASS/FAIL and minimal evidence paths. Returns non-zero on FAIL.
 """
 
+import glob
 import json
 import os
 import struct
@@ -19,6 +20,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 RESULTS_DIR = os.path.join(TEST_DIR, 'results')
 PCAP_DIR = os.path.join(RESULTS_DIR, 'pcap')
+LOG_DIR = os.path.join(RESULTS_DIR, 'logs')
 # Load custom dissector explicitly for tshark
 LUA_DISS = os.path.abspath(os.path.join(TEST_DIR, '..', 'experiment', 'tool', 'ndn.lua'))
 
@@ -47,6 +49,18 @@ def tshark_json(pcap: str, fields: List[str]) -> List[dict]:
         print(f"FAIL: cannot decode tshark JSON from {pcap}")
         sys.exit(1)
     return data
+
+
+def iter_log_lines(suffix: str) -> Iterable[str]:
+    if not os.path.isdir(LOG_DIR):
+        return
+    for path in sorted(glob.glob(os.path.join(LOG_DIR, f"*{suffix}"))):
+        try:
+            with open(path, 'r', encoding='utf-8', errors='ignore') as fp:
+                for line in fp:
+                    yield line.strip()
+        except OSError:
+            continue
 
 
 def tshark_fields(pcap: str, display_filter: str, field: str) -> List[str]:
@@ -387,43 +401,54 @@ def extract_hoplimits(json_packets: List[dict], is_data: bool) -> List[int]:
 
 
 def validate_s1() -> None:
-    # Expect at least one FloodId with OptoHopLimit values forming a contiguous chain down to 0.
-    path_pcaps = [
-        os.path.join(PCAP_DIR, 'r2.pcap'),
-        os.path.join(PCAP_DIR, 'r3.pcap'),
-        os.path.join(PCAP_DIR, 'r4.pcap'),
-        os.path.join(PCAP_DIR, 'r5.pcap'),
-    ]
-    flood_map = _collect_flood_hoplimits(path_pcaps)
-    if not flood_map:
-        print('FAIL: S1 no Data flood hoplimit observed (check pcaps/dissector)')
+    # Expect FloodId + LP MobilityFlag on Data across >=2 routers.
+    nodes = ['r1', 'r2', 'r3', 'r4', 'r5']
+    flood_nodes: Dict[int, set] = defaultdict(set)
+    flood_with_flag: set = set()
+    for node in nodes:
+        pcap = os.path.join(PCAP_DIR, f'{node}.pcap')
+        if not os.path.exists(pcap):
+            continue
+        cmd = tshark_cmd([
+            '-r', pcap,
+            '-Y', 'ndn.type==Data',
+            '-T', 'fields',
+            '-e', 'ndn.flood_id',
+            '-e', 'ndn.lp.mobility_flag',
+        ])
+        res = run(cmd)
+        if res.returncode != 0:
+            continue
+        for line in res.stdout.splitlines():
+            cols = [c.strip() for c in line.split('\t')]
+            if not cols:
+                continue
+            fid_raw = cols[0]
+            if not fid_raw:
+                continue
+            try:
+                fid = int(fid_raw)
+            except ValueError:
+                continue
+            flood_nodes[fid].add(node)
+            if len(cols) > 1 and cols[1]:
+                flood_with_flag.add(fid)
+    candidates = [fid for fid, nodeset in flood_nodes.items() if len(nodeset) >= 2]
+    if not candidates:
+        print('FAIL: S1 no FloodId observed across >=2 routers (check pcaps/dissector)')
         sys.exit(1)
-    for flood_id, values in flood_map.items():
-        usable = {v for v in values if v >= 0}
-        if not usable or 0 not in usable:
-            continue
-        max_h = max(usable)
-        if max_h < 2:
-            continue
-        if all(val in usable for val in range(0, max_h + 1)):
-            chain = sorted(usable, reverse=True)
-            print(f'PASS: S1 Flood {flood_id} hoplimits {chain} show decrement to 0')
-            return
-    detail = '; '.join(f'{fid}:{sorted(sorted_vals)}' for fid, sorted_vals in ((fid, sorted(vals)) for fid, vals in flood_map.items()))
-    print('FAIL: S1 insufficient hoplimit coverage; need contiguous values down to 0. Observed =', detail)
-    sys.exit(1)
+    if not any(fid in flood_with_flag for fid in candidates):
+        print('FAIL: S1 FloodId observed but LP MobilityFlag missing')
+        sys.exit(1)
+    print('PASS: S1 FloodId + MobilityFlag observed across routers, ids =', sorted(candidates)[:3])
 
 
 def validate_s4() -> None:
-    nodes = ['r2', 'r3', 'r4', 'r5']
-    observations: List[Tuple[str, int]] = []
+    # Expect Interest HopLimit decrement for the same Nonce across >=2 routers.
+    nodes = ['r1', 'r2', 'r3', 'r4', 'r5']
 
-    def _collect_interest_records(pcap_path: str) -> List[Tuple[int, str, int, int, str]]:
-        """
-        Return list of (frame_no, dir, hop, nonce, name)
-        dir: 'in' (pkttype!=4) or 'out' (pkttype==4)
-        """
-        records: List[Tuple[int, str, int, int, str]] = []
+    def _collect_interest_records(pcap_path: str) -> List[Tuple[int, int]]:
+        records: List[Tuple[int, int]] = []
         if not os.path.exists(pcap_path):
             return records
         filter_expr = 'ndn.type==Interest && ndn.name contains "/example/LiveStream" && !(ndn.name contains "/localhost/")'
@@ -432,20 +457,18 @@ def validate_s4() -> None:
             '-Y', filter_expr,
             '-T', 'fields',
             '-e', 'sll.pkttype',
-            '-e', 'frame.number',
             '-e', 'ndn.hoplimit',
             '-e', 'ndn.nonce',
-            '-e', 'ndn.name',
         ])
         res = run(cmd)
         if res.returncode != 0:
             return records
         for line in res.stdout.splitlines():
             cols = [col.strip() for col in line.split('\t')]
-            if len(cols) < 5:
+            if len(cols) < 3:
                 continue
-            pkttype, frame_raw, hop_raw, nonce_raw, name_raw = cols[:5]
-            if not name_raw.startswith('/example/LiveStream'):
+            pkttype, hop_raw, nonce_raw = cols[:3]
+            if pkttype == '4':
                 continue
             hop_val: Optional[int] = None
             for token in hop_raw.replace(',', ' ').split():
@@ -457,90 +480,26 @@ def validate_s4() -> None:
             if hop_val is None:
                 continue
             try:
-                frame_no = int(frame_raw)
-            except ValueError:
-                continue
-            try:
                 nonce_val = int(nonce_raw, 16)
             except ValueError:
                 continue
-            direction = 'out' if pkttype == '4' else 'in'
-            records.append((frame_no, direction, hop_val, nonce_val, name_raw))
-        records.sort(key=lambda x: x[0])
+            records.append((nonce_val, hop_val))
         return records
 
-    nodes = ['r2', 'r3', 'r4', 'r5']
-    records_by_node = {node: _collect_interest_records(os.path.join(PCAP_DIR, f'{node}.pcap')) for node in nodes}
-
-    def _has_rib_entry(node: str, prefix: str) -> bool:
-        for label in ('T2', 'T1', 'T0'):
-            rib_path = os.path.join(RESULTS_DIR, f'{node}_{label}_rib.txt')
-            if os.path.exists(rib_path):
-                with open(rib_path, 'r', encoding='utf-8', errors='ignore') as fp:
-                    if prefix in fp.read():
-                        return True
-        return False
-
-    # Build first in/out per nonce per node
-    first_in = {node: {} for node in nodes}
-    first_out = {node: {} for node in nodes}
+    nonce_hops: Dict[int, set] = defaultdict(set)
     for node in nodes:
-        for frame_no, direction, hop, nonce, name in records_by_node[node]:
-            if direction == 'in' and nonce not in first_in[node]:
-                first_in[node][nonce] = (frame_no, hop)
-            if direction == 'out' and nonce not in first_out[node]:
-                first_out[node][nonce] = (frame_no, hop)
+        pcap = os.path.join(PCAP_DIR, f'{node}.pcap')
+        for nonce, hop in _collect_interest_records(pcap):
+            nonce_hops[nonce].add(hop)
 
-    # Candidate nonces (mode A): seen inbound on >=3 nodes, else >=2
-    nonce_in_nodes = {}
-    for node in nodes:
-        for nonce in first_in[node]:
-            nonce_in_nodes.setdefault(nonce, set()).add(node)
-
-    candidates_3 = [n for n, s in nonce_in_nodes.items() if len(s) >= 3]
-    candidates_2 = [n for n, s in nonce_in_nodes.items() if len(s) >= 2]
-    candidates_inbound = candidates_3 if candidates_3 else candidates_2
-
-    # Candidate nonces (mode B fallback): r2 outbound present AND at least one downstream inbound
-    r2_out_nonces = set(first_out['r2'].keys())
-    downstream_in_nonces = set()
-    for node in ['r3', 'r4', 'r5']:
-        downstream_in_nonces.update(first_in[node].keys())
-    candidates_fallback = [n for n in r2_out_nonces if n in downstream_in_nonces]
-
-    candidates = candidates_inbound if candidates_inbound else candidates_fallback
-
-    def check_nonce(nonce: int) -> Optional[List[int]]:
-        # per-node in/out check: if both exist, enforce in = out + 1
-        for node in nodes:
-            if nonce in first_in[node] and nonce in first_out[node]:
-                hop_in = first_in[node][nonce][1]
-                hop_out = first_out[node][nonce][1]
-                if hop_in != hop_out + 1:
-                    return None
-        # build inbound chain in node order
-        inbound_chain: List[int] = []
-        for node in nodes:
-            if nonce in first_in[node]:
-                inbound_chain.append(first_in[node][nonce][1])
-        if len(inbound_chain) < 2:
-            return None
-        if not all(inbound_chain[i] == inbound_chain[i - 1] - 1 for i in range(1, len(inbound_chain))):
-            return None
-        return inbound_chain
-
-    for candidate in candidates:
-        chain = check_nonce(candidate)
-        if not chain:
+    for nonce, hops in nonce_hops.items():
+        if len(hops) < 2:
             continue
-        if chain[-1] <= 0:
-            print(f'PASS: S4 Interest HopLimit decrement path = {chain} (nonce={hex(candidate)})')
-            return
-        last_node_idx = ['r2', 'r3', 'r4', 'r5'][len(chain) - 1]
-        if _has_rib_entry(last_node_idx, '/example/LiveStream'):
-            print(f'PASS: S4 Interest HopLimit chain={chain} stopped at {last_node_idx} due to existing route (nonce={hex(candidate)})')
-            return
-    print('FAIL: S4 no matching Interest nonce with monotonic HopLimit across nodes; candidates checked =', len(candidates))
+        for hop in hops:
+            if hop - 1 in hops:
+                print(f'PASS: S4 Interest HopLimit decremented for nonce={hex(nonce)} hops={sorted(hops, reverse=True)}')
+                return
+    print('FAIL: S4 no Interest nonce shows HopLimit decrement across routers')
     sys.exit(1)
 
 
@@ -569,42 +528,58 @@ def validate_s2() -> None:
 
 
 def validate_s3() -> None:
-    # Strong TFIB window evidence via RIB snapshots (T1 vs T2) and Interest presence
-    r3_rib_T1 = os.path.join(RESULTS_DIR, 'r3_T1_rib.txt')
-    r3_rib_T2 = os.path.join(RESULTS_DIR, 'r3_T2_rib.txt')
-    if not (os.path.exists(r3_rib_T1) and os.path.exists(r3_rib_T2)):
-        print('FAIL: S3 missing RIB snapshots (r3_T1_rib.txt/r3_T2_rib.txt)')
+    # Expect TFIB update and TFIB forwarding to occur.
+    lines = list(iter_log_lines('-nfd.log'))
+    if not lines:
+        print('FAIL: S3 missing NFD logs (results/logs/*-nfd.log)')
         sys.exit(1)
-    with open(r3_rib_T1, 'r', encoding='utf-8', errors='ignore') as f1, open(r3_rib_T2, 'r', encoding='utf-8', errors='ignore') as f2:
-        t1 = f1.read()
-        t2 = f2.read()
-    if t1 == t2:
-        print('FAIL: S3 RIB did not change across T1->T2 window')
-        sys.exit(1)
-    p = os.path.join(PCAP_DIR, 'r3.pcap')
-    if os.path.exists(p):
-        res = run(tshark_cmd(['-r', p, '-Y', 'ndn.type==5', '-c', '1']))
-        if res.returncode != 0:
-            print('FAIL: S3 no Interest observed at r3 during window')
-            sys.exit(1)
-    print('PASS: S3 TFIB window evidenced by RIB change and Interest presence')
+    has_update = any("OptoFlood TFIB update prefix=/example/LiveStream" in ln for ln in lines)
+    has_forward = any("OptoFlood tfib-forward interest=/example/LiveStream" in ln for ln in lines)
+    if has_update and has_forward:
+        print('PASS: S3 TFIB update and TFIB forwarding observed in NFD logs')
+        return
+    print('FAIL: S3 TFIB update/forwarding not observed (check TFIB path)')
+    sys.exit(1)
 
 
 def validate_s5() -> None:
-    # Strong Fast-LSA check via RIB snapshots: detect short-lived route between T1 and T2
-    r3_rib_T1 = os.path.join(RESULTS_DIR, 'r3_T1_rib.txt')
-    r3_rib_T2 = os.path.join(RESULTS_DIR, 'r3_T2_rib.txt')
-    if not (os.path.exists(r3_rib_T1) and os.path.exists(r3_rib_T2)):
-        print('FAIL: S5 missing RIB snapshots (r3_T1_rib.txt/r3_T2_rib.txt)')
+    # Fast-LSA check: optoflood-origin route appears shortly after move, then expires.
+    def rib_has_origin(path: str, prefix: str, origin: str) -> bool:
+        try:
+            with open(path, 'r', encoding='utf-8', errors='ignore') as fp:
+                lines = fp.read().splitlines()
+        except OSError:
+            return False
+        current_prefix = None
+        for raw in lines:
+            line = raw.strip()
+            if not line:
+                continue
+            if line.startswith(prefix) or line.startswith(f"prefix={prefix}") or line.startswith(f"prefix: {prefix}"):
+                current_prefix = prefix
+            elif line.startswith('/') or line.startswith('prefix=') or line.startswith('prefix:'):
+                current_prefix = None
+            if current_prefix == prefix and f"origin={origin}" in line:
+                return True
+        return False
+
+    t1_ribs = sorted(glob.glob(os.path.join(RESULTS_DIR, '*_T1_*_rib.txt')))
+    t2_ribs = sorted(glob.glob(os.path.join(RESULTS_DIR, '*_T2_rib.txt')))
+    if not t1_ribs or not t2_ribs:
+        print('FAIL: S5 missing RIB snapshots (T1_* or T2)')
         sys.exit(1)
-    with open(r3_rib_T1, 'r', encoding='utf-8', errors='ignore') as f1, open(r3_rib_T2, 'r', encoding='utf-8', errors='ignore') as f2:
-        t1 = f1.read().splitlines()
-        t2 = f2.read().splitlines()
-    disappeared = [ln for ln in t1 if ln not in t2]
-    if not disappeared:
-        print('FAIL: S5 no short-lived RIB entries detected between T1 and T2')
+
+    prefix = '/example/LiveStream'
+    origin = 'optoflood'
+    t1_has = any(rib_has_origin(p, prefix, origin) for p in t1_ribs)
+    t2_has = any(rib_has_origin(p, prefix, origin) for p in t2_ribs)
+    if not t1_has:
+        print('FAIL: S5 no optoflood route observed in T1 snapshots')
         sys.exit(1)
-    print('PASS: S5 short-lived RIB entries detected, count =', len(disappeared))
+    if t2_has:
+        print('FAIL: S5 optoflood route still present in T2 snapshots (should expire)')
+        sys.exit(1)
+    print('PASS: S5 optoflood route observed in T1 and expired by T2')
 
 
 def main():

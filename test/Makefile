@@ -2,7 +2,7 @@ PROVIDER ?= virtualbox
 export PROVIDER
 
 # Purpose: Run solution VM validations (S1–S5) and manage VM lifecycle
-# Interface: test-all, validate-s[1..5], vm-up|vm-halt|vm-destroy; PROVIDER=kvm|vb
+# Interface: test-all, validate-s[1..5], vm-up|vm-halt|vm-destroy; PROVIDER=libvirt|virtualbox
 
 ROOT_DIR := ..
 SOLUTION_BOX := $(ROOT_DIR)/box/solution/solution.$(PROVIDER).box
@@ -58,7 +58,10 @@ sync: $(SSH_CONFIG)
 RESULTS_DIR := $(ROOT_DIR)/test/results
 PCAP_DIR := $(RESULTS_DIR)/pcap
 PCAPS := $(PCAP_DIR)/consumer.pcap $(PCAP_DIR)/producer.pcap $(PCAP_DIR)/r1.pcap $(PCAP_DIR)/r2.pcap $(PCAP_DIR)/r3.pcap $(PCAP_DIR)/r4.pcap $(PCAP_DIR)/r5.pcap
-RIBS  := $(RESULTS_DIR)/r3_T1_rib.txt $(RESULTS_DIR)/r3_T2_rib.txt
+RIB_NODES := r1 r2 r3 r4 r5
+T1_LABELS := T1_0 T1_1 T1_2 T1_3 T1_4
+RIBS := $(foreach n,$(RIB_NODES),$(foreach t,$(T1_LABELS),$(RESULTS_DIR)/$(n)_$(t)_rib.txt)) \
+        $(foreach n,$(RIB_NODES),$(RESULTS_DIR)/$(n)_T2_rib.txt)
 VALIDATE_OK := $(ROOT_DIR)/test/.validate_ok
 VM_VALIDATE_STAMP := $(RESULTS_DIR)/.validate_ok_vm
 
@@ -96,29 +99,29 @@ validate: $(VALIDATE_OK)
 # Test aggregator
 test-all: $(VALIDATE_OK)
 
-# S1: Data-side controllable flooding (LP OptoHopLimit decremented per hop)
+# S1: Data-side controllable flooding (PCAP evidence)
 validate-s1:
-	@echo "[S1] Validating Data OptoHopLimit decrement and stop";
+	@echo "[S1] Validating OptoFlood data flooding in PCAP";
 	python3 validate.py s1 || (echo "S1 FAIL" && exit 1)
 
-# S2: Data deduplication and rate limiting
+# S2: Data deduplication
 validate-s2:
-	@echo "[S2] Validating Data deduplication & rate limiting";
+	@echo "[S2] Validating Data deduplication";
 	python3 validate.py s2 || (echo "S2 FAIL" && exit 1)
 
-# S3: TFIB behavior (insert/hit/expire ~1s)
+# S3: TFIB update + forwarding
 validate-s3:
-	@echo "[S3] Validating TFIB insert/hit/expire";
+	@echo "[S3] Validating TFIB update and forwarding";
 	python3 validate.py s3 || (echo "S3 FAIL" && exit 1)
 
-# S4: Interest-side controllable flooding (filters mgmt interests)
+# S4: Interest-side controllable flooding (PCAP evidence)
 validate-s4:
-	@echo "[S4] Validating Interest HopLimit decrement under miss";
+	@echo "[S4] Validating Interest HopLimit decrement in PCAP";
 	python3 validate.py s4 || (echo "S4 FAIL" && exit 1)
 
-# S5: Fast-LSA (mgmt command + short-lived RIB with throttling/dedup)
+# S5: Fast-LSA short-lived optoflood route
 validate-s5:
-	@echo "[S5] Validating Fast-LSA throttle/dedup and short-lived RIB";
+	@echo "[S5] Validating Fast-LSA optoflood route appearance/expiry";
 	python3 validate.py s5 || (echo "S5 FAIL" && exit 1)
 
 .PHONY: kvm vb
