@@ -143,11 +143,12 @@ def _strip_link_header(frame: bytes, linktype: int) -> Optional[Tuple[int, int, 
         eth_type = (frame[14] << 8) | frame[15]
         return packet_type, eth_type, frame[16:]
     if linktype == _LINKTYPE_LINUX_SLL2:
-        if len(frame) < 22:
+        # Linux SLL2 header is 20 bytes; protocol is at bytes 0-1
+        if len(frame) < 20:
             return None
-        packet_type = (frame[8] << 8) | frame[9]
-        eth_type = (frame[20] << 8) | frame[21]
-        return packet_type, eth_type, frame[22:]
+        packet_type = frame[10]
+        eth_type = (frame[0] << 8) | frame[1]
+        return packet_type, eth_type, frame[20:]
     return None
 
 
