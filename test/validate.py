@@ -246,6 +246,28 @@ def _collect_flood_hoplimits(pcap_files: List[str]) -> Dict[int, set]:
             except ValueError:
                 continue
             flood_map[flood_id].add(hop)
+    if flood_map:
+        return flood_map
+    return _collect_flood_hoplimits_raw(pcap_files)
+
+
+def _collect_flood_hoplimits_raw(pcap_files: List[str]) -> Dict[int, set]:
+    flood_map: Dict[int, set] = defaultdict(set)
+    for pcap in pcap_files:
+        if not os.path.exists(pcap):
+            continue
+        for _, frame, linktype in _iter_pcap_frames(pcap):
+            stripped = _strip_link_header(frame, linktype)
+            if stripped is None:
+                continue
+            _, eth_type, payload = stripped
+            if eth_type != _ETHERTYPE_NDN:
+                continue
+            decoded = _decode_flood_and_hop(payload)
+            if decoded is None:
+                continue
+            flood_id, hop = decoded
+            flood_map[flood_id].add(hop)
     return flood_map
 
 
