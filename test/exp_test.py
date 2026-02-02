@@ -7,13 +7,12 @@ from minindn.apps.nfd import Nfd
 from minindn.apps.nlsr import Nlsr
 from mininet.topo import Topo
 import os
-import shutil
 
 
 class BranchTopo(Topo):
     """
     Purpose: Build R1–R2–R3–R4 linear chain with a branch at R3 to R5.
-    Interface: consumer attaches to R1; producer initially attaches to R2, then moves to R3 for validation.
+    Interface: consumer attaches to R1; producer initially attaches to R2, then moves to R3, then to R4 and R5.
     Nodes: r1, r2, r3, r4, r5, consumer, producer.
     Links: r1-r2-r3-r4 chain; r3-r5 branch; consumer–r1; producer–r2 active; producer–r3/r4/r5 pre-created for mobility events.
     """
@@ -53,21 +52,9 @@ if __name__ == '__main__':
         exit(1)
 
     # Prepare output paths
-    results_dir = os.getenv('RESULTS_DIR')
-    if not results_dir:
-        results_dir = os.path.join(experiment_dir, 'results')
-    results_dir = os.path.abspath(results_dir)
+    results_dir = os.path.join(experiment_dir, 'results')
     pcap_dir = os.path.join(results_dir, 'pcap')
-    log_dir = os.path.join(results_dir, 'logs')
     os.makedirs(pcap_dir, exist_ok=True)
-    os.makedirs(log_dir, exist_ok=True)
-
-    # Timing parameters (seconds)
-    converge_wait = 30
-    app_warmup = 20
-    t1_samples = 5
-    t1_interval = 0.5
-    t2_wait = 6
 
     # Clean and verify Mini-NDN
     Minindn.cleanUp()
@@ -83,7 +70,7 @@ if __name__ == '__main__':
     nlsrs = AppManager(ndn, ndn.net.hosts, Nlsr)
 
     # Allow routing to converge
-    sleep(converge_wait)
+    sleep(30)
 
     # Ensure only producer–r2 is initially active (simulate initial attachment)
     ndn.net.configLinkStatus('producer', 'r3', 'down')
@@ -134,23 +121,31 @@ if __name__ == '__main__':
     consumer.cmd(f"{consumer_exec} &> {consumer_log} &")
 
     # Warm-up period, then take T0 snapshot
-    sleep(app_warmup)
+    sleep(60)
     for n in (r1, r2, r3, r4, r5):
         snap(n, 'T0')
 
-    # Mobility event #1: move producer to r3 (fast snapshot window for S3/S5)
+    # Mobility event #1: move producer to r3 (linear validation: S1/S3/S4)
     info('Mobility #1: producer attaches to r3\n')
     ndn.net.configLinkStatus('producer', 'r2', 'down')
     ndn.net.configLinkStatus('producer', 'r3', 'up')
-    for idx in range(t1_samples):
-        sleep(t1_interval)
-        for n in (r1, r2, r3, r4, r5):
-            snap(n, f"T1_{idx}")
+    sleep(120)
+    for n in (r1, r2, r3, r4, r5):
+        snap(n, 'T1')
 
-    # Post-Fast-LSA snapshot window (after short-lived routes expire)
-    sleep(t2_wait)
+    # Mobility event #2: move producer to r4 (branch path A)
+    info('Mobility #2: producer attaches to r4\n')
+    ndn.net.configLinkStatus('producer', 'r3', 'down')
+    ndn.net.configLinkStatus('producer', 'r4', 'up')
+    sleep(120)
     for n in (r1, r2, r3, r4, r5):
         snap(n, 'T2')
+
+    # Mobility event #3: move producer to r5 (branch path B)
+    info('Mobility #3: producer attaches to r5\n')
+    ndn.net.configLinkStatus('producer', 'r4', 'down')
+    ndn.net.configLinkStatus('producer', 'r5', 'up')
+    sleep(120)
 
     # Stop tcpdump
     consumer.cmd("pkill -f 'tcpdump -i any' || true")
@@ -160,13 +155,6 @@ if __name__ == '__main__':
     r3.cmd("pkill -f 'tcpdump -i any' || true")
     r4.cmd("pkill -f 'tcpdump -i any' || true")
     r5.cmd("pkill -f 'tcpdump -i any' || true")
-
-    # Collect NFD/NLSR logs for validation
-    for node in (consumer, producer, r1, r2, r3, r4, r5):
-        for log_name in ('nfd.log', 'nlsr.log'):
-            src = f"/tmp/minindn/{node.name}/log/{log_name}"
-            if os.path.exists(src):
-                shutil.copy2(src, os.path.join(log_dir, f"{node.name}-{log_name}"))
 
     ndn.stop()
 
