@@ -53,7 +53,10 @@ if __name__ == '__main__':
         exit(1)
 
     # Prepare output paths
-    results_dir = os.path.join(experiment_dir, 'results')
+    results_dir = os.getenv('RESULTS_DIR')
+    if not results_dir:
+        results_dir = os.path.join(experiment_dir, 'results')
+    results_dir = os.path.abspath(results_dir)
     pcap_dir = os.path.join(results_dir, 'pcap')
     log_dir = os.path.join(results_dir, 'logs')
     os.makedirs(pcap_dir, exist_ok=True)

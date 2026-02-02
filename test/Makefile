@@ -54,8 +54,9 @@ $(SSH_CONFIG): $(ROOT_DIR)/test/Vagrantfile $(SOLUTION_BOX)
 sync: $(SSH_CONFIG)
 	$(RSYNC_SOLUTION) $(RSYNC_EXCLUDES) $(ROOT_DIR)/ solution:$(REMOTE_DIR)/
 
-# Expected artifacts on host (collected under test/results)
-RESULTS_DIR := $(ROOT_DIR)/test/results
+# Expected artifacts on host (collected under results/test)
+RESULTS_DIR := $(ROOT_DIR)/results/test
+REMOTE_RESULTS_DIR := $(REMOTE_DIR)/results/test
 PCAP_DIR := $(RESULTS_DIR)/pcap
 PCAPS := $(PCAP_DIR)/consumer.pcap $(PCAP_DIR)/producer.pcap $(PCAP_DIR)/r1.pcap $(PCAP_DIR)/r2.pcap $(PCAP_DIR)/r3.pcap $(PCAP_DIR)/r4.pcap $(PCAP_DIR)/r5.pcap
 RIB_NODES := r1 r2 r3 r4 r5
@@ -76,17 +77,17 @@ $(PCAPS) $(RIBS) &: sync
 	# Ensure tshark loads updated NDN dissector (ndn.lua)
 	$(VAGRANT_SOLUTION) ssh -c 'set -e; sudo mkdir -p /usr/local/share/ndn-dissect-wireshark && sudo cp $(REMOTE_DIR)/experiment/tool/ndn.lua /usr/local/share/ndn-dissect-wireshark/ndn.lua'
 	# Preflight check for tshark presence
-	$(VAGRANT_SOLUTION) ssh -c 'EXPERIMENT_DIR=$(REMOTE_DIR)/test WIRESHARK_RUN_FROM_BUILD_DIRECTORY=1 WIRESHARK_PLUGIN_DIR= /usr/bin/sudo -E tshark -v >/dev/null 2>&1'
-	# Run test topology; generate artifacts under $(REMOTE_DIR)/test
-	$(VAGRANT_SOLUTION) ssh -c 'EXPERIMENT_DIR=$(REMOTE_DIR)/test WIRESHARK_RUN_FROM_BUILD_DIRECTORY=1 WIRESHARK_PLUGIN_DIR= LUA_PATH="/usr/local/share/ndn-dissect-wireshark/?.lua;;" LUA_CPATH=";;" /usr/bin/sudo -E python3 $(REMOTE_DIR)/test/exp_test.py'
+	$(VAGRANT_SOLUTION) ssh -c 'EXPERIMENT_DIR=$(REMOTE_DIR)/test RESULTS_DIR=$(REMOTE_RESULTS_DIR) WIRESHARK_RUN_FROM_BUILD_DIRECTORY=1 WIRESHARK_PLUGIN_DIR= /usr/bin/sudo -E tshark -v >/dev/null 2>&1'
+	# Run test topology; generate artifacts under $(REMOTE_RESULTS_DIR)
+	$(VAGRANT_SOLUTION) ssh -c 'EXPERIMENT_DIR=$(REMOTE_DIR)/test RESULTS_DIR=$(REMOTE_RESULTS_DIR) WIRESHARK_RUN_FROM_BUILD_DIRECTORY=1 WIRESHARK_PLUGIN_DIR= LUA_PATH="/usr/local/share/ndn-dissect-wireshark/?.lua;;" LUA_CPATH=";;" /usr/bin/sudo -E python3 $(REMOTE_DIR)/test/exp_test.py'
 	# Ensure result directories exist in VM
-	$(VAGRANT_SOLUTION) ssh -c 'mkdir -p $(REMOTE_DIR)/test/results/pcap'
+	$(VAGRANT_SOLUTION) ssh -c 'mkdir -p $(REMOTE_RESULTS_DIR)/pcap'
 	# Run validation inside VM (uses system python3 + tshark in box)
-	$(VAGRANT_SOLUTION) ssh -c 'cd $(REMOTE_DIR)/test && /usr/bin/sudo -E python3 validate.py'
-	$(VAGRANT_SOLUTION) ssh -c 'cd $(REMOTE_DIR)/test && /usr/bin/sudo chown -R vagrant:vagrant $(REMOTE_DIR)/test/results && echo OK > results/.validate_ok_vm'
-	# Rsync back test artifacts (including VM validate stamp) to host test/results
+	$(VAGRANT_SOLUTION) ssh -c 'cd $(REMOTE_DIR)/test && RESULTS_DIR=$(REMOTE_RESULTS_DIR) /usr/bin/sudo -E python3 validate.py'
+	$(VAGRANT_SOLUTION) ssh -c 'cd $(REMOTE_DIR)/test && /usr/bin/sudo chown -R vagrant:vagrant $(REMOTE_RESULTS_DIR) && echo OK > $(REMOTE_RESULTS_DIR)/.validate_ok_vm'
+	# Rsync back test artifacts (including VM validate stamp) to host results/test
 	mkdir -p $(RESULTS_DIR)
-	$(RSYNC_SOLUTION) solution:$(REMOTE_DIR)/test/results/ $(RESULTS_DIR)/
+	$(RSYNC_SOLUTION) solution:$(REMOTE_RESULTS_DIR)/ $(RESULTS_DIR)/
 	@echo "Artifacts synced to $(RESULTS_DIR)/"
 
 # Validation stamp (runs all validations)
@@ -102,27 +103,27 @@ test-all: $(VALIDATE_OK)
 # S1: Data-side controllable flooding (PCAP evidence)
 validate-s1:
 	@echo "[S1] Validating OptoFlood data flooding in PCAP";
-	python3 validate.py s1 || (echo "S1 FAIL" && exit 1)
+	RESULTS_DIR=$(RESULTS_DIR) python3 validate.py s1 || (echo "S1 FAIL" && exit 1)
 
 # S2: Data deduplication
 validate-s2:
 	@echo "[S2] Validating Data deduplication";
-	python3 validate.py s2 || (echo "S2 FAIL" && exit 1)
+	RESULTS_DIR=$(RESULTS_DIR) python3 validate.py s2 || (echo "S2 FAIL" && exit 1)
 
 # S3: TFIB update + forwarding
 validate-s3:
 	@echo "[S3] Validating TFIB update and forwarding";
-	python3 validate.py s3 || (echo "S3 FAIL" && exit 1)
+	RESULTS_DIR=$(RESULTS_DIR) python3 validate.py s3 || (echo "S3 FAIL" && exit 1)
 
 # S4: Interest-side controllable flooding (PCAP evidence)
 validate-s4:
 	@echo "[S4] Validating Interest HopLimit decrement in PCAP";
-	python3 validate.py s4 || (echo "S4 FAIL" && exit 1)
+	RESULTS_DIR=$(RESULTS_DIR) python3 validate.py s4 || (echo "S4 FAIL" && exit 1)
 
 # S5: Fast-LSA short-lived optoflood route
 validate-s5:
 	@echo "[S5] Validating Fast-LSA optoflood route appearance/expiry";
-	python3 validate.py s5 || (echo "S5 FAIL" && exit 1)
+	RESULTS_DIR=$(RESULTS_DIR) python3 validate.py s5 || (echo "S5 FAIL" && exit 1)
 
 .PHONY: kvm vb
 kvm:

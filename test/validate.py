@@ -18,7 +18,8 @@ from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Tuple
 
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
-RESULTS_DIR = os.path.join(TEST_DIR, 'results')
+DEFAULT_RESULTS_DIR = os.path.join(TEST_DIR, 'results')
+RESULTS_DIR = os.path.abspath(os.getenv('RESULTS_DIR', DEFAULT_RESULTS_DIR))
 PCAP_DIR = os.path.join(RESULTS_DIR, 'pcap')
 LOG_DIR = os.path.join(RESULTS_DIR, 'logs')
 # Load custom dissector explicitly for tshark
