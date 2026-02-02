@@ -409,32 +409,70 @@ def extract_hoplimits(json_packets: List[dict], is_data: bool) -> List[int]:
     return hoplimits
 
 
+def _parse_int_tokens(values: Iterable[str]) -> List[int]:
+    parsed: List[int] = []
+    for item in values:
+        for token in item.replace(',', ' ').split():
+            try:
+                parsed.append(int(token))
+            except ValueError:
+                continue
+    return parsed
+
+
+def _collect_flood_ids_by_node(nodes: List[str]) -> Dict[str, set]:
+    by_node: Dict[str, set] = {}
+    for node in nodes:
+        pcap = os.path.join(PCAP_DIR, f'{node}.pcap')
+        ids: set = set()
+        if os.path.exists(pcap):
+            values = tshark_fields(pcap, 'ndn.type==Data', 'ndn.flood_id')
+            ids.update(_parse_int_tokens(values))
+        by_node[node] = ids
+    return by_node
+
+
 def validate_s1() -> None:
-    # Expect at least one FloodId with OptoHopLimit values forming a contiguous chain down to 0.
-    path_pcaps = [
-        os.path.join(PCAP_DIR, 'r2.pcap'),
-        os.path.join(PCAP_DIR, 'r3.pcap'),
-        os.path.join(PCAP_DIR, 'r4.pcap'),
-        os.path.join(PCAP_DIR, 'r5.pcap'),
-    ]
-    flood_map = _collect_flood_hoplimits(path_pcaps)
-    if not flood_map:
-        print('FAIL: S1 no Data flood hoplimit observed (check pcaps/dissector)')
+    # FIB-guided Data flooding: FloodId should be observed without requiring LP HopLimit,
+    # and downstream nodes should not see FloodIds that never appeared at the branch root.
+    nodes = ['r2', 'r3', 'r4', 'r5']
+    by_node = _collect_flood_ids_by_node(nodes)
+    all_ids = set().union(*by_node.values())
+    if not all_ids:
+        print('FAIL: S1 no Data FloodId observed (check pcaps/dissector)')
         sys.exit(1)
-    for flood_id, values in flood_map.items():
-        usable = {v for v in values if v >= 0}
-        if not usable or 0 not in usable:
-            continue
-        max_h = max(usable)
-        if max_h < 2:
-            continue
-        if all(val in usable for val in range(0, max_h + 1)):
-            chain = sorted(usable, reverse=True)
-            print(f'PASS: S1 Flood {flood_id} hoplimits {chain} show decrement to 0')
-            return
-    detail = '; '.join(f'{fid}:{sorted(sorted_vals)}' for fid, sorted_vals in ((fid, sorted(vals)) for fid, vals in flood_map.items()))
-    print('FAIL: S1 insufficient hoplimit coverage; need contiguous values down to 0. Observed =', detail)
-    sys.exit(1)
+
+    core_ids = by_node.get('r3', set())
+    if not core_ids:
+        print('FAIL: S1 core node r3 has no FloodId Data; cannot validate guided flooding')
+        sys.exit(1)
+
+    offenders = []
+    for node in ('r2', 'r4', 'r5'):
+        extra = sorted(by_node[node] - core_ids)
+        if extra:
+            offenders.append((node, extra[:10]))
+    if offenders:
+        detail = '; '.join(f'{node}:extra={extra}' for node, extra in offenders)
+        print('FAIL: S1 FloodId observed off-branch without passing r3 ->', detail)
+        sys.exit(1)
+
+    r4_ids = by_node.get('r4', set())
+    r5_ids = by_node.get('r5', set())
+    if r4_ids and r5_ids:
+        if min(r5_ids) < min(r4_ids):
+            print('FAIL: S1 branch ordering mismatch: r5 min FloodId precedes r4',
+                  f"(r4 min={min(r4_ids)}, r5 min={min(r5_ids)})")
+            sys.exit(1)
+
+    summary = []
+    for node in nodes:
+        ids = sorted(by_node[node])
+        if ids:
+            summary.append(f"{node}:{len(ids)} ids [{ids[0]}..{ids[-1]}]")
+        else:
+            summary.append(f"{node}:0 ids")
+    print('PASS: S1 FIB-guided flooding observed (FloodId ranges):', '; '.join(summary))
 
 
 def validate_s4() -> None:
