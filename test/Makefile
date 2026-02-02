@@ -82,13 +82,16 @@ $(PCAPS) $(RIBS) &: sync
 	$(VAGRANT_SOLUTION) ssh -c 'EXPERIMENT_DIR=$(REMOTE_DIR)/test RESULTS_DIR=$(REMOTE_RESULTS_DIR) WIRESHARK_RUN_FROM_BUILD_DIRECTORY=1 WIRESHARK_PLUGIN_DIR= LUA_PATH="/usr/local/share/ndn-dissect-wireshark/?.lua;;" LUA_CPATH=";;" /usr/bin/sudo -E python3 $(REMOTE_DIR)/test/exp_test.py'
 	# Ensure result directories exist in VM
 	$(VAGRANT_SOLUTION) ssh -c 'mkdir -p $(REMOTE_RESULTS_DIR)/pcap'
-	# Run validation inside VM (uses system python3 + tshark in box)
-	$(VAGRANT_SOLUTION) ssh -c 'cd $(REMOTE_DIR)/test && RESULTS_DIR=$(REMOTE_RESULTS_DIR) /usr/bin/sudo -E python3 validate.py'
-	$(VAGRANT_SOLUTION) ssh -c 'cd $(REMOTE_DIR)/test && /usr/bin/sudo chown -R vagrant:vagrant $(REMOTE_RESULTS_DIR) && echo OK > $(REMOTE_RESULTS_DIR)/.validate_ok_vm'
-	# Rsync back test artifacts (including VM validate stamp) to host results/test
-	mkdir -p $(RESULTS_DIR)
-	$(RSYNC_SOLUTION) solution:$(REMOTE_RESULTS_DIR)/ $(RESULTS_DIR)/
-	@echo "Artifacts synced to $(RESULTS_DIR)/"
+	# Run validation inside VM (uses system python3 + tshark in box), then always sync artifacts
+	@set -e; \
+	  status=0; \
+	  $(VAGRANT_SOLUTION) ssh -c 'cd $(REMOTE_DIR)/test && RESULTS_DIR=$(REMOTE_RESULTS_DIR) /usr/bin/sudo -E python3 validate.py' || status=$$?; \
+	  $(VAGRANT_SOLUTION) ssh -c 'cd $(REMOTE_DIR)/test && /usr/bin/sudo chown -R vagrant:vagrant $(REMOTE_RESULTS_DIR)'; \
+	  mkdir -p $(RESULTS_DIR); \
+	  $(RSYNC_SOLUTION) solution:$(REMOTE_RESULTS_DIR)/ $(RESULTS_DIR)/; \
+	  if [ $$status -eq 0 ]; then echo OK > $(VM_VALIDATE_STAMP); else rm -f $(VM_VALIDATE_STAMP); fi; \
+	  echo "Artifacts synced to $(RESULTS_DIR)/"; \
+	  if [ $$status -ne 0 ]; then exit $$status; fi
 
 # Validation stamp (runs all validations)
 $(VALIDATE_OK): $(PCAPS) $(RIBS) $(VM_VALIDATE_STAMP)
