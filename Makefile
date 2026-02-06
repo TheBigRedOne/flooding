@@ -323,6 +323,7 @@ $(PAPER_BIN):
 # Cleanup
 clean: clean-ssh-config
 	rm -rf results
+	rm -rf $(VENV_DIR)
 	$(LATEXMK) -c $(MAIN_TEX)
 	rm -f $(PAPER_PDF)
 	rm -rf $(PAPER_BIN)
