@@ -53,7 +53,7 @@ def main():
     interests_df.set_index('timestamp', inplace=True)
     
     # Resample to get packets per second
-    packets_per_second = interests_df.resample('1S').size()
+    packets_per_second = interests_df.resample('1s').size()
     
     # Time series plot of flooded packets per second
     fig, ax = plt.subplots(figsize=(12, 6))
