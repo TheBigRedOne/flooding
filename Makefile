@@ -103,10 +103,14 @@ BASELINE_DIR := results/baseline
 SOLUTION_DIR := results/solution
 CSV_BASELINE := $(BASELINE_DIR)/consumer_capture.csv
 CSV_SOLUTION := $(SOLUTION_DIR)/consumer_capture.csv
+TEST_VALIDATE_OK := test/.validate_ok
+TEST_SRCS := test/Makefile test/Vagrantfile test/exp_test.py test/validate.py \
+             experiment/app/producer.cpp experiment/app/consumer.cpp \
+             experiment/app/trust-schema.conf experiment/tool/ndn.lua
 
 # Main target (set DISABLE_TEST=1 to skip tests)
 DISABLE_TEST ?=
-all: $(BOXES) experiment $(if $(DISABLE_TEST),,test) result paper
+all: $(BOXES) experiment $(if $(DISABLE_TEST),,$(TEST_VALIDATE_OK)) result paper
 
 # High-level orchestration targets (provider must be set via `make kvm ...` or `make vb ...`)
 .PHONY: boxes experiment experiment-baseline experiment-solution result plot paper test mypy vm-clean
@@ -124,7 +128,9 @@ experiment: experiment-baseline experiment-solution
 result: $(BASELINE_PAPER_FIGURES) $(SOLUTION_PAPER_FIGURES)
 
 # Run the test experiment
-test:
+test: $(TEST_VALIDATE_OK)
+
+$(TEST_VALIDATE_OK): $(TEST_SRCS) box/solution/solution.$(PROVIDER).box
 	$(MAKE) -C test PROVIDER=$(PROVIDER) test-all
 
 # Plot only (reuse existing CSVs; no VM run)
@@ -331,7 +337,8 @@ clean: clean-ssh-config
 	rm -f $(BASELINE_PAPER_FIGURES) $(SOLUTION_PAPER_FIGURES)
 	# remove test artifacts on host
 	rm -rf test/pcap test/results
-	rm -f test/consumer test/producer test/*.txt test/*.conf test/.ssh_config_solution
+	rm -f test/consumer test/producer test/*.txt test/*.conf test/.ssh_config_solution \
+	      test/.validate_ok test/.sync_solution_*
 
 deep-clean: clean
 	rm -rf $(BASELINE_FIGURE) $(SOLUTION_FIGURE) $(PAPER_PDF)

@@ -24,6 +24,18 @@ RSYNC_EXCLUDES := \
 	--exclude results \
 	--exclude paper/bin
 
+# Host->VM sync stamp to avoid re-running test flow when nothing changed.
+SYNC_STAMP := $(ROOT_DIR)/test/.sync_solution_$(PROVIDER)
+SYNC_INPUTS := \
+	$(ROOT_DIR)/test/Makefile \
+	$(ROOT_DIR)/test/Vagrantfile \
+	$(ROOT_DIR)/test/exp_test.py \
+	$(ROOT_DIR)/test/validate.py \
+	$(ROOT_DIR)/experiment/app/producer.cpp \
+	$(ROOT_DIR)/experiment/app/consumer.cpp \
+	$(ROOT_DIR)/experiment/app/trust-schema.conf \
+	$(ROOT_DIR)/experiment/tool/ndn.lua
+
 .PHONY: test-all validate sync test-s1 test-s2 test-s3 test-s4 test-s5 \
         vm-up vm-halt vm-destroy
 
@@ -51,8 +63,11 @@ $(SSH_CONFIG): $(ROOT_DIR)/test/Vagrantfile $(SOLUTION_BOX)
 	$(VAGRANT_SOLUTION) ssh-config --host solution > $(SSH_CONFIG)
 
 # Sync sources from host to VM via rsync (standardized entry)
-sync: $(SSH_CONFIG)
+sync: $(SYNC_STAMP)
+
+$(SYNC_STAMP): $(SSH_CONFIG) $(SYNC_INPUTS)
 	$(RSYNC_SOLUTION) $(RSYNC_EXCLUDES) $(ROOT_DIR)/ solution:$(REMOTE_DIR)/
+	@echo OK > $@
 
 # Expected artifacts on host (collected under test/results)
 RESULTS_DIR := $(ROOT_DIR)/test/results
@@ -63,7 +78,7 @@ VALIDATE_OK := $(ROOT_DIR)/test/.validate_ok
 VM_VALIDATE_STAMP := $(RESULTS_DIR)/.validate_ok_vm
 
 # Produce test artifacts via one VM run, then rsync back (grouped target)
-$(PCAPS) $(RIBS) &: sync
+$(PCAPS) $(RIBS) &: $(SYNC_STAMP)
 	# Build apps inside VM from rsynced sources under $(REMOTE_DIR)
 	$(VAGRANT_SOLUTION) ssh -c 'set -e; test -d $(REMOTE_DIR)/experiment/app || (echo "rsync failed: $(REMOTE_DIR)/experiment/app missing" && exit 1)'
 	$(VAGRANT_SOLUTION) ssh -c 'set -e; cd $(REMOTE_DIR)/test && rm -f producer consumer && PKG="$$(pkg-config --cflags --libs libndn-cxx)" && g++ -std=c++17 -g -O2 -DSOLUTION_ENABLED -o producer $(REMOTE_DIR)/experiment/app/producer.cpp $$PKG && chmod -v +x producer'
