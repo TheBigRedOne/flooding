@@ -90,7 +90,7 @@ Second, when forwarding fails because both the FIB and a temporary forwarding ta
 OptoFlood also integrates with Named-data Link State Routing (NLSR) by generating short-lived routing updates based on newly established temporary paths (Fast-LSA), which accelerates global routing convergence. Collectively, these mechanisms reduce latency and packet loss while maintaining reasonable overhead in network resource usage.
 
 % Paragraph 4: Comparison to related work.
-Compared to previous NDN mobility protocols, such as routing-based updates \cite{meddeb:2018:afirm}, Interest-based notification solutions \cite{auge:2016:map-me} or anchor-based tracing mechanisms \cite{zhang:2018:kite}, OptoFlood provides a more integrated and lightweight solution that leverages flooding as its primary mechanism for rapid path recovery and convergence. Unlike existing flooding solutions, our approach uses explicit controls, including hop limits, deduplication within a short time window, and producer-side flood rate limits, to restrict the scope and duration of flooding, minimising unnecessary overhead. Additionally, by leveraging temporary bidirectional paths established via controlled flooding and propagating them through short-lived routing updates, OptoFlood accelerates global routing convergence without relying on centralised anchor nodes.
+Compared to previous NDN mobility protocols, such as routing-based updates \cite{meddeb:2018:afirm}, Interest-based notification solutions \cite{auge:2016:map-me} or anchor-based tracing mechanisms \cite{zhang:2018:kite}, OptoFlood provides a more integrated and lightweight solution that leverages flooding as its primary mechanism for rapid path recovery and convergence. Unlike existing flooding solutions \csp{add citations}, our approach uses explicit controls, including hop limits, deduplication within a short time window, and producer-side flood rate limits, to restrict the scope and duration of flooding, minimising unnecessary overhead. Additionally, by leveraging temporary bidirectional paths established via controlled flooding and propagating them through short-lived routing updates, OptoFlood accelerates global routing convergence without relying on centralised anchor nodes.
 
 % Paragraph 5: Roadmap.
 We structure the remainder of this paper as follows. Section \ref{sec:problem} reviews the background of producer mobility problems in NDN, highlighting the limitations of traditional routing updates. Section \ref{sec:solution} presents the detailed design of OptoFlood, including the mechanisms for controlled flooding of Data and Interest packets, and the integration with NLSR to accelerate global convergence. Section \ref{sec:evaluation} describes our experimental setup and presents results that demonstrate the effectiveness of our approach.
@@ -135,18 +135,30 @@ This results in the following.
 \end{itemize}
 
 To further illustrate the impact of slow convergence on producer mobility, we include baseline measurements from our experimental setup. Figures~\ref{fig:baseline_throughput} and~\ref{fig:baseline_disruption} show that the movement of the producers can cause a clear disruption period in which throughput decreases and recovery is delayed until the routing converges.
+\csp{As discussed, I don't think this is the right place for these results.
+Maybe move these baseline results to \ref{sec:evaluation}, which would then
+have subsections for Methodology, Baseline Results, OptoFlood Results?}
+
+\csp{I'm not sure I follow Figure \ref{fig:baseline_throughput}, for three
+reasons: 1) It looks like the handover takes 10 seconds to complete? Why?;
+2) Why does the throughput reduce but not drop to zero after the handover?;
+and 3) Why does the throughput take 30 seconds to recover? It looks like
+something is misconfigured with the NLSR routing if it takes this long to
+react to the change. Can parameters be tuned?}
 
 \begin{figure}
     \centering
     \includegraphics[width=\columnwidth]{baseline_throughput.pdf}
-    \caption{Baseline Throughput Disruption}
+    \caption{Baseline Throughput Disruption \csp{Text in the figure is too
+small to read}}
     \label{fig:baseline_throughput}
 \end{figure}
 
 \begin{figure}
     \centering
     \includegraphics[width=\columnwidth]{baseline_disruption.pdf}
-    \caption{Baseline Disruption Timeline}
+    \caption{Baseline Disruption Timeline \csp{Text in the figure is too
+small to read}}
     \label{fig:baseline_disruption}
 \end{figure}
 
