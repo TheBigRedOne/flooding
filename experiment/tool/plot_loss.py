@@ -4,6 +4,29 @@ import os
 import bisect
 import matplotlib.pyplot as plt
 
+CM_TO_INCH = 1.0 / 2.54
+PAPER_FIGURE_WIDTH_CM = 8.8
+PAPER_FIGURE_HEIGHT_CM = 5.4
+
+
+def _paper_figure_size():
+    """Return figure size in inches for single-column paper figures."""
+    return PAPER_FIGURE_WIDTH_CM * CM_TO_INCH, PAPER_FIGURE_HEIGHT_CM * CM_TO_INCH
+
+
+def _configure_paper_style():
+    """Apply style with larger labels for paper readability."""
+    plt.style.use('seaborn-v0_8-whitegrid')
+    plt.rcParams.update({
+        "font.size": 9,
+        "axes.labelsize": 9,
+        "axes.titlesize": 9,
+        "xtick.labelsize": 8,
+        "ytick.labelsize": 8,
+        "figure.titlesize": 9,
+    })
+
+
 def normalize_name(name: str) -> str:
     """
     Keep only the canonical data name part before signer metadata.
@@ -33,6 +56,7 @@ def main():
     args = parser.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
+    _configure_paper_style()
 
     try:
         df = pd.read_csv(args.input)
@@ -140,8 +164,8 @@ def main():
         f.write(f"Deadline Seconds: {args.deadline:.2f}\n")
     
     # --- Paired Comparison Plot ---
-    fig, ax = plt.subplots(figsize=(8, 6))
-    labels = ['During Handoffs', 'Steady State']
+    fig, ax = plt.subplots(figsize=_paper_figure_size())
+    labels = ['During\nHandoffs', 'Steady\nState']
     ratios = [handoff_ratio, steady_state_ratio]
     ax.bar(labels, ratios, color=['orangered', 'deepskyblue'])
     ax.set_ylabel('Unmet-Interest Ratio')
@@ -150,7 +174,8 @@ def main():
     ax.grid(axis='y', linestyle='--', alpha=0.7)
     
     for i, v in enumerate(ratios):
-        ax.text(i, v + 0.02, f"{v:.3f}", ha='center', va='bottom')
+        offset = max(0.015, 0.03 * max(ratios))
+        ax.text(i, v + offset, f"{v:.3f}", ha='center', va='bottom')
         
     fig.tight_layout()
     plt.savefig(os.path.join(args.output_dir, 'loss_comparison.pdf'))

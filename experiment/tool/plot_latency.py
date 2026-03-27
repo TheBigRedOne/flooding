@@ -4,6 +4,29 @@ import numpy as np
 import argparse
 import os
 
+CM_TO_INCH = 1.0 / 2.54
+PAPER_FIGURE_WIDTH_CM = 8.8
+PAPER_FIGURE_HEIGHT_CM = 5.4
+
+
+def _paper_figure_size():
+    """Return figure size in inches for printed two-column papers."""
+    return PAPER_FIGURE_WIDTH_CM * CM_TO_INCH, PAPER_FIGURE_HEIGHT_CM * CM_TO_INCH
+
+
+def _configure_paper_style():
+    """Apply style with larger labels for paper figures."""
+    plt.style.use('seaborn-v0_8-whitegrid')
+    plt.rcParams.update({
+        "font.size": 9,
+        "axes.labelsize": 9,
+        "axes.titlesize": 9,
+        "xtick.labelsize": 8,
+        "ytick.labelsize": 8,
+        "figure.titlesize": 9,
+    })
+
+
 def main():
     parser = argparse.ArgumentParser(description="Analyze service disruption time from NDN pcap CSV.")
     parser.add_argument('--input', type=str, required=True, help='Input CSV file from tshark.')
@@ -13,7 +36,7 @@ def main():
     args = parser.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
-    plt.style.use('seaborn-v0_8-whitegrid')
+    _configure_paper_style()
     
     try:
         df = pd.read_csv(args.input)
@@ -78,11 +101,12 @@ def main():
 
     # --- (R1) Service disruption time (K1) ---
     # Bar plot of per-handoff disruption times
-    fig, ax = plt.subplots(figsize=(10, 6))
+    fig, ax = plt.subplots(figsize=_paper_figure_size())
     handoff_labels = [f'Handoff {i+1}' for i in range(len(disruption_times))]
     ax.bar(handoff_labels, disruption_times, color='skyblue')
     ax.set_ylabel('Service Disruption Time (ms)')
     ax.set_title('Per-Handoff Service Disruption Time')
+    ax.set_ylim(bottom=0)
     ax.grid(axis='y', linestyle='--', alpha=0.7)
     fig.tight_layout()
     plt.savefig(os.path.join(args.output_dir, 'disruption_times.pdf'))

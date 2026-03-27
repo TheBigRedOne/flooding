@@ -2,7 +2,30 @@ import pandas as pd
 import argparse
 import os
 import matplotlib.pyplot as plt
-import numpy as np
+from matplotlib.ticker import MaxNLocator
+
+CM_TO_INCH = 1.0 / 2.54
+PAPER_FIGURE_WIDTH_CM = 8.8
+PAPER_FIGURE_HEIGHT_CM = 5.4
+
+
+def _paper_figure_size():
+    """Return figure size in inches for single-column paper figures."""
+    return PAPER_FIGURE_WIDTH_CM * CM_TO_INCH, PAPER_FIGURE_HEIGHT_CM * CM_TO_INCH
+
+
+def _configure_paper_style():
+    """Apply style with larger labels for paper readability."""
+    plt.style.use('seaborn-v0_8-whitegrid')
+    plt.rcParams.update({
+        "font.size": 9,
+        "axes.labelsize": 9,
+        "axes.titlesize": 9,
+        "xtick.labelsize": 8,
+        "ytick.labelsize": 8,
+        "legend.fontsize": 8,
+        "figure.titlesize": 9,
+    })
 
 def main():
     parser = argparse.ArgumentParser(description="Analyze and plot flooding overhead from NDN pcap CSV.")
@@ -14,7 +37,7 @@ def main():
     args = parser.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
-    plt.style.use('seaborn-v0_8-whitegrid')
+    _configure_paper_style()
 
     try:
         df = pd.read_csv(args.input)
@@ -56,7 +79,7 @@ def main():
     packets_per_second = interests_df.resample('1s').size()
     
     # Time series plot of flooded packets per second
-    fig, ax = plt.subplots(figsize=(12, 6))
+    fig, ax = plt.subplots(figsize=_paper_figure_size())
     packets_per_second.plot(ax=ax, label='Interests per Second', color='crimson')
     
     total_overhead = len(interests_df)
@@ -70,6 +93,8 @@ def main():
     ax.set_xlabel('Time (seconds)')
     ax.set_ylabel('Flooded Packets per Second')
     ax.set_title('Flooding Overhead Over Time')
+    ax.set_ylim(bottom=0)
+    ax.xaxis.set_major_locator(MaxNLocator(nbins=6, integer=True))
     ax.legend()
     ax.grid(True, which="both", ls="--")
     fig.tight_layout()

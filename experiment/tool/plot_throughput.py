@@ -5,14 +5,36 @@ from collections import defaultdict
 from typing import Dict, Iterable, List, Tuple
 
 import matplotlib.pyplot as plt
-from matplotlib.ticker import ScalarFormatter
+from matplotlib.ticker import MaxNLocator, ScalarFormatter
 
 
 APP_PREFIX = "/example/LiveStream"
+CM_TO_INCH = 1.0 / 2.54
+PAPER_FIGURE_WIDTH_CM = 8.8
+PAPER_FIGURE_HEIGHT_CM = 5.4
+
+
+def _paper_figure_size() -> Tuple[float, float]:
+    """Return figure size in inches for single-column paper readability."""
+    return PAPER_FIGURE_WIDTH_CM * CM_TO_INCH, PAPER_FIGURE_HEIGHT_CM * CM_TO_INCH
+
+
+def _configure_paper_style() -> None:
+    """Apply plot style with larger labels for printed paper figures."""
+    plt.style.use("seaborn-v0_8-whitegrid")
+    plt.rcParams.update({
+        "font.size": 9,
+        "axes.labelsize": 9,
+        "axes.titlesize": 9,
+        "xtick.labelsize": 8,
+        "ytick.labelsize": 8,
+        "legend.fontsize": 8,
+        "figure.titlesize": 9,
+    })
 
 
 def _load_packets(csv_path: str) -> List[Tuple[float, int]]:
-    """Load (time, length) tuples from a tshark CSV, filtering to app prefix."""
+    """Load packet (time, length) tuples under the application prefix."""
     with open(csv_path, "r", newline="") as csv_file:
         reader = csv.DictReader(csv_file)
         required = {"frame.time_epoch", "frame.len"}
@@ -21,12 +43,13 @@ def _load_packets(csv_path: str) -> List[Tuple[float, int]]:
 
         packets: List[Tuple[float, int]] = []
         for row in reader:
-            name = row.get("ndn.name")
-            if name:
-                if name.startswith("/localhost/") or name.startswith("/localhop/ndn/nlsr/"):
-                    continue
-                if not name.startswith(APP_PREFIX):
-                    continue
+            name = (row.get("ndn.name") or "").strip()
+            if not name:
+                continue
+            if name.startswith("/localhost/") or name.startswith("/localhop/ndn/nlsr/"):
+                continue
+            if not name.startswith(APP_PREFIX):
+                continue
             try:
                 time_val = float(row["frame.time_epoch"])
                 length_val = int(row["frame.len"])
@@ -107,7 +130,8 @@ def _safe_empty_outputs(out_dir: str) -> None:
         metrics_file.write("P95: 0.00 bytes/s\n")
         metrics_file.write("TotalBytes: 0\n")
         metrics_file.write("Duration: 0.00 s\n")
-    fig, _ = plt.subplots(figsize=(10, 5))
+    _configure_paper_style()
+    fig, _ = plt.subplots(figsize=_paper_figure_size())
     empty_pdf = os.path.join(out_dir, "throughput_timeseries.pdf")
     fig.savefig(empty_pdf)
     plt.close(fig)
@@ -148,8 +172,8 @@ def main() -> None:
 
     _write_metrics(args.output_dir, values, full_seconds)
 
-    plt.style.use("seaborn-v0_8-whitegrid")
-    fig, ax = plt.subplots(figsize=(12, 6))
+    _configure_paper_style()
+    fig, ax = plt.subplots(figsize=_paper_figure_size())
     ax.plot(rel_times, values, color="steelblue", label="Bytes per second", linewidth=1.6)
 
     if args.handoff_times:
@@ -163,14 +187,14 @@ def main() -> None:
     ax.set_xlabel("Time (seconds)")
     ax.set_ylabel("Throughput (bytes/s)")
     ax.set_title("Throughput Over Time")
-    ax.legend()
+    ax.legend(loc="upper right")
     ax.grid(True)
     ax.yaxis.set_major_formatter(ScalarFormatter(useMathText=False))
     ax.ticklabel_format(style="plain", axis="y")
+    ax.set_ylim(bottom=0)
+    ax.yaxis.set_major_locator(MaxNLocator(nbins=5))
 
-    max_time = int(max(rel_times)) if rel_times else 0
-    tick_step = 20 if max_time >= 20 else max(1, max_time or 1)
-    ax.set_xticks(list(range(0, max_time + tick_step, tick_step)))
+    ax.xaxis.set_major_locator(MaxNLocator(nbins=6, integer=True))
     ax.get_xaxis().get_major_formatter().set_useOffset(False)
 
     fig.tight_layout()
