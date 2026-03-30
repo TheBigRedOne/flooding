@@ -42,6 +42,8 @@ def _configure_paper_style():
         "ytick.labelsize": TICK_LABEL_SIZE,
         "figure.titlesize": FIGURE_TITLE_SIZE,
     })
+    plt.rcParams["pdf.use14corefonts"] = True
+    plt.rcParams["font.family"] = "serif"
 
 
 def main():

@@ -46,6 +46,8 @@ def _configure_paper_style():
         "legend.fontsize": LEGEND_SIZE,
         "figure.titlesize": FIGURE_TITLE_SIZE,
     })
+    plt.rcParams["pdf.use14corefonts"] = True
+    plt.rcParams["font.family"] = "serif"
 
 def main():
     parser = argparse.ArgumentParser(description="Analyze and plot flooding overhead from NDN pcap CSV.")

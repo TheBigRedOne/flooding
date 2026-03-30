@@ -56,6 +56,8 @@ def _configure_paper_style() -> None:
         "legend.fontsize": LEGEND_SIZE,
         "figure.titlesize": FIGURE_TITLE_SIZE,
     })
+    plt.rcParams["pdf.use14corefonts"] = True
+    plt.rcParams["font.family"] = "serif"
 
 
 def _load_packets(csv_path: str) -> List[Tuple[float, int]]:
