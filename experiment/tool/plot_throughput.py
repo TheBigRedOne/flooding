@@ -9,9 +9,34 @@ from matplotlib.ticker import MaxNLocator, ScalarFormatter
 
 
 APP_PREFIX = "/example/LiveStream"
+
+# ---------------------------------------------------------------------------
+# TUNING: Figure canvas size (physical export size before LaTeX scaling).
+# - Increase width/height to provide more drawing space.
+# - Decrease width/height for tighter figures.
+# ---------------------------------------------------------------------------
 CM_TO_INCH = 1.0 / 2.54
-PAPER_FIGURE_WIDTH_CM = 8.8
-PAPER_FIGURE_HEIGHT_CM = 5.4
+PAPER_FIGURE_WIDTH_CM = 8.0
+PAPER_FIGURE_HEIGHT_CM = 6.0
+
+# ---------------------------------------------------------------------------
+# TUNING: Text and style sizes used inside the figure.
+# These values control labels/ticks/title/legend only, not the PDF canvas size.
+# ---------------------------------------------------------------------------
+FONT_SIZE = 8
+AXIS_LABEL_SIZE = 8
+AXIS_TITLE_SIZE = 8
+TICK_LABEL_SIZE = 8
+LEGEND_SIZE = 8
+FIGURE_TITLE_SIZE = 8
+
+# ---------------------------------------------------------------------------
+# TUNING: Visual element geometry.
+# ---------------------------------------------------------------------------
+THROUGHPUT_LINE_WIDTH = 1.0
+HANDOFF_SHADE_ALPHA = 0.2
+Y_TICK_BINS = 5
+X_TICK_BINS = 5
 
 
 def _paper_figure_size() -> Tuple[float, float]:
@@ -23,13 +48,13 @@ def _configure_paper_style() -> None:
     """Apply plot style with larger labels for printed paper figures."""
     plt.style.use("seaborn-v0_8-whitegrid")
     plt.rcParams.update({
-        "font.size": 9,
-        "axes.labelsize": 9,
-        "axes.titlesize": 9,
-        "xtick.labelsize": 8,
-        "ytick.labelsize": 8,
-        "legend.fontsize": 8,
-        "figure.titlesize": 9,
+        "font.size": FONT_SIZE,
+        "axes.labelsize": AXIS_LABEL_SIZE,
+        "axes.titlesize": AXIS_TITLE_SIZE,
+        "xtick.labelsize": TICK_LABEL_SIZE,
+        "ytick.labelsize": TICK_LABEL_SIZE,
+        "legend.fontsize": LEGEND_SIZE,
+        "figure.titlesize": FIGURE_TITLE_SIZE,
     })
 
 
@@ -174,7 +199,14 @@ def main() -> None:
 
     _configure_paper_style()
     fig, ax = plt.subplots(figsize=_paper_figure_size())
-    ax.plot(rel_times, values, color="steelblue", label="Bytes per second", linewidth=1.6)
+    # TUNING: Throughput curve thickness is controlled by THROUGHPUT_LINE_WIDTH.
+    ax.plot(
+        rel_times,
+        values,
+        color="steelblue",
+        label="Bytes per second",
+        linewidth=THROUGHPUT_LINE_WIDTH,
+    )
 
     if args.handoff_times:
         handoffs = [float(t.strip()) for t in args.handoff_times.split(",") if t.strip()]
@@ -182,7 +214,8 @@ def main() -> None:
             start = handoff
             end = handoff + args.window
             label = "Handoff Window" if idx == 0 else None
-            ax.axvspan(start, end, color="orange", alpha=0.3, label=label)
+            # TUNING: Handoff highlight transparency is controlled by HANDOFF_SHADE_ALPHA.
+            ax.axvspan(start, end, color="orange", alpha=HANDOFF_SHADE_ALPHA, label=label)
 
     ax.set_xlabel("Time (seconds)")
     ax.set_ylabel("Throughput (bytes/s)")
@@ -191,10 +224,13 @@ def main() -> None:
     ax.grid(True)
     ax.yaxis.set_major_formatter(ScalarFormatter(useMathText=False))
     ax.ticklabel_format(style="plain", axis="y")
+    # TUNING: Keep y-axis anchored at zero to avoid misleading auto-scaling.
     ax.set_ylim(bottom=0)
-    ax.yaxis.set_major_locator(MaxNLocator(nbins=5))
+    # TUNING: Number of y-axis ticks is controlled by Y_TICK_BINS.
+    ax.yaxis.set_major_locator(MaxNLocator(nbins=Y_TICK_BINS))
 
-    ax.xaxis.set_major_locator(MaxNLocator(nbins=6, integer=True))
+    # TUNING: Number of x-axis ticks is controlled by X_TICK_BINS.
+    ax.xaxis.set_major_locator(MaxNLocator(nbins=X_TICK_BINS, integer=True))
     ax.get_xaxis().get_major_formatter().set_useOffset(False)
 
     fig.tight_layout()

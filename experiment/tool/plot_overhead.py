@@ -4,9 +4,29 @@ import os
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 
+# ---------------------------------------------------------------------------
+# TUNING: Figure canvas size (physical export size before LaTeX scaling).
+# ---------------------------------------------------------------------------
 CM_TO_INCH = 1.0 / 2.54
-PAPER_FIGURE_WIDTH_CM = 8.8
-PAPER_FIGURE_HEIGHT_CM = 5.4
+PAPER_FIGURE_WIDTH_CM = 8.0
+PAPER_FIGURE_HEIGHT_CM = 6.0
+
+# ---------------------------------------------------------------------------
+# TUNING: Text sizes inside the plot.
+# ---------------------------------------------------------------------------
+FONT_SIZE = 8
+AXIS_LABEL_SIZE = 8
+AXIS_TITLE_SIZE = 8
+TICK_LABEL_SIZE = 8
+LEGEND_SIZE = 8
+FIGURE_TITLE_SIZE = 8
+
+# ---------------------------------------------------------------------------
+# TUNING: Time-series visual style.
+# ---------------------------------------------------------------------------
+OVERHEAD_LINE_WIDTH = 1.0
+HANDOFF_SHADE_ALPHA = 0.2
+X_TICK_BINS = 5
 
 
 def _paper_figure_size():
@@ -18,13 +38,13 @@ def _configure_paper_style():
     """Apply style with larger labels for paper readability."""
     plt.style.use('seaborn-v0_8-whitegrid')
     plt.rcParams.update({
-        "font.size": 9,
-        "axes.labelsize": 9,
-        "axes.titlesize": 9,
-        "xtick.labelsize": 8,
-        "ytick.labelsize": 8,
-        "legend.fontsize": 8,
-        "figure.titlesize": 9,
+        "font.size": FONT_SIZE,
+        "axes.labelsize": AXIS_LABEL_SIZE,
+        "axes.titlesize": AXIS_TITLE_SIZE,
+        "xtick.labelsize": TICK_LABEL_SIZE,
+        "ytick.labelsize": TICK_LABEL_SIZE,
+        "legend.fontsize": LEGEND_SIZE,
+        "figure.titlesize": FIGURE_TITLE_SIZE,
     })
 
 def main():
@@ -80,7 +100,13 @@ def main():
     
     # Time series plot of flooded packets per second
     fig, ax = plt.subplots(figsize=_paper_figure_size())
-    packets_per_second.plot(ax=ax, label='Interests per Second', color='crimson')
+    # TUNING: Curve thickness is controlled by OVERHEAD_LINE_WIDTH.
+    packets_per_second.plot(
+        ax=ax,
+        label='Interests per Second',
+        color='crimson',
+        linewidth=OVERHEAD_LINE_WIDTH,
+    )
     
     total_overhead = len(interests_df)
 
@@ -88,13 +114,16 @@ def main():
         handoffs = [float(t.strip()) for t in args.handoff_times.split(',')]
         for i, t in enumerate(handoffs):
             label = f'Handoff Window' if i == 0 else None
-            ax.axvspan(t, t + args.window, color='orange', alpha=0.3, label=label)
+            # TUNING: Handoff highlight transparency.
+            ax.axvspan(t, t + args.window, color='orange', alpha=HANDOFF_SHADE_ALPHA, label=label)
     
     ax.set_xlabel('Time (seconds)')
     ax.set_ylabel('Flooded Packets per Second')
     ax.set_title('Flooding Overhead Over Time')
+    # TUNING: Keep y-axis anchored at zero for consistent visual comparison.
     ax.set_ylim(bottom=0)
-    ax.xaxis.set_major_locator(MaxNLocator(nbins=6, integer=True))
+    # TUNING: Number of x-axis ticks is controlled by X_TICK_BINS.
+    ax.xaxis.set_major_locator(MaxNLocator(nbins=X_TICK_BINS, integer=True))
     ax.legend()
     ax.grid(True, which="both", ls="--")
     fig.tight_layout()

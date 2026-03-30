@@ -4,9 +4,26 @@ import numpy as np
 import argparse
 import os
 
+# ---------------------------------------------------------------------------
+# TUNING: Figure canvas size (physical export size before LaTeX scaling).
+# ---------------------------------------------------------------------------
 CM_TO_INCH = 1.0 / 2.54
-PAPER_FIGURE_WIDTH_CM = 8.8
-PAPER_FIGURE_HEIGHT_CM = 5.4
+PAPER_FIGURE_WIDTH_CM = 8.0
+PAPER_FIGURE_HEIGHT_CM = 6.0
+
+# ---------------------------------------------------------------------------
+# TUNING: Text sizes inside the plot.
+# ---------------------------------------------------------------------------
+FONT_SIZE = 8
+AXIS_LABEL_SIZE = 8
+AXIS_TITLE_SIZE = 8
+TICK_LABEL_SIZE = 8
+FIGURE_TITLE_SIZE = 8
+
+# ---------------------------------------------------------------------------
+# TUNING: Bar chart appearance.
+# ---------------------------------------------------------------------------
+BAR_COLOR = 'skyblue'
 
 
 def _paper_figure_size():
@@ -18,12 +35,12 @@ def _configure_paper_style():
     """Apply style with larger labels for paper figures."""
     plt.style.use('seaborn-v0_8-whitegrid')
     plt.rcParams.update({
-        "font.size": 9,
-        "axes.labelsize": 9,
-        "axes.titlesize": 9,
-        "xtick.labelsize": 8,
-        "ytick.labelsize": 8,
-        "figure.titlesize": 9,
+        "font.size": FONT_SIZE,
+        "axes.labelsize": AXIS_LABEL_SIZE,
+        "axes.titlesize": AXIS_TITLE_SIZE,
+        "xtick.labelsize": TICK_LABEL_SIZE,
+        "ytick.labelsize": TICK_LABEL_SIZE,
+        "figure.titlesize": FIGURE_TITLE_SIZE,
     })
 
 
@@ -103,9 +120,11 @@ def main():
     # Bar plot of per-handoff disruption times
     fig, ax = plt.subplots(figsize=_paper_figure_size())
     handoff_labels = [f'Handoff {i+1}' for i in range(len(disruption_times))]
-    ax.bar(handoff_labels, disruption_times, color='skyblue')
+    # TUNING: Bar color can be changed via BAR_COLOR.
+    ax.bar(handoff_labels, disruption_times, color=BAR_COLOR)
     ax.set_ylabel('Service Disruption Time (ms)')
     ax.set_title('Per-Handoff Service Disruption Time')
+    # TUNING: Keep y-axis anchored at zero for consistent visual comparison.
     ax.set_ylim(bottom=0)
     ax.grid(axis='y', linestyle='--', alpha=0.7)
     fig.tight_layout()

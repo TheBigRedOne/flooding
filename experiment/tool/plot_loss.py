@@ -4,9 +4,30 @@ import os
 import bisect
 import matplotlib.pyplot as plt
 
+# ---------------------------------------------------------------------------
+# TUNING: Figure canvas size (physical export size before LaTeX scaling).
+# ---------------------------------------------------------------------------
 CM_TO_INCH = 1.0 / 2.54
-PAPER_FIGURE_WIDTH_CM = 8.8
-PAPER_FIGURE_HEIGHT_CM = 5.4
+PAPER_FIGURE_WIDTH_CM = 8.0
+PAPER_FIGURE_HEIGHT_CM = 6.0
+
+# ---------------------------------------------------------------------------
+# TUNING: Text sizes inside the plot.
+# ---------------------------------------------------------------------------
+FONT_SIZE = 8
+AXIS_LABEL_SIZE = 8
+AXIS_TITLE_SIZE = 8
+TICK_LABEL_SIZE = 8
+FIGURE_TITLE_SIZE = 8
+
+# ---------------------------------------------------------------------------
+# TUNING: Bar chart and annotation appearance.
+# ---------------------------------------------------------------------------
+HANDOFF_BAR_COLOR = 'orangered'
+STEADY_BAR_COLOR = 'deepskyblue'
+VALUE_LABEL_OFFSET_MIN = 0.02
+VALUE_LABEL_OFFSET_RATIO = 0.025
+LOSS_Y_MAX_HEADROOM = 1.0
 
 
 def _paper_figure_size():
@@ -18,12 +39,12 @@ def _configure_paper_style():
     """Apply style with larger labels for paper readability."""
     plt.style.use('seaborn-v0_8-whitegrid')
     plt.rcParams.update({
-        "font.size": 9,
-        "axes.labelsize": 9,
-        "axes.titlesize": 9,
-        "xtick.labelsize": 8,
-        "ytick.labelsize": 8,
-        "figure.titlesize": 9,
+        "font.size": FONT_SIZE,
+        "axes.labelsize": AXIS_LABEL_SIZE,
+        "axes.titlesize": AXIS_TITLE_SIZE,
+        "xtick.labelsize": TICK_LABEL_SIZE,
+        "ytick.labelsize": TICK_LABEL_SIZE,
+        "figure.titlesize": FIGURE_TITLE_SIZE,
     })
 
 
@@ -165,16 +186,19 @@ def main():
     
     # --- Paired Comparison Plot ---
     fig, ax = plt.subplots(figsize=_paper_figure_size())
+    # TUNING: Use '\n' in labels to avoid overlap on narrow figures.
     labels = ['During\nHandoffs', 'Steady\nState']
     ratios = [handoff_ratio, steady_state_ratio]
-    ax.bar(labels, ratios, color=['orangered', 'deepskyblue'])
+    ax.bar(labels, ratios, color=[HANDOFF_BAR_COLOR, STEADY_BAR_COLOR])
     ax.set_ylabel('Unmet-Interest Ratio')
     ax.set_title(f'Comparison of Unmet-Interest Ratio (deadline={args.deadline:.1f}s)')
-    ax.set_ylim(0, max(1.0, max(ratios) * 1.2))
+    # TUNING: Upper y-axis headroom uses LOSS_Y_MAX_HEADROOM multiplier.
+    ax.set_ylim(0, max(1.0, max(ratios) * LOSS_Y_MAX_HEADROOM))
     ax.grid(axis='y', linestyle='--', alpha=0.7)
     
     for i, v in enumerate(ratios):
-        offset = max(0.015, 0.03 * max(ratios))
+        # TUNING: Value label offset above each bar.
+        offset = max(VALUE_LABEL_OFFSET_MIN, VALUE_LABEL_OFFSET_RATIO * max(ratios))
         ax.text(i, v + offset, f"{v:.3f}", ha='center', va='bottom')
         
     fig.tight_layout()
