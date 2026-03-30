@@ -88,12 +88,22 @@ BASELINE_SRCS := experiment/baseline/Vagrantfile \
 SOLUTION_SRCS := experiment/solution/Vagrantfile \
                 experiment/solution/Makefile
 
-# Common tools used by both experiments
-TOOLS_SRCS := experiment/tool/exp.py \
-             experiment/tool/plot_latency.py \
-             experiment/tool/plot_loss.py \
-             experiment/tool/plot_overhead.py \
-             experiment/tool/plot_throughput.py
+# Tooling split by pipeline:
+# - EXPERIMENT_TOOL_SRCS: affects VM experiment run and CSV generation
+# - PLOT_TOOL_SRCS: affects host-side figure regeneration only
+# - TEST_TOOL_SRCS: affects validation/test flow only
+# - PLOT_ENV_SRCS: affects host plotting Python environment
+EXPERIMENT_TOOL_SRCS := experiment/tool/exp.py
+PLOT_LATENCY_SCRIPT := experiment/tool/plot_latency.py
+PLOT_LOSS_SCRIPT := experiment/tool/plot_loss.py
+PLOT_OVERHEAD_SCRIPT := experiment/tool/plot_overhead.py
+PLOT_THROUGHPUT_SCRIPT := experiment/tool/plot_throughput.py
+PLOT_TOOL_SRCS := $(PLOT_LATENCY_SCRIPT) \
+                  $(PLOT_LOSS_SCRIPT) \
+                  $(PLOT_OVERHEAD_SCRIPT) \
+                  $(PLOT_THROUGHPUT_SCRIPT)
+TEST_TOOL_SRCS := experiment/tool/ndn.lua
+PLOT_ENV_SRCS := experiment/tool/requirements.txt
 
 # Host-side plotting environment (for re-generating figures without re-running experiments)
 VENV_DIR := experiment/tool/.venv
@@ -106,10 +116,9 @@ CSV_SOLUTION := $(SOLUTION_DIR)/consumer_capture.csv
 TEST_VALIDATE_OK := test/.validate_ok
 TEST_SRCS := test/Makefile test/Vagrantfile test/exp_test.py test/validate.py \
              experiment/app/producer.cpp experiment/app/consumer.cpp \
-             experiment/app/trust-schema.conf experiment/tool/ndn.lua
+             experiment/app/trust-schema.conf $(TEST_TOOL_SRCS)
 
 # Main target (set DISABLE_TEST=1 to skip tests)
-DISABLE_TEST ?=
 all: $(BOXES) experiment $(if $(DISABLE_TEST),,$(TEST_VALIDATE_OK)) result paper
 
 # High-level orchestration targets (provider must be set via `make kvm ...` or `make vb ...`)
@@ -137,14 +146,14 @@ $(TEST_VALIDATE_OK): $(TEST_SRCS) box/solution/solution.$(PROVIDER).box
 plot: | $(VENV_DIR)
 	@test -f $(CSV_BASELINE) || (echo "Missing CSV: $(CSV_BASELINE). Run 'make experiment-baseline' first." && exit 1)
 	@test -f $(CSV_SOLUTION) || (echo "Missing CSV: $(CSV_SOLUTION). Run 'make experiment-solution' first." && exit 1)
-	$(PYTHON) experiment/tool/plot_latency.py --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
-	$(PYTHON) experiment/tool/plot_loss.py --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
-	$(PYTHON) experiment/tool/plot_overhead.py --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
-	$(PYTHON) experiment/tool/plot_throughput.py --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
-	$(PYTHON) experiment/tool/plot_latency.py --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
-	$(PYTHON) experiment/tool/plot_loss.py --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
-	$(PYTHON) experiment/tool/plot_overhead.py --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
-	$(PYTHON) experiment/tool/plot_throughput.py --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
+	$(PYTHON) $(PLOT_LATENCY_SCRIPT) --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
+	$(PYTHON) $(PLOT_LOSS_SCRIPT) --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
+	$(PYTHON) $(PLOT_OVERHEAD_SCRIPT) --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
+	$(PYTHON) $(PLOT_THROUGHPUT_SCRIPT) --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
+	$(PYTHON) $(PLOT_LATENCY_SCRIPT) --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
+	$(PYTHON) $(PLOT_LOSS_SCRIPT) --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
+	$(PYTHON) $(PLOT_OVERHEAD_SCRIPT) --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
+	$(PYTHON) $(PLOT_THROUGHPUT_SCRIPT) --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
 
 # Build the paper PDF (follow dependencies; do not hand-check and exit)
 paper: $(PAPER_PDF)
@@ -164,7 +173,7 @@ paper/figures:
 
 # Type checking (mypy) using host venv
 mypy: | $(VENV_DIR)
-	$(PYTHON) -m mypy --config-file mypy.ini test/validate.py experiment/tool/plot_throughput.py experiment/tool/plot_latency.py experiment/tool/plot_loss.py experiment/tool/plot_overhead.py
+	$(PYTHON) -m mypy --config-file mypy.ini test/validate.py $(PLOT_TOOL_SRCS)
 
 
 # =============================================================================
@@ -217,7 +226,7 @@ RSYNC_EXCLUDES := \
 
 
 # Baseline: build CSV via one VM run, then host will plot PDFs from CSV
-$(CSV_BASELINE): $(APP_SRCS) $(BASELINE_SRCS) $(TOOLS_SRCS) .ssh_config_baseline | results/baseline
+$(CSV_BASELINE): $(APP_SRCS) $(BASELINE_SRCS) $(EXPERIMENT_TOOL_SRCS) .ssh_config_baseline | results/baseline
 	ACTUAL_BASELINE_BOX_PATH="box/baseline/baseline.$(PROVIDER).box" \
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant up --provision
 	$(RSYNC_BASELINE) $(RSYNC_EXCLUDES) ./ baseline:$(REMOTE_DIR)/
@@ -238,7 +247,7 @@ $(CSV_BASELINE): $(APP_SRCS) $(BASELINE_SRCS) $(TOOLS_SRCS) .ssh_config_baseline
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant halt -f || true
 
 # Solution: build CSV via one VM run, then host will plot PDFs from CSV
-$(CSV_SOLUTION): $(APP_SRCS) $(SOLUTION_SRCS) $(TOOLS_SRCS) .ssh_config_solution | results/solution
+$(CSV_SOLUTION): $(APP_SRCS) $(SOLUTION_SRCS) $(EXPERIMENT_TOOL_SRCS) .ssh_config_solution | results/solution
 	ACTUAL_SOLUTION_BOX_PATH="box/solution/solution.$(PROVIDER).box" \
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant up --provision
 	$(RSYNC_SOLUTION) $(RSYNC_EXCLUDES) ./ solution:$(REMOTE_DIR)/
@@ -259,36 +268,36 @@ $(CSV_SOLUTION): $(APP_SRCS) $(SOLUTION_SRCS) $(TOOLS_SRCS) .ssh_config_solution
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant halt -f || true
 
 # Host-side venv for plotting
-$(VENV_DIR): experiment/tool/requirements.txt
+$(VENV_DIR): $(PLOT_ENV_SRCS)
 	python3 -m venv $(VENV_DIR)
-	$(VENV_DIR)/bin/pip install -r experiment/tool/requirements.txt
+	$(VENV_DIR)/bin/pip install -r $(PLOT_ENV_SRCS)
 	touch $(VENV_DIR)
 
 # Plot from CSV (baseline)
-$(BASELINE_DISRUPTION_PDF) $(BASELINE_DIR)/disruption_metrics.txt &: $(CSV_BASELINE) experiment/tool/plot_latency.py | $(VENV_DIR) $(BASELINE_DIR)
-	$(PYTHON) experiment/tool/plot_latency.py --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
+$(BASELINE_DISRUPTION_PDF) $(BASELINE_DIR)/disruption_metrics.txt &: $(CSV_BASELINE) $(PLOT_LATENCY_SCRIPT) | $(VENV_DIR) $(BASELINE_DIR)
+	$(PYTHON) $(PLOT_LATENCY_SCRIPT) --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
 
-$(BASELINE_LOSS_PDF) $(BASELINE_DIR)/loss_ratio.txt &: $(CSV_BASELINE) experiment/tool/plot_loss.py | $(VENV_DIR) $(BASELINE_DIR)
-	$(PYTHON) experiment/tool/plot_loss.py --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
+$(BASELINE_LOSS_PDF) $(BASELINE_DIR)/loss_ratio.txt &: $(CSV_BASELINE) $(PLOT_LOSS_SCRIPT) | $(VENV_DIR) $(BASELINE_DIR)
+	$(PYTHON) $(PLOT_LOSS_SCRIPT) --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
 
-$(BASELINE_OVERHEAD_PDF) $(BASELINE_DIR)/overhead_total.txt &: $(CSV_BASELINE) experiment/tool/plot_overhead.py | $(VENV_DIR) $(BASELINE_DIR)
-	$(PYTHON) experiment/tool/plot_overhead.py --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
+$(BASELINE_OVERHEAD_PDF) $(BASELINE_DIR)/overhead_total.txt &: $(CSV_BASELINE) $(PLOT_OVERHEAD_SCRIPT) | $(VENV_DIR) $(BASELINE_DIR)
+	$(PYTHON) $(PLOT_OVERHEAD_SCRIPT) --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
 
-$(BASELINE_THROUGHPUT_PDF) $(BASELINE_DIR)/throughput_metrics.txt &: $(CSV_BASELINE) experiment/tool/plot_throughput.py | $(VENV_DIR) $(BASELINE_DIR)
-	$(PYTHON) experiment/tool/plot_throughput.py --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
+$(BASELINE_THROUGHPUT_PDF) $(BASELINE_DIR)/throughput_metrics.txt &: $(CSV_BASELINE) $(PLOT_THROUGHPUT_SCRIPT) | $(VENV_DIR) $(BASELINE_DIR)
+	$(PYTHON) $(PLOT_THROUGHPUT_SCRIPT) --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
 
 # Plot from CSV (solution)
-$(SOLUTION_DISRUPTION_PDF) $(SOLUTION_DIR)/disruption_metrics.txt &: $(CSV_SOLUTION) experiment/tool/plot_latency.py | $(VENV_DIR) $(SOLUTION_DIR)
-	$(PYTHON) experiment/tool/plot_latency.py --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
+$(SOLUTION_DISRUPTION_PDF) $(SOLUTION_DIR)/disruption_metrics.txt &: $(CSV_SOLUTION) $(PLOT_LATENCY_SCRIPT) | $(VENV_DIR) $(SOLUTION_DIR)
+	$(PYTHON) $(PLOT_LATENCY_SCRIPT) --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
 
-$(SOLUTION_LOSS_PDF) $(SOLUTION_DIR)/loss_ratio.txt &: $(CSV_SOLUTION) experiment/tool/plot_loss.py | $(VENV_DIR) $(SOLUTION_DIR)
-	$(PYTHON) experiment/tool/plot_loss.py --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
+$(SOLUTION_LOSS_PDF) $(SOLUTION_DIR)/loss_ratio.txt &: $(CSV_SOLUTION) $(PLOT_LOSS_SCRIPT) | $(VENV_DIR) $(SOLUTION_DIR)
+	$(PYTHON) $(PLOT_LOSS_SCRIPT) --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
 
-$(SOLUTION_OVERHEAD_PDF) $(SOLUTION_DIR)/overhead_total.txt &: $(CSV_SOLUTION) experiment/tool/plot_overhead.py | $(VENV_DIR) $(SOLUTION_DIR)
-	$(PYTHON) experiment/tool/plot_overhead.py --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
+$(SOLUTION_OVERHEAD_PDF) $(SOLUTION_DIR)/overhead_total.txt &: $(CSV_SOLUTION) $(PLOT_OVERHEAD_SCRIPT) | $(VENV_DIR) $(SOLUTION_DIR)
+	$(PYTHON) $(PLOT_OVERHEAD_SCRIPT) --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
 
-$(SOLUTION_THROUGHPUT_PDF) $(SOLUTION_DIR)/throughput_metrics.txt &: $(CSV_SOLUTION) experiment/tool/plot_throughput.py | $(VENV_DIR) $(SOLUTION_DIR)
-	$(PYTHON) experiment/tool/plot_throughput.py --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
+$(SOLUTION_THROUGHPUT_PDF) $(SOLUTION_DIR)/throughput_metrics.txt &: $(CSV_SOLUTION) $(PLOT_THROUGHPUT_SCRIPT) | $(VENV_DIR) $(SOLUTION_DIR)
+	$(PYTHON) $(PLOT_THROUGHPUT_SCRIPT) --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
 
 # --- Copy Results to Paper Directory ---
 
