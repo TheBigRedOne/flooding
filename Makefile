@@ -94,8 +94,7 @@ SOLUTION_SRCS := experiment/solution/Vagrantfile \
 # - TEST_TOOL_SRCS: affects validation/test flow only
 # - PLOT_ENV_SRCS: affects host plotting Python environment
 EXPERIMENT_TOOL_SRCS := experiment/tool/exp.py \
-                        experiment/tool/extract_overhead_csv.py \
-                        experiment/tool/ndn.lua
+                        experiment/tool/extract_overhead_csv.py
 PLOT_LATENCY_SCRIPT := experiment/tool/plot_latency.py
 PLOT_LOSS_SCRIPT := experiment/tool/plot_loss.py
 PLOT_OVERHEAD_SCRIPT := experiment/tool/plot_overhead.py

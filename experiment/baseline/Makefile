@@ -27,7 +27,7 @@ $(CSV_FILE): $(PCAP_FILE)
 	tshark -r $< -T fields -e frame.time_epoch -e frame.len -e ndn.type -e ndn.name -E separator=, -E header=y -E quote=d > $@
 
 # Convert per-node PCAPs to a unified CSV for network-overhead analysis
-$(OVERHEAD_CSV): $(PCAP_FILE) $(OVERHEAD_EXTRACTOR) $(TOOL_DIR)/ndn.lua
+$(OVERHEAD_CSV): $(PCAP_FILE) $(OVERHEAD_EXTRACTOR)
 	python3 $(OVERHEAD_EXTRACTOR) --pcap-dir $(OVERHEAD_PCAP_DIR) --output $@
 
 # The PCAP result depends on the experiment script and the compiled apps.
