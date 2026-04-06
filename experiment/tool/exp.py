@@ -55,6 +55,10 @@ if __name__ == '__main__':
     if not experiment_dir:
         print("Error: EXPERIMENT_DIR environment variable is not set")
         exit(1)
+    results_dir = os.path.join(experiment_dir, "results")
+    pcap_nodes_dir = os.path.join(results_dir, "pcap_nodes")
+    os.makedirs(results_dir, exist_ok=True)
+    os.makedirs(pcap_nodes_dir, exist_ok=True)
 
     Minindn.cleanUp()
     Minindn.verifyDependencies()
@@ -78,9 +82,17 @@ if __name__ == '__main__':
     consumer = ndn.net['consumer']
 
     # enable tcpdump listening on consumer
-    consumer_pcap = os.path.join(experiment_dir, "results", "consumer_capture.pcap")
-    tcpdump_log = os.path.join(experiment_dir, "results", "tcpdump.log")
+    consumer_pcap = os.path.join(results_dir, "consumer_capture.pcap")
+    tcpdump_log = os.path.join(results_dir, "tcpdump.log")
     consumer.cmd(f"tcpdump -i consumer-eth0 -w {consumer_pcap} &> {tcpdump_log} &")
+
+    # Capture app-plane traffic (UDP/6363) on all nodes for network overhead analysis.
+    overhead_nodes = ['core', 'agg1', 'agg2', 'acc1', 'acc2', 'acc3', 'acc4', 'acc5', 'acc6', 'producer', 'consumer']
+    for node_name in overhead_nodes:
+        node = ndn.net[node_name]
+        pcap_path = os.path.join(pcap_nodes_dir, f"{node_name}.pcap")
+        log_path = os.path.join(results_dir, f"tcpdump_{node_name}.log")
+        node.cmd(f"tcpdump -i any -U -w {pcap_path} udp port 6363 &> {log_path} &")
 
     # enbale applications
     producer_exec = os.path.join(experiment_dir, "producer")
@@ -103,6 +115,11 @@ if __name__ == '__main__':
     ndn.net.configLinkStatus('producer', 'acc4', 'up')
     sleep(120)  # keep listening
 
-    consumer.cmd("kill %tcpdump")  # terminate tcpdump
+    # terminate tcpdump and flush pcap files
+    consumer.cmd(f"pkill -f '{consumer_pcap}' || true")
+    for node_name in overhead_nodes:
+        pcap_path = os.path.join(pcap_nodes_dir, f"{node_name}.pcap")
+        ndn.net[node_name].cmd(f"pkill -f '{pcap_path}' || true")
+    sleep(1)
 
     ndn.stop()
