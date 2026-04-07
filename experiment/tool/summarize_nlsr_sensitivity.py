@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-"""
-Summarize NLSR sensitivity experiment outputs into a single CSV.
-"""
+"""Summarize NLSR sensitivity experiment outputs into a single CSV."""
 
 from __future__ import annotations
 
@@ -68,7 +66,10 @@ def _parse_overhead_metrics(path: str) -> Dict[str, str]:
 
 
 def _extract_numeric_prefix(raw: str) -> str:
-    token = raw.strip().split()[0]
+    tokens = raw.strip().split()
+    if not tokens:
+        return ""
+    token = tokens[0]
     return "" if token.lower() == "n/a" else token
 
 
@@ -85,8 +86,6 @@ def main() -> int:
         "routing_calc_interval",
         "handoff_1_disruption_ms",
         "handoff_2_disruption_ms",
-        "median_disruption_ms",
-        "p90_disruption_ms",
         "full_run_fcr",
         "full_run_control_bytes",
     ]
@@ -111,16 +110,10 @@ def main() -> int:
                 "adj_lsa_build_interval": adj,
                 "routing_calc_interval": route,
                 "handoff_1_disruption_ms": _extract_numeric_prefix(
-                    disruption.get("Handoff 1 Disruption Time", "")
+                    disruption["Handoff 1 Disruption Time"]
                 ),
                 "handoff_2_disruption_ms": _extract_numeric_prefix(
-                    disruption.get("Handoff 2 Disruption Time", "")
-                ),
-                "median_disruption_ms": _extract_numeric_prefix(
-                    disruption["Median Disruption Time"]
-                ),
-                "p90_disruption_ms": _extract_numeric_prefix(
-                    disruption["90th Percentile Disruption Time"]
+                    disruption["Handoff 2 Disruption Time"]
                 ),
                 "full_run_fcr": _extract_numeric_prefix(
                     overhead["Forwarding Cost Ratio"]

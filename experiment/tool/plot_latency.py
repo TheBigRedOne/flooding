@@ -136,16 +136,10 @@ def main():
     plt.savefig(os.path.join(args.output_dir, 'disruption_times.pdf'))
     plt.close(fig)
 
-    # Median and 90th percentile
-    median_disruption = np.median(disruption_times)
-    p90_disruption = np.percentile(disruption_times, 90)
-
     metrics_file = os.path.join(args.output_dir, 'disruption_metrics.txt')
     with open(metrics_file, 'w') as f:
         for index, disruption in enumerate(disruption_times, start=1):
             f.write(f"Handoff {index} Disruption Time: {disruption:.2f} ms\n")
-        f.write(f"Median Disruption Time: {median_disruption:.2f} ms\n")
-        f.write(f"90th Percentile Disruption Time: {p90_disruption:.2f} ms\n")
     
     print(f"Generated R1 (Service Disruption) plots and metrics in {args.output_dir}")
 
