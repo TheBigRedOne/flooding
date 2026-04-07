@@ -306,15 +306,18 @@ $$(NLSR_TUNING_DIR_$(1))/.complete: $(APP_SRCS) $(BASELINE_SRCS) $(EXPERIMENT_TO
 	mkdir -p results/minindn-logs; \
 	if [ -d /tmp/minindn ]; then \
 	  for name in $$(MOBILITY_LOG_NODES); do \
-	    node="/tmp/minindn/$$name"; \
-	    if [ -d "$$node/log" ]; then \
-	      mkdir -p "results/minindn-logs/$$name"; \
-	      cp -f "$$node/log/nfd.log" "results/minindn-logs/$$name/" 2>/dev/null || true; \
-	      cp -f "$$node/log/nlsr.log" "results/minindn-logs/$$name/" 2>/dev/null || true; \
+	    node="/tmp/minindn/$$$$name"; \
+	    if [ -d "$$$$node/log" ]; then \
+	      mkdir -p "results/minindn-logs/$$$$name"; \
+	      cp -f "$$$$node/log/nfd.log" "results/minindn-logs/$$$$name/" 2>/dev/null || true; \
+	      cp -f "$$$$node/log/nlsr.log" "results/minindn-logs/$$$$name/" 2>/dev/null || true; \
 	    fi; \
 	  done; \
 	fi'
 	$$(RSYNC_BASELINE) baseline:$$(REMOTE_DIR)/experiment/baseline/results/. $$(NLSR_TUNING_DIR_$(1))/
+	@test -f $$(NLSR_TUNING_DIR_$(1))/consumer_capture.csv || (echo "Missing consumer_capture.csv for profile $(1)" && exit 1)
+	@test -f $$(NLSR_TUNING_DIR_$(1))/network_overhead.csv || (echo "Missing network_overhead.csv for profile $(1)" && exit 1)
+	@test -f $$(NLSR_TUNING_DIR_$(1))/params.txt || (echo "Missing params.txt for profile $(1)" && exit 1)
 	$$(PYTHON) $$(PLOT_LATENCY_SCRIPT) --input $$(NLSR_TUNING_DIR_$(1))/consumer_capture.csv --output-dir $$(NLSR_TUNING_DIR_$(1)) --handoff-times "120, 240"
 	$$(PYTHON) $$(PLOT_OVERHEAD_SCRIPT) --input $$(NLSR_TUNING_DIR_$(1))/network_overhead.csv --output-dir $$(NLSR_TUNING_DIR_$(1)) --handoff-times "120, 240"
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant halt -f || true

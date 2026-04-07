@@ -46,6 +46,6 @@ consumer: $(APP_DIR)/consumer.cpp
 
 # A target to clean up all generated files.
 clean:
-	rm -rf producer consumer results
+	sudo rm -rf producer consumer results
 
 .PHONY: all clean
