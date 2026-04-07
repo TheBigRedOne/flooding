@@ -7,6 +7,7 @@ from minindn.apps.nfd import Nfd
 from minindn.apps.nlsr import Nlsr
 from mininet.topo import Topo
 import os
+from shlex import quote
 from typing import Dict, List, Optional, Tuple
 
 
@@ -68,6 +69,42 @@ def _write_nlsr_params_file(results_dir: str, applied_params: Optional[Dict[str,
     with open(output_path, 'w', encoding='utf-8') as output_file:
         for key in sorted(applied_params):
             output_file.write(f'{key}={applied_params[key]}\n')
+
+
+class TunableNlsr(Nlsr):
+    """
+    Nlsr wrapper for the Mini-NDN release used in the experiment VM.
+
+    The baseline tuning study targets the installed 2024-08 Mini-NDN release,
+    where NLSR is created first and then adjusted through infoedit against the
+    generated nlsr.conf before the process starts.
+    """
+
+    def __init__(self, node, infoeditChanges=None, **kwargs):
+        super().__init__(node, **kwargs)
+        self._apply_manual_infoedit_changes(infoeditChanges)
+
+    def _apply_manual_infoedit_changes(self, infoedit_changes):
+        if not infoedit_changes:
+            return
+
+        conf_dir = getattr(self, 'homeDir', self.node.params['params']['homeDir'])
+        conf_file = getattr(self, 'confFile', os.path.join(conf_dir, 'nlsr.conf'))
+        for change in infoedit_changes:
+            if len(change) < 2:
+                continue
+            key, value = change[0], change[1]
+            operation = change[2] if len(change) > 2 else 'section'
+
+            if operation == 'delete':
+                command = f'cd {quote(conf_dir)} && infoedit -f {quote(os.path.basename(conf_file))} -d {quote(key)}'
+            else:
+                option = '-p' if operation == 'put' else '-s'
+                command = (
+                    f'cd {quote(conf_dir)} && '
+                    f'infoedit -f {quote(os.path.basename(conf_file))} {option} {quote(key)} -v {quote(value)}'
+                )
+            self.node.cmd(command)
 
 class CustomTopo(Topo):
     def build(self):
@@ -141,7 +178,7 @@ if __name__ == '__main__':
     if nlsr_infoedit_changes:
         nlsr_kwargs['infoeditChanges'] = nlsr_infoedit_changes
         info(f"Applying NLSR interval overrides: {nlsr_applied_params}\n")
-    nlsrs = AppManager(ndn, ndn.net.hosts, Nlsr, **nlsr_kwargs)
+    nlsrs = AppManager(ndn, ndn.net.hosts, TunableNlsr, **nlsr_kwargs)
     sleep(30)  # wait for NLSR
 
     # disable producer-acc3&4 at beginning

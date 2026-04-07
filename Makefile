@@ -322,6 +322,11 @@ $$(NLSR_TUNING_DIR_$(1))/.complete: $(APP_SRCS) $(BASELINE_SRCS) $(EXPERIMENT_TO
 	$$(PYTHON) $$(PLOT_OVERHEAD_SCRIPT) --input $$(NLSR_TUNING_DIR_$(1))/network_overhead.csv --output-dir $$(NLSR_TUNING_DIR_$(1)) --handoff-times "120, 240"
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant halt -f || true
 	@echo OK > $$@
+
+$$(NLSR_TUNING_DIR_$(1))/params.txt \
+$$(NLSR_TUNING_DIR_$(1))/disruption_metrics.txt \
+$$(NLSR_TUNING_DIR_$(1))/overhead_total.txt: $$(NLSR_TUNING_DIR_$(1))/.complete
+	@test -f $$@
 endef
 
 $(foreach profile,$(NLSR_TUNING_PROFILES),$(eval $(call DEFINE_NLSR_TUNING_PROFILE,$(profile))))
