@@ -7,6 +7,67 @@ from minindn.apps.nfd import Nfd
 from minindn.apps.nlsr import Nlsr
 from mininet.topo import Topo
 import os
+from typing import Dict, List, Optional, Tuple
+
+
+NLSR_INTERVAL_ENV_TO_KEY = {
+    'NLSR_HELLO_INTERVAL': 'neighbors.hello-interval',
+    'NLSR_ADJ_LSA_BUILD_INTERVAL': 'neighbors.adj-lsa-build-interval',
+    'NLSR_ROUTING_CALC_INTERVAL': 'fib.routing-calc-interval',
+}
+
+
+def _load_nlsr_interval_overrides() -> Tuple[Optional[List[Tuple[str, str]]], Optional[Dict[str, str]]]:
+    """
+    Read optional NLSR interval overrides from the environment.
+
+    The three interval variables must either be provided together or omitted
+    together. When present, values are validated as non-negative integers and
+    converted into Mini-NDN infoeditChanges entries.
+    """
+    raw_values = {
+        env_name: (os.getenv(env_name) or '').strip()
+        for env_name in NLSR_INTERVAL_ENV_TO_KEY
+    }
+    provided = {env_name: value for env_name, value in raw_values.items() if value}
+    if not provided:
+        return None, None
+
+    missing = [env_name for env_name, value in raw_values.items() if not value]
+    if missing:
+        raise ValueError(
+            'Incomplete NLSR interval override set. Missing: ' + ', '.join(sorted(missing))
+        )
+
+    infoedit_changes: List[Tuple[str, str]] = []
+    applied_params: Dict[str, str] = {}
+    for env_name, config_key in NLSR_INTERVAL_ENV_TO_KEY.items():
+        value = raw_values[env_name]
+        try:
+            parsed = int(value)
+        except ValueError as exc:
+            raise ValueError(f'Invalid integer for {env_name}: {value}') from exc
+        if parsed < 0:
+            raise ValueError(f'Negative interval is not allowed for {env_name}: {value}')
+        infoedit_changes.append((config_key, str(parsed)))
+        applied_params[config_key] = str(parsed)
+
+    profile_name = (os.getenv('NLSR_TUNING_PROFILE') or '').strip()
+    if profile_name:
+        applied_params['profile'] = profile_name
+
+    return infoedit_changes, applied_params
+
+
+def _write_nlsr_params_file(results_dir: str, applied_params: Optional[Dict[str, str]]) -> None:
+    """Persist the effective NLSR tuning parameters for later aggregation."""
+    if not applied_params:
+        return
+
+    output_path = os.path.join(results_dir, 'params.txt')
+    with open(output_path, 'w', encoding='utf-8') as output_file:
+        for key in sorted(applied_params):
+            output_file.write(f'{key}={applied_params[key]}\n')
 
 class CustomTopo(Topo):
     def build(self):
@@ -59,6 +120,12 @@ if __name__ == '__main__':
     pcap_nodes_dir = os.path.join(results_dir, "pcap_nodes")
     os.makedirs(results_dir, exist_ok=True)
     os.makedirs(pcap_nodes_dir, exist_ok=True)
+    try:
+        nlsr_infoedit_changes, nlsr_applied_params = _load_nlsr_interval_overrides()
+    except ValueError as error:
+        print(f"Error: {error}")
+        exit(1)
+    _write_nlsr_params_file(results_dir, nlsr_applied_params)
 
     Minindn.cleanUp()
     Minindn.verifyDependencies()
@@ -70,7 +137,11 @@ if __name__ == '__main__':
     info('Starting NFD on nodes\n')
     nfds = AppManager(ndn, ndn.net.hosts, Nfd, logLevel='DEBUG')
     info('Starting NLSR on nodes\n')
-    nlsrs = AppManager(ndn, ndn.net.hosts, Nlsr, logLevel='DEBUG')
+    nlsr_kwargs = {'logLevel': 'DEBUG'}
+    if nlsr_infoedit_changes:
+        nlsr_kwargs['infoeditChanges'] = nlsr_infoedit_changes
+        info(f"Applying NLSR interval overrides: {nlsr_applied_params}\n")
+    nlsrs = AppManager(ndn, ndn.net.hosts, Nlsr, **nlsr_kwargs)
     sleep(30)  # wait for NLSR
 
     # disable producer-acc3&4 at beginning

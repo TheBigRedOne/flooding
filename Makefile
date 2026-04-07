@@ -99,10 +99,16 @@ PLOT_LATENCY_SCRIPT := experiment/tool/plot_latency.py
 PLOT_LOSS_SCRIPT := experiment/tool/plot_loss.py
 PLOT_OVERHEAD_SCRIPT := experiment/tool/plot_overhead.py
 PLOT_THROUGHPUT_SCRIPT := experiment/tool/plot_throughput.py
+PLOT_NLSR_SENSITIVITY_SUMMARY_SCRIPT := experiment/tool/summarize_nlsr_sensitivity.py
+PLOT_NLSR_SENSITIVITY_DISRUPTION_SCRIPT := experiment/tool/plot_nlsr_disruption_comparison.py
+PLOT_NLSR_SENSITIVITY_COST_SCRIPT := experiment/tool/plot_nlsr_network_cost_comparison.py
 PLOT_TOOL_SRCS := $(PLOT_LATENCY_SCRIPT) \
                   $(PLOT_LOSS_SCRIPT) \
                   $(PLOT_OVERHEAD_SCRIPT) \
-                  $(PLOT_THROUGHPUT_SCRIPT)
+                  $(PLOT_THROUGHPUT_SCRIPT) \
+                  $(PLOT_NLSR_SENSITIVITY_SUMMARY_SCRIPT) \
+                  $(PLOT_NLSR_SENSITIVITY_DISRUPTION_SCRIPT) \
+                  $(PLOT_NLSR_SENSITIVITY_COST_SCRIPT)
 TEST_TOOL_SRCS := experiment/tool/ndn.lua
 PLOT_ENV_SRCS := experiment/tool/requirements.txt
 
@@ -112,10 +118,30 @@ PYTHON   := $(VENV_DIR)/bin/python3
 
 BASELINE_DIR := results/baseline
 SOLUTION_DIR := results/solution
+NLSR_SENSITIVITY_DIR := results/nlsr-sensitivity
 CSV_BASELINE := $(BASELINE_DIR)/consumer_capture.csv
 CSV_SOLUTION := $(SOLUTION_DIR)/consumer_capture.csv
 OVERHEAD_CSV_BASELINE := $(BASELINE_DIR)/network_overhead.csv
 OVERHEAD_CSV_SOLUTION := $(SOLUTION_DIR)/network_overhead.csv
+NLSR_TUNING_PROFILES := default moderate aggressive
+NLSR_TUNING_DIR_default := $(NLSR_SENSITIVITY_DIR)/h60-a10-r15
+NLSR_TUNING_DIR_moderate := $(NLSR_SENSITIVITY_DIR)/h48-a8-r12
+NLSR_TUNING_DIR_aggressive := $(NLSR_SENSITIVITY_DIR)/h36-a6-r9
+NLSR_TUNING_HELLO_default := 60
+NLSR_TUNING_HELLO_moderate := 48
+NLSR_TUNING_HELLO_aggressive := 36
+NLSR_TUNING_ADJ_default := 10
+NLSR_TUNING_ADJ_moderate := 8
+NLSR_TUNING_ADJ_aggressive := 6
+NLSR_TUNING_ROUTE_default := 15
+NLSR_TUNING_ROUTE_moderate := 12
+NLSR_TUNING_ROUTE_aggressive := 9
+NLSR_TUNING_PROFILE_ORDER := h60-a10-r15,h48-a8-r12,h36-a6-r9
+NLSR_TUNING_STAMPS := $(foreach profile,$(NLSR_TUNING_PROFILES),$(NLSR_TUNING_DIR_$(profile))/.complete)
+NLSR_TUNING_SUMMARY_INPUTS := $(foreach profile,$(NLSR_TUNING_PROFILES),$(NLSR_TUNING_DIR_$(profile))/params.txt $(NLSR_TUNING_DIR_$(profile))/disruption_metrics.txt $(NLSR_TUNING_DIR_$(profile))/overhead_total.txt)
+NLSR_TUNING_SUMMARY_CSV := $(NLSR_SENSITIVITY_DIR)/summary.csv
+NLSR_TUNING_DISRUPTION_PDF := $(NLSR_SENSITIVITY_DIR)/disruption_comparison.pdf
+NLSR_TUNING_COST_PDF := $(NLSR_SENSITIVITY_DIR)/network_cost_comparison.pdf
 TEST_VALIDATE_OK := test/.validate_ok
 TEST_SRCS := test/Makefile test/Vagrantfile test/exp_test.py test/validate.py \
              experiment/app/producer.cpp experiment/app/consumer.cpp \
@@ -125,13 +151,18 @@ TEST_SRCS := test/Makefile test/Vagrantfile test/exp_test.py test/validate.py \
 all: $(BOXES) experiment $(if $(DISABLE_TEST),,$(TEST_VALIDATE_OK)) result paper
 
 # High-level orchestration targets (provider must be set via `make kvm ...` or `make vb ...`)
-.PHONY: boxes experiment experiment-baseline experiment-solution result plot paper test mypy vm-clean
+.PHONY: boxes experiment experiment-baseline experiment-solution experiment-nlsr-tuning \
+        result plot plot-nlsr-tuning paper test mypy vm-clean
 
 
 # Experiments (run inside VMs and pull back CSVs)
 experiment-baseline: $(CSV_BASELINE) $(OVERHEAD_CSV_BASELINE)
 
 experiment-solution: $(CSV_SOLUTION) $(OVERHEAD_CSV_SOLUTION)
+
+# Run baseline with three NLSR parameter profiles and generate comparison plots
+experiment-nlsr-tuning: $(NLSR_TUNING_STAMPS) $(NLSR_TUNING_SUMMARY_CSV) \
+                        $(NLSR_TUNING_DISRUPTION_PDF) $(NLSR_TUNING_COST_PDF)
 
 # Run both experiments
 experiment: experiment-baseline experiment-solution
@@ -160,6 +191,8 @@ plot: | $(VENV_DIR)
 	$(PYTHON) $(PLOT_OVERHEAD_SCRIPT) --input $(OVERHEAD_CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
 	$(PYTHON) $(PLOT_THROUGHPUT_SCRIPT) --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
 
+plot-nlsr-tuning: $(NLSR_TUNING_SUMMARY_CSV) $(NLSR_TUNING_DISRUPTION_PDF) $(NLSR_TUNING_COST_PDF)
+
 # Build the paper PDF (follow dependencies; do not hand-check and exit)
 paper: $(PAPER_PDF)
 
@@ -171,6 +204,9 @@ results/baseline: | results
 	mkdir $@
 
 results/solution: | results
+	mkdir $@
+
+results/nlsr-sensitivity: | results
 	mkdir $@
 
 paper/figures:
@@ -251,6 +287,42 @@ $(CSV_BASELINE) $(OVERHEAD_CSV_BASELINE) &: $(APP_SRCS) $(BASELINE_SRCS) $(EXPER
 	$(RSYNC_BASELINE) baseline:$(REMOTE_DIR)/experiment/baseline/results/. results/baseline/
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant halt -f || true
 
+define DEFINE_NLSR_TUNING_PROFILE
+$$(NLSR_TUNING_DIR_$(1)): | $$(NLSR_SENSITIVITY_DIR)
+	mkdir $$@
+
+$$(NLSR_TUNING_DIR_$(1))/.complete: $(APP_SRCS) $(BASELINE_SRCS) $(EXPERIMENT_TOOL_SRCS) .ssh_config_baseline | $(VENV_DIR) $$(NLSR_TUNING_DIR_$(1))
+	ACTUAL_BASELINE_BOX_PATH="box/baseline/baseline.$(PROVIDER).box" \
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant up --provision
+	$$(RSYNC_BASELINE) $$(RSYNC_EXCLUDES) ./ baseline:$$(REMOTE_DIR)/
+	rm -rf $$(NLSR_TUNING_DIR_$(1))/*
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant ssh -c 'set -e; \
+	cd $$(REMOTE_DIR)/experiment/baseline && make clean && \
+	NLSR_HELLO_INTERVAL=$$(NLSR_TUNING_HELLO_$(1)) \
+	NLSR_ADJ_LSA_BUILD_INTERVAL=$$(NLSR_TUNING_ADJ_$(1)) \
+	NLSR_ROUTING_CALC_INTERVAL=$$(NLSR_TUNING_ROUTE_$(1)) \
+	NLSR_TUNING_PROFILE=$$(notdir $$(NLSR_TUNING_DIR_$(1))) \
+	make all; \
+	mkdir -p results/minindn-logs; \
+	if [ -d /tmp/minindn ]; then \
+	  for name in $$(MOBILITY_LOG_NODES); do \
+	    node="/tmp/minindn/$$name"; \
+	    if [ -d "$$node/log" ]; then \
+	      mkdir -p "results/minindn-logs/$$name"; \
+	      cp -f "$$node/log/nfd.log" "results/minindn-logs/$$name/" 2>/dev/null || true; \
+	      cp -f "$$node/log/nlsr.log" "results/minindn-logs/$$name/" 2>/dev/null || true; \
+	    fi; \
+	  done; \
+	fi'
+	$$(RSYNC_BASELINE) baseline:$$(REMOTE_DIR)/experiment/baseline/results/. $$(NLSR_TUNING_DIR_$(1))/
+	$$(PYTHON) $$(PLOT_LATENCY_SCRIPT) --input $$(NLSR_TUNING_DIR_$(1))/consumer_capture.csv --output-dir $$(NLSR_TUNING_DIR_$(1)) --handoff-times "120, 240"
+	$$(PYTHON) $$(PLOT_OVERHEAD_SCRIPT) --input $$(NLSR_TUNING_DIR_$(1))/network_overhead.csv --output-dir $$(NLSR_TUNING_DIR_$(1)) --handoff-times "120, 240"
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant halt -f || true
+	@echo OK > $$@
+endef
+
+$(foreach profile,$(NLSR_TUNING_PROFILES),$(eval $(call DEFINE_NLSR_TUNING_PROFILE,$(profile))))
+
 # Solution: build CSV via one VM run, then host will plot PDFs from CSV
 $(CSV_SOLUTION) $(OVERHEAD_CSV_SOLUTION) &: $(APP_SRCS) $(SOLUTION_SRCS) $(EXPERIMENT_TOOL_SRCS) .ssh_config_solution | results/solution
 	ACTUAL_SOLUTION_BOX_PATH="box/solution/solution.$(PROVIDER).box" \
@@ -303,6 +375,15 @@ $(SOLUTION_OVERHEAD_PDF) $(SOLUTION_DIR)/overhead_total.txt &: $(OVERHEAD_CSV_SO
 
 $(SOLUTION_THROUGHPUT_PDF) $(SOLUTION_DIR)/throughput_metrics.txt &: $(CSV_SOLUTION) $(PLOT_THROUGHPUT_SCRIPT) | $(VENV_DIR) $(SOLUTION_DIR)
 	$(PYTHON) $(PLOT_THROUGHPUT_SCRIPT) --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
+
+$(NLSR_TUNING_SUMMARY_CSV): $(NLSR_TUNING_SUMMARY_INPUTS) $(PLOT_NLSR_SENSITIVITY_SUMMARY_SCRIPT) | $(VENV_DIR) $(NLSR_SENSITIVITY_DIR)
+	$(PYTHON) $(PLOT_NLSR_SENSITIVITY_SUMMARY_SCRIPT) --root-dir $(NLSR_SENSITIVITY_DIR) --profiles "$(NLSR_TUNING_PROFILE_ORDER)" --output $@
+
+$(NLSR_TUNING_DISRUPTION_PDF): $(NLSR_TUNING_SUMMARY_CSV) $(PLOT_NLSR_SENSITIVITY_DISRUPTION_SCRIPT) | $(VENV_DIR) $(NLSR_SENSITIVITY_DIR)
+	$(PYTHON) $(PLOT_NLSR_SENSITIVITY_DISRUPTION_SCRIPT) --input $(NLSR_TUNING_SUMMARY_CSV) --output $@
+
+$(NLSR_TUNING_COST_PDF): $(NLSR_TUNING_SUMMARY_CSV) $(PLOT_NLSR_SENSITIVITY_COST_SCRIPT) | $(VENV_DIR) $(NLSR_SENSITIVITY_DIR)
+	$(PYTHON) $(PLOT_NLSR_SENSITIVITY_COST_SCRIPT) --input $(NLSR_TUNING_SUMMARY_CSV) --output $@
 
 # --- Copy Results to Paper Directory ---
 
