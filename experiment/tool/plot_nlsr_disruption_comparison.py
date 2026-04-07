@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Plot NLSR sensitivity disruption comparison from the summary CSV.
+Plot per-handoff disruption comparison from the summary CSV.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ BAR_WIDTH = 0.35
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Plot disruption comparison across NLSR sensitivity profiles."
+        description="Plot per-handoff disruption comparison across NLSR sensitivity profiles."
     )
     parser.add_argument("--input", required=True, help="Input summary CSV.")
     parser.add_argument("--output", required=True, help="Output PDF path.")
@@ -81,17 +81,17 @@ def main() -> int:
         return 0
 
     labels = [row["profile_label"] for row in rows]
-    median_values = [float(row["median_disruption_ms"]) for row in rows]
-    p90_values = [float(row["p90_disruption_ms"]) for row in rows]
+    handoff_1_values = [float(row["handoff_1_disruption_ms"]) for row in rows]
+    handoff_2_values = [float(row["handoff_2_disruption_ms"]) for row in rows]
     x = np.arange(len(rows))
 
     _configure_paper_style()
     fig, ax = plt.subplots(figsize=_paper_figure_size())
-    ax.bar(x - BAR_WIDTH / 2, median_values, BAR_WIDTH, label="Median", color="steelblue")
-    ax.bar(x + BAR_WIDTH / 2, p90_values, BAR_WIDTH, label="P90", color="darkorange")
+    ax.bar(x - BAR_WIDTH / 2, handoff_1_values, BAR_WIDTH, label="Handoff 1", color="steelblue")
+    ax.bar(x + BAR_WIDTH / 2, handoff_2_values, BAR_WIDTH, label="Handoff 2", color="darkorange")
     ax.set_xlabel("NLSR Parameter Set (hello / adj-lsa / route-calc)")
     ax.set_ylabel("Disruption Time (ms)")
-    ax.set_title("Disruption Under Baseline NLSR Tuning")
+    ax.set_title("Per-Handoff Disruption Under Baseline NLSR Tuning")
     ax.set_xticks(x)
     ax.set_xticklabels(labels)
     ax.set_ylim(bottom=0)

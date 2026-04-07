@@ -26,7 +26,7 @@ FIGURE_TITLE_SIZE = 8
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Plot FCR and NLSR control cost across sensitivity profiles."
+        description="Plot FCR and all observed NLSR control cost across sensitivity profiles."
     )
     parser.add_argument("--input", required=True, help="Input summary CSV.")
     parser.add_argument("--output", required=True, help="Output PDF path.")
@@ -100,7 +100,7 @@ def main() -> int:
 
     ax_control.bar(x, control_values, color="slateblue")
     ax_control.set_xlabel("NLSR Parameter Set (hello / adj-lsa / route-calc)")
-    ax_control.set_ylabel("NLSR Control Bytes")
+    ax_control.set_ylabel("All NLSR Control Bytes")
     ax_control.set_xticks(x)
     ax_control.set_xticklabels(labels)
     ax_control.set_ylim(bottom=0)

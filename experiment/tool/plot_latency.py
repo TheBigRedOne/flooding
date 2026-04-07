@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import argparse
 import os
+from typing import List
 
 # ---------------------------------------------------------------------------
 # TUNING: Figure canvas size (physical export size before LaTeX scaling).
@@ -46,6 +47,11 @@ def _configure_paper_style():
     plt.rcParams["font.family"] = "serif"
 
 
+def _write_empty_outputs(output_dir: str) -> None:
+    open(os.path.join(output_dir, 'disruption_times.pdf'), 'w').close()
+    open(os.path.join(output_dir, 'disruption_metrics.txt'), 'w').close()
+
+
 def main():
     parser = argparse.ArgumentParser(description="Analyze service disruption time from NDN pcap CSV.")
     parser.add_argument('--input', type=str, required=True, help='Input CSV file from tshark.')
@@ -63,8 +69,7 @@ def main():
             raise pd.errors.EmptyDataError
     except (pd.errors.EmptyDataError, FileNotFoundError):
         print(f"Warning: Input file {args.input} is empty or not found. Skipping analysis.")
-        open(os.path.join(args.output_dir, 'disruption_times.pdf'), 'w').close()
-        open(os.path.join(args.output_dir, 'disruption_metrics.txt'), 'w').close()
+        _write_empty_outputs(args.output_dir)
         return
 
     df.rename(columns={'frame.time_epoch': 'time', 'ndn.type': 'type', 'ndn.name': 'name'}, inplace=True)
@@ -78,8 +83,7 @@ def main():
 
     if df.empty:
         print(f"Warning: No packets under prefix {app_prefix}. Skipping analysis.")
-        open(os.path.join(args.output_dir, 'disruption_times.pdf'), 'w').close()
-        open(os.path.join(args.output_dir, 'disruption_metrics.txt'), 'w').close()
+        _write_empty_outputs(args.output_dir)
         return
 
     # Convert type to lowercase string
@@ -92,7 +96,7 @@ def main():
     handoffs_absolute = [start_time + t for t in handoffs_relative]
 
     all_data_times = np.sort(df[df['type'] == 'data']['time'].unique())
-    disruption_times = []
+    disruption_times: List[float] = []
 
     for t_h in handoffs_absolute:
         # Find the timestamp of the last data packet received *before* or at the handoff time
@@ -114,8 +118,7 @@ def main():
 
     if not disruption_times:
         print("Warning: Could not calculate any disruption times. No plots generated.")
-        open(os.path.join(args.output_dir, 'disruption_times.pdf'), 'w').close()
-        open(os.path.join(args.output_dir, 'disruption_metrics.txt'), 'w').close()
+        _write_empty_outputs(args.output_dir)
         return
 
     # --- (R1) Service disruption time (K1) ---
@@ -139,6 +142,8 @@ def main():
 
     metrics_file = os.path.join(args.output_dir, 'disruption_metrics.txt')
     with open(metrics_file, 'w') as f:
+        for index, disruption in enumerate(disruption_times, start=1):
+            f.write(f"Handoff {index} Disruption Time: {disruption:.2f} ms\n")
         f.write(f"Median Disruption Time: {median_disruption:.2f} ms\n")
         f.write(f"90th Percentile Disruption Time: {p90_disruption:.2f} ms\n")
     

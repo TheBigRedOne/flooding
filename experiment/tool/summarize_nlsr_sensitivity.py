@@ -83,6 +83,8 @@ def main() -> int:
         "hello_interval",
         "adj_lsa_build_interval",
         "routing_calc_interval",
+        "handoff_1_disruption_ms",
+        "handoff_2_disruption_ms",
         "median_disruption_ms",
         "p90_disruption_ms",
         "full_run_fcr",
@@ -108,6 +110,12 @@ def main() -> int:
                 "hello_interval": hello,
                 "adj_lsa_build_interval": adj,
                 "routing_calc_interval": route,
+                "handoff_1_disruption_ms": _extract_numeric_prefix(
+                    disruption.get("Handoff 1 Disruption Time", "")
+                ),
+                "handoff_2_disruption_ms": _extract_numeric_prefix(
+                    disruption.get("Handoff 2 Disruption Time", "")
+                ),
                 "median_disruption_ms": _extract_numeric_prefix(
                     disruption["Median Disruption Time"]
                 ),

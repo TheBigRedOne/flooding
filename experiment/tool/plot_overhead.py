@@ -37,7 +37,6 @@ FLOOD_COLOR = 'darkorange'
 APP_OTHER_COLOR = 'steelblue'
 CONTROL_COLOR = 'slateblue'
 DEFAULT_RELAY_NODES = ['core', 'agg1', 'agg2', 'acc1', 'acc2', 'acc3', 'acc4', 'acc5', 'acc6']
-CONTROL_PREFIX = '/localhop/ndn/nlsr/'
 LOCALHOST_PREFIX = '/localhost/'
 
 
@@ -123,6 +122,10 @@ def _parse_handoff_times(raw: Optional[str]) -> List[float]:
 
 def _series_has_text(series: pd.Series) -> pd.Series:
     return series.fillna('').astype(str).str.strip() != ''
+
+
+def _is_nlsr_control_name(series: pd.Series) -> pd.Series:
+    return series.astype(str).str.contains('/nlsr/', regex=False)
 
 
 def _aggregate_bytes_per_second(df: pd.DataFrame, max_second: int) -> pd.Series:
@@ -288,7 +291,7 @@ def main():
     df['name'] = df['name'].astype(str)
     df['node'] = df['node'].astype(str)
 
-    df['is_control'] = df['name'].str.startswith(CONTROL_PREFIX)
+    df['is_control'] = _is_nlsr_control_name(df['name'])
     df['is_localhost'] = df['name'].str.startswith(LOCALHOST_PREFIX)
     df['is_app'] = (
         df['name'].str.startswith(args.prefix) &
