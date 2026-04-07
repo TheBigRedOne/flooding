@@ -244,12 +244,12 @@ Together, these controls bound overhead and reduce the attack surface for denial
 \section{Evaluation}
 \label{sec:evaluation}
 
-We evaluated OptoFlood in real-time video-based mobility scenarios, representing common live conferencing and streaming applications.
+We evaluate OptoFlood in a real-time streaming scenario with local producer mobility. The objective is to determine whether temporary flooding and Fast-LSA can preserve service continuity during hand-off while keeping the additional forwarding and control traffic bounded.
 
 % ------------------------------------------------------------------------------
 \subsection{Methodology}
 
-We focus on campus micro-mobility with real-time video: a smartphone user walks across a campus network, with the connection handing over between nearby Points of Attachment (PoAs) under the same distribution domain while the video stream remains active. This is a common, real-world scenario that must work effectively with NDN and is sensitive to latency, packet loss, and transient routing disruption.
+We consider producer micro-mobility within a single access domain, where an ongoing real-time stream remains active while the producer changes its attachment point. This setting stresses the interval between the physical move and routing convergence, which is precisely where NDN producer mobility causes service interruption.
 
 % - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 \subsubsection{Producer Application}
@@ -266,83 +266,101 @@ The consumer issues Interests every 33~ms (30~fps) with freshness and a 6~s life
 
 % - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 \subsubsection{Network Topology}
-\ryo{this needs a diagram of the testbed/topology}
+The evaluation topology is a three-layer access network with one core node, two aggregation nodes, and six access nodes. The consumer is attached to one access node, while the producer is initially attached to a neighbouring access node and then moves to two alternative access nodes during the run. This setup creates local hand-offs that remain within a few hops but still require the forwarding plane and routing plane to react.
 
-The experiment simulates a handheld UE (e.g., a smartphone) in a campus network, maintaining a real-time video meeting while handing over between nearby Points of Attachment (PoAs) under the same distribution domain. Based on a typical walking speed of approximately 1.4~m/s and a PoA spacing of 60--80~m across roads and buildings, the UE performs a handover roughly every 45--60~seconds. This micro-mobility setting keeps movements local (within two to three hops) and provides a realistic basis for evaluating OptoFlood’s low-latency recovery after producer movements.
-
-The network follows a classic three-layer mobile architecture representative of carrier xHaul deployments:
+The links are configured as follows:
 \begin{itemize}
-    \item \textbf{Core layer:} One core switch, linking to the distribution layer with 1~Gbps bandwidth and 1~ms latency.
-    \item \textbf{Distribution layer:} Two aggregation switches, each connected to the core and providing 500~Mbps / 1~ms links to their access layer.
-    \item \textbf{Access layer:} Three access switches (PoAs) per aggregation switch, each offering 100~Mbps bandwidth and 10~ms latency to the UE.
+    \item \textbf{Core to aggregation:} 1~Gbps, 1~ms.
+    \item \textbf{Aggregation to access:} 500~Mbps, 5~ms.
+    \item \textbf{Consumer/producer to access:} 100~Mbps, 5~ms.
 \end{itemize}
 
 \begin{figure}
     \centering
     \includegraphics[width=1\linewidth]{Topology.pdf}
-	\caption{Experiment Topology \ryo{This needs to be in the style of figures from problem-solution scenario}}
+	\caption{Experiment topology used in the mobility evaluation.}
     \label{exp_topo}
 \end{figure}
 
 % - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-\subsubsection{Methodology}
+\subsubsection{Experiment Procedure and Measurement}
 
-The simulations were conducted using Mini-NDN version 0.7.0 and repeated with identical topology, applications, and mobility patterns, with and without OptoFlood enhancements, to ensure that performance differences are attributable solely to the OptoFlood mechanism \cite{lantz:2010:mininet}.
+The experiments are run in Mini-NDN 0.7.0 with identical topology, applications, and hand-off schedule in two configurations: baseline NDN forwarding and OptoFlood-enabled forwarding \cite{lantz:2010:mininet}. In each run, all nodes start NFD and NLSR and are given time to converge before the applications are launched. The producer then performs two scheduled hand-offs, separated by long enough intervals to let the transient behaviour around each event be observed clearly.
 
-For each run, all network nodes were initialised with NFD and NLSR and allowed to reach a stable routing state (typically within 20~seconds). The consumer and producer applications were then launched simultaneously: the consumer periodically issued Interest packets for video segments, while the producer generated corresponding Data packets in real time, emulating a live video conference scenario.
-
-Producer mobility was simulated by sequentially reattaching the producer node to different access switches (PoAs), with a stable interval between movements chosen to the 120~second hand-off period expected for a walking UE. Each hand-off was implemented by disconnecting from the current PoA and immediately connecting to the next, representing movement across coverage zones under the same distribution domain.
-
-We record packet traces (\texttt{ndndump}) in three places: the consumer, the access switch adjacent to the old PoA, and the access switch adjacent to the new PoA for each hand-off.
+We record packet traces (\texttt{ndndump}) in three places: the consumer, the access switch adjacent to the old PoA, and the access switch adjacent to the new PoA for each hand-off. In the implementation used to regenerate the figures in this repository, we additionally retain packet traces on all relay and endpoint nodes and merge them into a unified packet-level CSV for the overhead analysis, so that hop-by-hop forwarding cost can be reconstructed consistently from fresh runs.
 The simulation runs as containers on a single host (an AMD EPYC server with 64 cores, 128 threads, 512GB memory, running Debian 12 ``bookworm''), so the clocks are consistent; where cross-node timing is required, we compute relative times from the consumer’s point of view.
+
+We report four complementary views of performance:
+\begin{itemize}
+    \item \textbf{Throughput continuity:} delivered consumer throughput over time.
+    \item \textbf{Service disruption time:} for each hand-off, the time between the last Data packet observed before the move and the first Data packet observed after service resumes.
+    \item \textbf{Unmet-interest ratio:} an Interest is counted as unmet if the first request for a content name is not satisfied by Data within the application deadline; we evaluate this in the 10~s interval immediately after each hand-off and compare it with the steady-state remainder of the run.
+    \item \textbf{Forwarding overhead:} application relay load across the relay nodes, normalised by delivered Data bytes, together with a decomposition into explicit flooding traffic and NLSR control traffic.
+\end{itemize}
+
+Because the figures are regenerated from fresh experiment runs, small run-to-run variation is expected. We therefore emphasise stable trends and relative magnitudes rather than over-interpreting exact point values.
 
 % ------------------------------------------------------------------------------
 \subsection{Results}
 
-We evaluated OptoFlood using three metrics that capture user-perceived continuity, delivery reliability, and the safety of controlled flooding.
-Metrics are computed for each hand-off, considering the window from 2~s before reattachment to 8~s after; we also report steady-state values outside this window.
+The results consistently show the same overall pattern across reruns: baseline NDN experiences long hand-off outages while OptoFlood converts those outages into short transients, and it does so without causing an uncontrolled increase in network load.
 
-\textbf{Service disruption time.}
-We report per-handoff disruption times as a bar plot (baseline vs OptoFlood, side-by-side). We also report the median and the 90th percentile in all handoffs. This shows how quickly communication resumes after reattachment.
+\subsubsection{Service Continuity}
+
+Under baseline forwarding, each hand-off produces a pronounced collapse in delivered throughput and a long interval during which the consumer continues to send Interests but receives little or no Data. Recovery is only observed after ordinary routing convergence catches up, which leads to disruption on the order of tens of seconds, as illustrated by the baseline throughput and disruption plots in Figures~\ref{fig:baseline_throughput} and~\ref{fig:baseline_disruption}.
+
+With OptoFlood, the behaviour is qualitatively different. The stream remains continuous apart from a very narrow disturbance around each hand-off, and the disruption plot in Figure~\ref{fig:solution_disruption} shows recovery on the order of tens of milliseconds rather than tens of seconds. In other words, the producer move is no longer visible as a prolonged service outage but as a brief perturbation. The aggregate delivered throughput over the full run also increases, because the long blind period that dominates the baseline run is largely removed.
 
 \begin{figure}
     \centering
     \includegraphics[width=\columnwidth]{solution_disruption.pdf}
-    \caption{Solution Disruption}
+    \caption{Per-handoff service disruption with OptoFlood.}
     \label{fig:solution_disruption}
 \end{figure}
 
-\textbf{Unmet-Interest ratio.}
-We computed the ratio within the analysis window for each handoff and showed a paired comparison (baseline vs OptoFlood). We also give the steady-state ratio outside the window as a reference. A lower ratio under OptoFlood indicates that pending Interests around the hand-off are satisfied with fewer retransmissions.
+\subsubsection{Delivery Reliability}
+
+The unmet-interest results show the same transition from failure-dominated recovery to near-continuous delivery. In the baseline case, the immediate post-handoff window is dominated by unsatisfied requests: the consumer continues to issue Interests, but stale forwarding state prevents them from being satisfied before their deadline. This is exactly the failure mode expected from pure routing-plane recovery.
+
+Under OptoFlood, the hand-off window ratio drops to near the steady-state regime, showing that the temporary flooded paths and short-lived forwarding hints are effective in rescuing pending requests while routing converges. Just as importantly, the steady-state unmet-interest ratio remains low and similar to the baseline case, indicating that the mechanism does not destabilise normal forwarding once a valid path has been restored.
+
 \begin{figure}
     \centering
     \includegraphics[width=\columnwidth]{baseline_loss.pdf}
-    \caption{Baseline Loss}
+    \caption{Unmet-interest ratio under baseline forwarding.}
     \label{fig:baseline_loss}
 \end{figure}
 \begin{figure}
     \centering
     \includegraphics[width=\columnwidth]{solution_loss.pdf}
-    \caption{Solution Loss}
+    \caption{Unmet-interest ratio with OptoFlood.}
     \label{fig:solution_loss}
 \end{figure}
 
-\textbf{Flooding overhead and scope.}
-We plotted the time series of flooded packets per second during the window and gave a small table with the observed hop span (min and max \textit{HopLimit} seen). We check that the configured hop limit is respected and that flooding stays within the configured bound.
+\subsubsection{Forwarding Overhead and Control Activity}
+
+The overhead figures must be read as a decomposition of network activity, not simply as a count of flooded packets. The main time series shows the total application relay load, the explicit flood component, and the NLSR control component, all observed across the relay nodes.
+
+Several features are noteworthy. First, the full-run forwarding cost under OptoFlood remains in the same range as the baseline. This means the gain in service continuity is not bought by an uncontrolled explosion of hop-by-hop forwarding load. Second, the explicit flood component is concentrated around the hand-offs, where path repair is actually needed, and remains a small fraction of the total application forwarding load over the whole run. Third, the control-plane activity appears earlier and more strongly under OptoFlood, which is expected because Fast-LSA and related NLSR activity are triggered promptly once useful temporary paths are discovered.
+
+The baseline overhead plot requires a slightly different interpretation. In the immediate post-handoff windows, the consumer may receive no Data at all, so a normalised forwarding-cost ratio for those windows is undefined. This is not a plotting artefact; it is itself evidence of a severe service outage. The baseline still shows routing control activity, but it tends to appear later, after service has already been disrupted for much longer. By contrast, OptoFlood keeps delivery active during the same windows, so the forwarding-cost ratio remains meaningful even while recovery is in progress.
+
+Taken together, the overhead results support the intended design point: OptoFlood adds extra traffic where recovery is needed, but that traffic is temporally localised, operationally bounded, and comparable in overall scale to the forwarding cost already incurred by the baseline during prolonged disruption and retransmission.
+
 \begin{figure}
     \centering
     \includegraphics[width=\columnwidth]{baseline_overhead.pdf}
-    \caption{Baseline Overhead}
+    \caption{Forwarding and control load under baseline forwarding.}
     \label{fig:baseline_overhead}
 \end{figure}
 \begin{figure}
     \centering
     \includegraphics[width=\columnwidth]{solution_overhead.pdf}
-    \caption{Solution Overhead}
+    \caption{Forwarding and control load with OptoFlood.}
     \label{fig:solution_overhead}
 \end{figure}
 
-Together, these results demonstrate that mobility introduces a clear disruption under baseline NDN, while OptoFlood reduces the disruption time and unmet requests with bounded, localised flooding.
+Overall, the evaluation shows that OptoFlood converts producer hand-offs from long user-visible outages into brief transients, keeps unmet requests near the steady-state regime during mobility, and does so with additional forwarding and control traffic that remains bounded rather than escalating uncontrollably.
 
 % ==============================================================================
 
