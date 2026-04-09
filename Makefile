@@ -291,7 +291,7 @@ define DEFINE_NLSR_TUNING_PROFILE
 $$(NLSR_TUNING_DIR_$(1)): | $$(NLSR_SENSITIVITY_DIR)
 	mkdir $$@
 
-$$(NLSR_TUNING_DIR_$(1))/.complete: $(APP_SRCS) $(BASELINE_SRCS) $(EXPERIMENT_TOOL_SRCS) .ssh_config_baseline | $(VENV_DIR) $$(NLSR_TUNING_DIR_$(1))
+$$(NLSR_TUNING_DIR_$(1))/.complete: $(APP_SRCS) $(BASELINE_SRCS) $(EXPERIMENT_TOOL_SRCS) .ssh_config_baseline | $(NLSR_TUNING_DIR_$(1))
 	ACTUAL_BASELINE_BOX_PATH="box/baseline/baseline.$(PROVIDER).box" \
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant up --provision
 	$$(RSYNC_BASELINE) $$(RSYNC_EXCLUDES) ./ baseline:$$(REMOTE_DIR)/
@@ -318,15 +318,25 @@ $$(NLSR_TUNING_DIR_$(1))/.complete: $(APP_SRCS) $(BASELINE_SRCS) $(EXPERIMENT_TO
 	@test -f $$(NLSR_TUNING_DIR_$(1))/consumer_capture.csv || (echo "Missing consumer_capture.csv for profile $(1)" && exit 1)
 	@test -f $$(NLSR_TUNING_DIR_$(1))/network_overhead.csv || (echo "Missing network_overhead.csv for profile $(1)" && exit 1)
 	@test -f $$(NLSR_TUNING_DIR_$(1))/params.txt || (echo "Missing params.txt for profile $(1)" && exit 1)
-	$$(PYTHON) $$(PLOT_LATENCY_SCRIPT) --input $$(NLSR_TUNING_DIR_$(1))/consumer_capture.csv --output-dir $$(NLSR_TUNING_DIR_$(1)) --handoff-times "120, 240"
-	$$(PYTHON) $$(PLOT_OVERHEAD_SCRIPT) --input $$(NLSR_TUNING_DIR_$(1))/network_overhead.csv --output-dir $$(NLSR_TUNING_DIR_$(1)) --handoff-times "120, 240"
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant halt -f || true
 	@echo OK > $$@
 
-$$(NLSR_TUNING_DIR_$(1))/params.txt \
-$$(NLSR_TUNING_DIR_$(1))/disruption_metrics.txt \
-$$(NLSR_TUNING_DIR_$(1))/overhead_total.txt: $$(NLSR_TUNING_DIR_$(1))/.complete
+$$(NLSR_TUNING_DIR_$(1))/params.txt: $$(NLSR_TUNING_DIR_$(1))/.complete
 	@test -f $$@
+
+$$(NLSR_TUNING_DIR_$(1))/disruption_times.pdf \
+$$(NLSR_TUNING_DIR_$(1))/disruption_metrics.txt &: \
+	$$(NLSR_TUNING_DIR_$(1))/.complete \
+	$$(NLSR_TUNING_DIR_$(1))/consumer_capture.csv \
+	$$(PLOT_LATENCY_SCRIPT) | $$(VENV_DIR) $$(NLSR_TUNING_DIR_$(1))
+	$$(PYTHON) $$(PLOT_LATENCY_SCRIPT) --input $$(NLSR_TUNING_DIR_$(1))/consumer_capture.csv --output-dir $$(NLSR_TUNING_DIR_$(1)) --handoff-times "120, 240"
+
+$$(NLSR_TUNING_DIR_$(1))/overhead_timeseries.pdf \
+$$(NLSR_TUNING_DIR_$(1))/overhead_total.txt &: \
+	$$(NLSR_TUNING_DIR_$(1))/.complete \
+	$$(NLSR_TUNING_DIR_$(1))/network_overhead.csv \
+	$$(PLOT_OVERHEAD_SCRIPT) | $$(VENV_DIR) $$(NLSR_TUNING_DIR_$(1))
+	$$(PYTHON) $$(PLOT_OVERHEAD_SCRIPT) --input $$(NLSR_TUNING_DIR_$(1))/network_overhead.csv --output-dir $$(NLSR_TUNING_DIR_$(1)) --handoff-times "120, 240"
 endef
 
 $(foreach profile,$(NLSR_TUNING_PROFILES),$(eval $(call DEFINE_NLSR_TUNING_PROFILE,$(profile))))

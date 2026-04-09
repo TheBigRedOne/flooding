@@ -47,6 +47,15 @@ def _parse_disruption_metrics(path: str) -> Dict[str, str]:
     return metrics
 
 
+def _require_metric(metrics: Dict[str, str], key: str, path: str) -> str:
+    if key not in metrics:
+        raise ValueError(
+            f"Missing '{key}' in {path}. Re-run the per-profile plotting step so "
+            "disruption_metrics.txt is regenerated in the current format."
+        )
+    return metrics[key]
+
+
 def _parse_overhead_metrics(path: str) -> Dict[str, str]:
     metrics: Dict[str, str] = {}
     current_section: Optional[str] = None
@@ -110,10 +119,18 @@ def main() -> int:
                 "adj_lsa_build_interval": adj,
                 "routing_calc_interval": route,
                 "handoff_1_disruption_ms": _extract_numeric_prefix(
-                    disruption["Handoff 1 Disruption Time"]
+                    _require_metric(
+                        disruption,
+                        "Handoff 1 Disruption Time",
+                        os.path.join(profile_dir, "disruption_metrics.txt"),
+                    )
                 ),
                 "handoff_2_disruption_ms": _extract_numeric_prefix(
-                    disruption["Handoff 2 Disruption Time"]
+                    _require_metric(
+                        disruption,
+                        "Handoff 2 Disruption Time",
+                        os.path.join(profile_dir, "disruption_metrics.txt"),
+                    )
                 ),
                 "full_run_fcr": _extract_numeric_prefix(
                     overhead["Forwarding Cost Ratio"]
