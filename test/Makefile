@@ -10,6 +10,7 @@ BOX_NAME := optoflood-solution-test
 VAGRANT_SOLUTION := VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=$(ROOT_DIR)/test vagrant
 VAGRANT_ENV := ACTUAL_SOLUTION_BOX_PATH="$(SOLUTION_BOX)" SOLUTION_BOX_NAME=$(BOX_NAME)
 SSH_CONFIG := .ssh_config_solution
+REFRESH_SSH_CONFIG := $(VAGRANT_SOLUTION) ssh-config --host solution > $(SSH_CONFIG)
 
 # Remote working directory for rsync-based test runs
 REMOTE_DIR := /home/vagrant/flooding
@@ -46,6 +47,7 @@ $(SOLUTION_BOX):
 # Convenience VM lifecycle helpers (explicit; not auto-run unless invoked)
 vm-up: $(SOLUTION_BOX)
 	$(VAGRANT_ENV) $(VAGRANT_SOLUTION) up --provision
+	$(REFRESH_SSH_CONFIG)
 
 vm-halt:
 	$(VAGRANT_SOLUTION) halt -f || true
@@ -60,12 +62,13 @@ $(SSH_CONFIG): $(ROOT_DIR)/test/Vagrantfile $(SOLUTION_BOX)
 	# Remove previously cached box to force reload from local package
 	$(VAGRANT_SOLUTION) box remove $(BOX_NAME) --provider=$(PROVIDER) || true
 	$(VAGRANT_ENV) $(VAGRANT_SOLUTION) up --provision
-	$(VAGRANT_SOLUTION) ssh-config --host solution > $(SSH_CONFIG)
+	$(REFRESH_SSH_CONFIG)
 
 # Sync sources from host to VM via rsync (standardized entry)
 sync: $(SYNC_STAMP)
 
 $(SYNC_STAMP): $(SSH_CONFIG) $(SYNC_INPUTS)
+	$(REFRESH_SSH_CONFIG)
 	$(RSYNC_SOLUTION) $(RSYNC_EXCLUDES) $(ROOT_DIR)/ solution:$(REMOTE_DIR)/
 	@echo OK > $@
 
@@ -79,6 +82,7 @@ VM_VALIDATE_STAMP := $(RESULTS_DIR)/.validate_ok_vm
 
 # Produce test artifacts via one VM run, then rsync back (grouped target)
 $(PCAPS) $(RIBS) &: $(SYNC_STAMP)
+	$(REFRESH_SSH_CONFIG)
 	# Build apps inside VM from rsynced sources under $(REMOTE_DIR)
 	$(VAGRANT_SOLUTION) ssh -c 'set -e; test -d $(REMOTE_DIR)/experiment/app || (echo "rsync failed: $(REMOTE_DIR)/experiment/app missing" && exit 1)'
 	$(VAGRANT_SOLUTION) ssh -c 'set -e; cd $(REMOTE_DIR)/test && rm -f producer consumer && PKG="$$(pkg-config --cflags --libs libndn-cxx)" && g++ -std=c++17 -g -O2 -DSOLUTION_ENABLED -o producer $(REMOTE_DIR)/experiment/app/producer.cpp $$PKG && chmod -v +x producer'

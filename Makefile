@@ -147,6 +147,19 @@ TEST_SRCS := test/Makefile test/Vagrantfile test/exp_test.py test/validate.py \
              experiment/app/producer.cpp experiment/app/consumer.cpp \
              experiment/app/trust-schema.conf $(TEST_TOOL_SRCS)
 
+# SSH config files used by host-side rsync/ssh invocations.
+BASELINE_SSH_CONFIG := .ssh_config_baseline
+SOLUTION_SSH_CONFIG := .ssh_config_solution
+
+# Vagrant command wrappers for experiment VMs.
+VAGRANT_BASELINE = VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant
+VAGRANT_SOLUTION = VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant
+
+# Refresh cached SSH endpoints after `vagrant up`, because providers may
+# reassign guest addresses or forwarded ports between runs.
+REFRESH_BASELINE_SSH_CONFIG = $(VAGRANT_BASELINE) ssh-config --host baseline > $(BASELINE_SSH_CONFIG)
+REFRESH_SOLUTION_SSH_CONFIG = $(VAGRANT_SOLUTION) ssh-config --host solution > $(SOLUTION_SSH_CONFIG)
+
 # Main target (set DISABLE_TEST=1 to skip tests)
 all: $(BOXES) experiment $(if $(DISABLE_TEST),,$(TEST_VALIDATE_OK)) result paper
 
@@ -236,24 +249,24 @@ box/solution/solution.$(PROVIDER).box: box/solution/Vagrantfile box/initial/init
 
 
 # SSH config file for baseline experiment
-.ssh_config_baseline: experiment/baseline/Vagrantfile box/baseline/baseline.$(PROVIDER).box
+$(BASELINE_SSH_CONFIG): experiment/baseline/Vagrantfile box/baseline/baseline.$(PROVIDER).box
 	# Force destroy any lingering VM to ensure a clean state
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant destroy -f || true
+	$(VAGRANT_BASELINE) destroy -f || true
 	ACTUAL_BASELINE_BOX_PATH="box/baseline/baseline.$(PROVIDER).box" \
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant up --provision
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant ssh-config --host baseline > .ssh_config_baseline
+	$(VAGRANT_BASELINE) up --provision
+	$(REFRESH_BASELINE_SSH_CONFIG)
 
 # SSH config file for solution experiment
-.ssh_config_solution: experiment/solution/Vagrantfile box/solution/solution.$(PROVIDER).box
+$(SOLUTION_SSH_CONFIG): experiment/solution/Vagrantfile box/solution/solution.$(PROVIDER).box
 	# Force destroy any lingering VM to ensure a clean state
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant destroy -f || true
+	$(VAGRANT_SOLUTION) destroy -f || true
 	ACTUAL_SOLUTION_BOX_PATH="box/solution/solution.$(PROVIDER).box" \
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant up --provision
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant ssh-config --host solution > .ssh_config_solution
+	$(VAGRANT_SOLUTION) up --provision
+	$(REFRESH_SOLUTION_SSH_CONFIG)
 
 # Rsync commands
-RSYNC_BASELINE = rsync -avH -e "ssh -F .ssh_config_baseline"
-RSYNC_SOLUTION = rsync -avH -e "ssh -F .ssh_config_solution"
+RSYNC_BASELINE = rsync -avH -e "ssh -F $(BASELINE_SSH_CONFIG)"
+RSYNC_SOLUTION = rsync -avH -e "ssh -F $(SOLUTION_SSH_CONFIG)"
 
 # Remote working directory inside VMs (standardized for rsync-based runs)
 REMOTE_DIR := /home/vagrant/flooding
@@ -267,11 +280,12 @@ RSYNC_EXCLUDES := \
 
 
 # Baseline: build CSV via one VM run, then host will plot PDFs from CSV
-$(CSV_BASELINE) $(OVERHEAD_CSV_BASELINE) &: $(APP_SRCS) $(BASELINE_SRCS) $(EXPERIMENT_TOOL_SRCS) .ssh_config_baseline | results/baseline
+$(CSV_BASELINE) $(OVERHEAD_CSV_BASELINE) &: $(APP_SRCS) $(BASELINE_SRCS) $(EXPERIMENT_TOOL_SRCS) $(BASELINE_SSH_CONFIG) | results/baseline
 	ACTUAL_BASELINE_BOX_PATH="box/baseline/baseline.$(PROVIDER).box" \
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant up --provision
+	$(VAGRANT_BASELINE) up --provision
+	$(REFRESH_BASELINE_SSH_CONFIG)
 	$(RSYNC_BASELINE) $(RSYNC_EXCLUDES) ./ baseline:$(REMOTE_DIR)/
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant ssh -c 'set -e; \
+	$(VAGRANT_BASELINE) ssh -c 'set -e; \
 	cd $(REMOTE_DIR)/experiment/baseline && make clean && make all; \
 	mkdir -p results/minindn-logs; \
 	if [ -d /tmp/minindn ]; then \
@@ -285,18 +299,19 @@ $(CSV_BASELINE) $(OVERHEAD_CSV_BASELINE) &: $(APP_SRCS) $(BASELINE_SRCS) $(EXPER
 	  done; \
 	fi'
 	$(RSYNC_BASELINE) baseline:$(REMOTE_DIR)/experiment/baseline/results/. results/baseline/
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant halt -f || true
+	$(VAGRANT_BASELINE) halt -f || true
 
 define DEFINE_NLSR_TUNING_PROFILE
 $$(NLSR_TUNING_DIR_$(1)): | $$(NLSR_SENSITIVITY_DIR)
 	mkdir $$@
 
-$$(NLSR_TUNING_DIR_$(1))/.complete: $(APP_SRCS) $(BASELINE_SRCS) $(EXPERIMENT_TOOL_SRCS) .ssh_config_baseline | $(NLSR_TUNING_DIR_$(1))
+$$(NLSR_TUNING_DIR_$(1))/.complete: $(APP_SRCS) $(BASELINE_SRCS) $(EXPERIMENT_TOOL_SRCS) $(BASELINE_SSH_CONFIG) | $(NLSR_TUNING_DIR_$(1))
 	ACTUAL_BASELINE_BOX_PATH="box/baseline/baseline.$(PROVIDER).box" \
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant up --provision
+	$(VAGRANT_BASELINE) up --provision
+	$$(REFRESH_BASELINE_SSH_CONFIG)
 	$$(RSYNC_BASELINE) $$(RSYNC_EXCLUDES) ./ baseline:$$(REMOTE_DIR)/
 	rm -rf $$(NLSR_TUNING_DIR_$(1))/*
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant ssh -c 'set -e; \
+	$(VAGRANT_BASELINE) ssh -c 'set -e; \
 	cd $$(REMOTE_DIR)/experiment/baseline && make clean && \
 	NLSR_HELLO_INTERVAL=$$(NLSR_TUNING_HELLO_$(1)) \
 	NLSR_ADJ_LSA_BUILD_INTERVAL=$$(NLSR_TUNING_ADJ_$(1)) \
@@ -318,7 +333,7 @@ $$(NLSR_TUNING_DIR_$(1))/.complete: $(APP_SRCS) $(BASELINE_SRCS) $(EXPERIMENT_TO
 	@test -f $$(NLSR_TUNING_DIR_$(1))/consumer_capture.csv || (echo "Missing consumer_capture.csv for profile $(1)" && exit 1)
 	@test -f $$(NLSR_TUNING_DIR_$(1))/network_overhead.csv || (echo "Missing network_overhead.csv for profile $(1)" && exit 1)
 	@test -f $$(NLSR_TUNING_DIR_$(1))/params.txt || (echo "Missing params.txt for profile $(1)" && exit 1)
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant halt -f || true
+	$(VAGRANT_BASELINE) halt -f || true
 	@echo OK > $$@
 
 $$(NLSR_TUNING_DIR_$(1))/params.txt: $$(NLSR_TUNING_DIR_$(1))/.complete
@@ -342,11 +357,12 @@ endef
 $(foreach profile,$(NLSR_TUNING_PROFILES),$(eval $(call DEFINE_NLSR_TUNING_PROFILE,$(profile))))
 
 # Solution: build CSV via one VM run, then host will plot PDFs from CSV
-$(CSV_SOLUTION) $(OVERHEAD_CSV_SOLUTION) &: $(APP_SRCS) $(SOLUTION_SRCS) $(EXPERIMENT_TOOL_SRCS) .ssh_config_solution | results/solution
+$(CSV_SOLUTION) $(OVERHEAD_CSV_SOLUTION) &: $(APP_SRCS) $(SOLUTION_SRCS) $(EXPERIMENT_TOOL_SRCS) $(SOLUTION_SSH_CONFIG) | results/solution
 	ACTUAL_SOLUTION_BOX_PATH="box/solution/solution.$(PROVIDER).box" \
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant up --provision
+	$(VAGRANT_SOLUTION) up --provision
+	$(REFRESH_SOLUTION_SSH_CONFIG)
 	$(RSYNC_SOLUTION) $(RSYNC_EXCLUDES) ./ solution:$(REMOTE_DIR)/
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant ssh -c 'set -e; \
+	$(VAGRANT_SOLUTION) ssh -c 'set -e; \
 	cd $(REMOTE_DIR)/experiment/solution && make clean && make all; \
 	mkdir -p results/minindn-logs; \
 	if [ -d /tmp/minindn ]; then \
@@ -360,7 +376,7 @@ $(CSV_SOLUTION) $(OVERHEAD_CSV_SOLUTION) &: $(APP_SRCS) $(SOLUTION_SRCS) $(EXPER
 	  done; \
 	fi'
 	$(RSYNC_SOLUTION) solution:$(REMOTE_DIR)/experiment/solution/results/. results/solution/
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant halt -f || true
+	$(VAGRANT_SOLUTION) halt -f || true
 
 # Host-side venv for plotting
 $(VENV_DIR): $(PLOT_ENV_SRCS)
@@ -470,7 +486,7 @@ deep-clean: clean
 
 # Clean SSH config file
 clean-ssh-config:
-	rm -f .ssh_config_baseline .ssh_config_solution
+	rm -f $(BASELINE_SSH_CONFIG) $(SOLUTION_SSH_CONFIG)
 
 # Destroy all VMs (keep boxes)
 vm-clean: clean-ssh-config
