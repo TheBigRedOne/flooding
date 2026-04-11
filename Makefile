@@ -160,6 +160,9 @@ VAGRANT_SOLUTION = VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/s
 REFRESH_BASELINE_SSH_CONFIG = $(VAGRANT_BASELINE) ssh-config --host baseline > $(BASELINE_SSH_CONFIG)
 REFRESH_SOLUTION_SSH_CONFIG = $(VAGRANT_SOLUTION) ssh-config --host solution > $(SOLUTION_SSH_CONFIG)
 
+# Run one experiment VM workflow from the repository root.
+RUN_EXPERIMENT_VM = PROVIDER=$(PROVIDER) MOBILITY_LOG_NODES="$(MOBILITY_LOG_NODES)" sh scripts/run-experiment-vm.sh
+
 # Main target (set DISABLE_TEST=1 to skip tests)
 all: $(BOXES) experiment $(if $(DISABLE_TEST),,$(TEST_VALIDATE_OK)) result paper
 
@@ -264,76 +267,28 @@ $(SOLUTION_SSH_CONFIG): experiment/solution/Vagrantfile box/solution/solution.$(
 	$(VAGRANT_SOLUTION) up --provision
 	$(REFRESH_SOLUTION_SSH_CONFIG)
 
-# Rsync commands
-RSYNC_BASELINE = rsync -avH -e "ssh -F $(BASELINE_SSH_CONFIG)"
-RSYNC_SOLUTION = rsync -avH -e "ssh -F $(SOLUTION_SSH_CONFIG)"
-
 # Remote working directory inside VMs (standardized for rsync-based runs)
 REMOTE_DIR := /home/vagrant/flooding
-
-# Files/dirs excluded from rsync push
-RSYNC_EXCLUDES := \
-  --exclude .git \
-  --exclude .vagrant \
-  --exclude results \
-  --exclude paper/bin
 
 
 # Baseline: build CSV via one VM run, then host will plot PDFs from CSV
 $(CSV_BASELINE) $(OVERHEAD_CSV_BASELINE) &: $(APP_SRCS) $(BASELINE_SRCS) $(EXPERIMENT_TOOL_SRCS) $(BASELINE_SSH_CONFIG) | results/baseline
-	ACTUAL_BASELINE_BOX_PATH="box/baseline/baseline.$(PROVIDER).box" \
-	$(VAGRANT_BASELINE) up --provision
-	$(REFRESH_BASELINE_SSH_CONFIG)
-	$(RSYNC_BASELINE) $(RSYNC_EXCLUDES) ./ baseline:$(REMOTE_DIR)/
-	$(VAGRANT_BASELINE) ssh -c 'set -e; \
-	cd $(REMOTE_DIR)/experiment/baseline && make clean && make all; \
-	mkdir -p results/minindn-logs; \
-	if [ -d /tmp/minindn ]; then \
-	  for name in $(MOBILITY_LOG_NODES); do \
-	    node="/tmp/minindn/$$name"; \
-	    if [ -d "$$node/log" ]; then \
-	      mkdir -p "results/minindn-logs/$$name"; \
-	      cp -f "$$node/log/nfd.log" "results/minindn-logs/$$name/" 2>/dev/null || true; \
-	      cp -f "$$node/log/nlsr.log" "results/minindn-logs/$$name/" 2>/dev/null || true; \
-	    fi; \
-	  done; \
-	fi'
-	$(RSYNC_BASELINE) baseline:$(REMOTE_DIR)/experiment/baseline/results/. results/baseline/
-	$(VAGRANT_BASELINE) halt -f || true
+	$(RUN_EXPERIMENT_VM) experiment/baseline baseline $(BASELINE_SSH_CONFIG) ACTUAL_BASELINE_BOX_PATH box/baseline/baseline.$(PROVIDER).box ./ $(REMOTE_DIR) experiment/baseline $(BASELINE_DIR)
 
 define DEFINE_NLSR_TUNING_PROFILE
 $$(NLSR_TUNING_DIR_$(1)): | $$(NLSR_SENSITIVITY_DIR)
 	mkdir $$@
 
 $$(NLSR_TUNING_DIR_$(1))/.complete: $(APP_SRCS) $(BASELINE_SRCS) $(EXPERIMENT_TOOL_SRCS) $(BASELINE_SSH_CONFIG) | $(NLSR_TUNING_DIR_$(1))
-	ACTUAL_BASELINE_BOX_PATH="box/baseline/baseline.$(PROVIDER).box" \
-	$(VAGRANT_BASELINE) up --provision
-	$$(REFRESH_BASELINE_SSH_CONFIG)
-	$$(RSYNC_BASELINE) $$(RSYNC_EXCLUDES) ./ baseline:$$(REMOTE_DIR)/
-	rm -rf $$(NLSR_TUNING_DIR_$(1))/*
-	$(VAGRANT_BASELINE) ssh -c 'set -e; \
-	cd $$(REMOTE_DIR)/experiment/baseline && make clean && \
+	CLEAR_LOCAL_RESULTS=1 \
 	NLSR_HELLO_INTERVAL=$$(NLSR_TUNING_HELLO_$(1)) \
 	NLSR_ADJ_LSA_BUILD_INTERVAL=$$(NLSR_TUNING_ADJ_$(1)) \
 	NLSR_ROUTING_CALC_INTERVAL=$$(NLSR_TUNING_ROUTE_$(1)) \
 	NLSR_TUNING_PROFILE=$$(notdir $$(NLSR_TUNING_DIR_$(1))) \
-	make all; \
-	mkdir -p results/minindn-logs; \
-	if [ -d /tmp/minindn ]; then \
-	  for name in $$(MOBILITY_LOG_NODES); do \
-	    node="/tmp/minindn/$$$$name"; \
-	    if [ -d "$$$$node/log" ]; then \
-	      mkdir -p "results/minindn-logs/$$$$name"; \
-	      cp -f "$$$$node/log/nfd.log" "results/minindn-logs/$$$$name/" 2>/dev/null || true; \
-	      cp -f "$$$$node/log/nlsr.log" "results/minindn-logs/$$$$name/" 2>/dev/null || true; \
-	    fi; \
-	  done; \
-	fi'
-	$$(RSYNC_BASELINE) baseline:$$(REMOTE_DIR)/experiment/baseline/results/. $$(NLSR_TUNING_DIR_$(1))/
+	$(RUN_EXPERIMENT_VM) experiment/baseline baseline $(BASELINE_SSH_CONFIG) ACTUAL_BASELINE_BOX_PATH box/baseline/baseline.$(PROVIDER).box ./ $$(REMOTE_DIR) experiment/baseline $$(NLSR_TUNING_DIR_$(1))
 	@test -f $$(NLSR_TUNING_DIR_$(1))/consumer_capture.csv || (echo "Missing consumer_capture.csv for profile $(1)" && exit 1)
 	@test -f $$(NLSR_TUNING_DIR_$(1))/network_overhead.csv || (echo "Missing network_overhead.csv for profile $(1)" && exit 1)
 	@test -f $$(NLSR_TUNING_DIR_$(1))/params.txt || (echo "Missing params.txt for profile $(1)" && exit 1)
-	$(VAGRANT_BASELINE) halt -f || true
 	@echo OK > $$@
 
 $$(NLSR_TUNING_DIR_$(1))/params.txt: $$(NLSR_TUNING_DIR_$(1))/.complete
@@ -358,25 +313,7 @@ $(foreach profile,$(NLSR_TUNING_PROFILES),$(eval $(call DEFINE_NLSR_TUNING_PROFI
 
 # Solution: build CSV via one VM run, then host will plot PDFs from CSV
 $(CSV_SOLUTION) $(OVERHEAD_CSV_SOLUTION) &: $(APP_SRCS) $(SOLUTION_SRCS) $(EXPERIMENT_TOOL_SRCS) $(SOLUTION_SSH_CONFIG) | results/solution
-	ACTUAL_SOLUTION_BOX_PATH="box/solution/solution.$(PROVIDER).box" \
-	$(VAGRANT_SOLUTION) up --provision
-	$(REFRESH_SOLUTION_SSH_CONFIG)
-	$(RSYNC_SOLUTION) $(RSYNC_EXCLUDES) ./ solution:$(REMOTE_DIR)/
-	$(VAGRANT_SOLUTION) ssh -c 'set -e; \
-	cd $(REMOTE_DIR)/experiment/solution && make clean && make all; \
-	mkdir -p results/minindn-logs; \
-	if [ -d /tmp/minindn ]; then \
-	  for name in $(MOBILITY_LOG_NODES); do \
-	    node="/tmp/minindn/$$name"; \
-	    if [ -d "$$node/log" ]; then \
-	      mkdir -p "results/minindn-logs/$$name"; \
-	      cp -f "$$node/log/nfd.log" "results/minindn-logs/$$name/" 2>/dev/null || true; \
-	      cp -f "$$node/log/nlsr.log" "results/minindn-logs/$$name/" 2>/dev/null || true; \
-	    fi; \
-	  done; \
-	fi'
-	$(RSYNC_SOLUTION) solution:$(REMOTE_DIR)/experiment/solution/results/. results/solution/
-	$(VAGRANT_SOLUTION) halt -f || true
+	$(RUN_EXPERIMENT_VM) experiment/solution solution $(SOLUTION_SSH_CONFIG) ACTUAL_SOLUTION_BOX_PATH box/solution/solution.$(PROVIDER).box ./ $(REMOTE_DIR) experiment/solution $(SOLUTION_DIR)
 
 # Host-side venv for plotting
 $(VENV_DIR): $(PLOT_ENV_SRCS)
