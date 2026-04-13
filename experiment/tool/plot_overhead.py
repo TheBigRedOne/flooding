@@ -32,6 +32,8 @@ OVERHEAD_LINE_WIDTH = 1.0
 HANDOFF_SHADE_ALPHA = 0.18
 X_TICK_BINS = 5
 SUMMARY_BAR_WIDTH = 0.32
+LEGEND_MAX_COLUMNS = 2
+LEGEND_VERTICAL_OFFSET = 1.05
 APP_TOTAL_COLOR = 'crimson'
 FLOOD_COLOR = 'darkorange'
 APP_OTHER_COLOR = 'steelblue'
@@ -76,6 +78,25 @@ def _configure_paper_style():
     })
     plt.rcParams["pdf.use14corefonts"] = True
     plt.rcParams["font.family"] = "serif"
+
+
+def _place_legend_above_axis(ax) -> None:
+    """Place the legend above the axis to avoid covering plotted series and bars."""
+    handles, labels = ax.get_legend_handles_labels()
+    if not handles:
+        return
+    ax.legend(
+        handles,
+        labels,
+        loc='lower center',
+        bbox_to_anchor=(0.5, LEGEND_VERTICAL_OFFSET),
+        ncol=min(len(handles), LEGEND_MAX_COLUMNS),
+        frameon=False,
+        borderaxespad=0.0,
+        columnspacing=0.8,
+        handlelength=1.5,
+        handletextpad=0.5,
+    )
 
 
 def _write_empty_outputs(output_dir: str) -> None:
@@ -449,7 +470,7 @@ def main():
     ax_timeseries.set_title('Network Overhead Over Time')
     ax_timeseries.set_ylim(bottom=0)
     ax_timeseries.xaxis.set_major_locator(MaxNLocator(nbins=X_TICK_BINS, integer=True))
-    ax_timeseries.legend(loc='upper right')
+    _place_legend_above_axis(ax_timeseries)
     ax_timeseries.grid(True, which='both', ls='--')
 
     summary_items = handoff_summaries if handoff_summaries else [full_run_summary]
@@ -510,11 +531,11 @@ def main():
     ax_summary.set_title('Window Summaries')
     ax_summary.set_ylim(0, ymax + label_offset * 3.0)
     ax_summary.yaxis.set_major_locator(MaxNLocator(nbins=4))
-    ax_summary.legend(loc='upper right')
+    _place_legend_above_axis(ax_summary)
     ax_summary.grid(True, axis='y', linestyle='--', alpha=0.7)
 
-    fig.tight_layout()
-    plt.savefig(os.path.join(args.output_dir, 'overhead_timeseries.pdf'))
+    fig.tight_layout(h_pad=1.2)
+    fig.savefig(os.path.join(args.output_dir, 'overhead_timeseries.pdf'), bbox_inches='tight')
     plt.close(fig)
 
     _write_summary_file(

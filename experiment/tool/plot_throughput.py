@@ -37,6 +37,8 @@ THROUGHPUT_LINE_WIDTH = 1.0
 HANDOFF_SHADE_ALPHA = 0.2
 Y_TICK_BINS = 5
 X_TICK_BINS = 5
+LEGEND_MAX_COLUMNS = 2
+LEGEND_VERTICAL_OFFSET = 1.05
 
 
 def _paper_figure_size() -> Tuple[float, float]:
@@ -58,6 +60,25 @@ def _configure_paper_style() -> None:
     })
     plt.rcParams["pdf.use14corefonts"] = True
     plt.rcParams["font.family"] = "serif"
+
+
+def _place_legend_above_axis(ax) -> None:
+    """Place the legend above the axis to avoid covering the throughput curve."""
+    handles, labels = ax.get_legend_handles_labels()
+    if not handles:
+        return
+    ax.legend(
+        handles,
+        labels,
+        loc="lower center",
+        bbox_to_anchor=(0.5, LEGEND_VERTICAL_OFFSET),
+        ncol=min(len(handles), LEGEND_MAX_COLUMNS),
+        frameon=False,
+        borderaxespad=0.0,
+        columnspacing=0.8,
+        handlelength=1.5,
+        handletextpad=0.5,
+    )
 
 
 def _load_packets(csv_path: str) -> List[Tuple[float, int]]:
@@ -222,7 +243,7 @@ def main() -> None:
     ax.set_xlabel("Time (seconds)")
     ax.set_ylabel("Throughput (bytes/s)")
     ax.set_title("Throughput Over Time")
-    ax.legend(loc="upper right")
+    _place_legend_above_axis(ax)
     ax.grid(True)
     ax.yaxis.set_major_formatter(ScalarFormatter(useMathText=False))
     ax.ticklabel_format(style="plain", axis="y")
@@ -237,7 +258,7 @@ def main() -> None:
 
     fig.tight_layout()
     output_pdf = os.path.join(args.output_dir, "throughput_timeseries.pdf")
-    plt.savefig(output_pdf)
+    fig.savefig(output_pdf, bbox_inches="tight")
     plt.close(fig)
 
 
