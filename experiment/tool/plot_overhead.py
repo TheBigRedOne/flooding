@@ -14,7 +14,7 @@ from matplotlib.ticker import MaxNLocator
 # ---------------------------------------------------------------------------
 CM_TO_INCH = 1.0 / 2.54
 PAPER_FIGURE_WIDTH_CM = 8.0
-PAPER_FIGURE_HEIGHT_CM = 8.0
+PAPER_FIGURE_HEIGHT_CM = 10.0
 
 # ---------------------------------------------------------------------------
 # TUNING: Text sizes inside the plot.
@@ -34,13 +34,16 @@ HANDOFF_SHADE_ALPHA = 0.18
 X_TICK_BINS = 5
 SUMMARY_BAR_WIDTH = 0.32
 LEGEND_MAX_COLUMNS = 2
-LEGEND_BASE_OFFSET = 1.01
-LEGEND_EXTRA_ROW_OFFSET = 0.05
-TITLE_VERTICAL_POSITION = 1.20
-Y_AXIS_HEADROOM_RATIO = 0.08
+LEGEND_BASE_OFFSET = 1.02
+LEGEND_EXTRA_ROW_OFFSET = 0.04
+TITLE_VERTICAL_POSITION = 1.16
+Y_AXIS_HEADROOM_RATIO = 0.10
 Y_AXIS_HEADROOM_MIN = 1.0
-SUMMARY_Y_TOP_MULTIPLIER = 6.0
-SUBPLOT_VERTICAL_PADDING = 2.2
+FIGURE_LEFT_MARGIN = 0.16
+FIGURE_RIGHT_MARGIN = 0.98
+FIGURE_TOP_MARGIN = 0.90
+FIGURE_BOTTOM_MARGIN = 0.16
+SUBPLOT_VERTICAL_SPACING = 0.95
 APP_TOTAL_COLOR = 'crimson'
 FLOOD_COLOR = 'darkorange'
 APP_OTHER_COLOR = 'steelblue'
@@ -119,6 +122,15 @@ def _set_nonnegative_ylim_with_headroom(ax, values: List[float]) -> None:
     max_value = max(values) if values else 0.0
     headroom = max(Y_AXIS_HEADROOM_MIN, max_value * Y_AXIS_HEADROOM_RATIO)
     ax.set_ylim(0, max(max_value + headroom, Y_AXIS_HEADROOM_MIN))
+
+
+def _format_summary_tick_label(summary: WindowSummary) -> str:
+    """Format the summary tick label with per-window forwarding metrics."""
+    return (
+        f"{summary.label}\n"
+        f"FCR={_format_ratio(summary.forwarding_cost_ratio)}\n"
+        f"Flood={_format_ratio(summary.flood_share, percent=True)}"
+    )
 
 
 def _write_empty_outputs(output_dir: str) -> None:
@@ -487,7 +499,6 @@ def main():
     ax_timeseries.grid(True, which='both', ls='--')
 
     summary_items = handoff_summaries if handoff_summaries else [full_run_summary]
-    summary_labels = [item.label for item in summary_items]
     other_forwarding = [item.app_relay_bytes - item.flood_bytes for item in summary_items]
     explicit_flood = [item.flood_bytes for item in summary_items]
     control_bytes = [item.control_bytes for item in summary_items]
@@ -526,28 +537,24 @@ def main():
         [item.control_bytes for item in summary_items] +
         [1]
     )
-    label_offset = max(ymax * 0.04, 1.0)
-    for index, summary in enumerate(summary_items):
-        top = max(summary.app_relay_bytes, summary.control_bytes)
-        ax_summary.text(
-            x[index],
-            top + label_offset,
-            f"FCR={_format_ratio(summary.forwarding_cost_ratio)}\n"
-            f"Flood={_format_ratio(summary.flood_share, percent=True)}",
-            ha='center',
-            va='bottom',
-        )
-
+    summary_tick_labels = [_format_summary_tick_label(summary) for summary in summary_items]
     ax_summary.set_xticks(x)
-    ax_summary.set_xticklabels(summary_labels)
+    ax_summary.set_xticklabels(summary_tick_labels)
+    ax_summary.tick_params(axis='x', pad=1.5)
     ax_summary.set_ylabel('Bytes in Window')
     _set_axis_title(ax_summary, 'Window Summaries')
-    ax_summary.set_ylim(0, ymax + label_offset * SUMMARY_Y_TOP_MULTIPLIER)
+    _set_nonnegative_ylim_with_headroom(ax_summary, [float(ymax)])
     ax_summary.yaxis.set_major_locator(MaxNLocator(nbins=4))
     _place_legend_above_axis(ax_summary)
     ax_summary.grid(True, axis='y', linestyle='--', alpha=0.7)
 
-    fig.tight_layout(h_pad=SUBPLOT_VERTICAL_PADDING)
+    fig.subplots_adjust(
+        left=FIGURE_LEFT_MARGIN,
+        right=FIGURE_RIGHT_MARGIN,
+        top=FIGURE_TOP_MARGIN,
+        bottom=FIGURE_BOTTOM_MARGIN,
+        hspace=SUBPLOT_VERTICAL_SPACING,
+    )
     fig.savefig(os.path.join(args.output_dir, 'overhead_timeseries.pdf'), bbox_inches='tight')
     plt.close(fig)
 
