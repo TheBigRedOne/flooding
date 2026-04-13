@@ -34,16 +34,17 @@ HANDOFF_SHADE_ALPHA = 0.18
 X_TICK_BINS = 5
 SUMMARY_BAR_WIDTH = 0.32
 LEGEND_MAX_COLUMNS = 2
-LEGEND_BASE_OFFSET = 1.02
-LEGEND_EXTRA_ROW_OFFSET = 0.04
-TITLE_VERTICAL_POSITION = 1.16
+LEGEND_BASE_OFFSET = 1.00
+LEGEND_EXTRA_ROW_OFFSET = 0.03
+TITLE_LEGEND_GAP = 0.16
+TITLE_EXTRA_ROW_GAP = 0.06
 Y_AXIS_HEADROOM_RATIO = 0.10
 Y_AXIS_HEADROOM_MIN = 1.0
 FIGURE_LEFT_MARGIN = 0.16
 FIGURE_RIGHT_MARGIN = 0.98
-FIGURE_TOP_MARGIN = 0.90
+FIGURE_TOP_MARGIN = 0.84
 FIGURE_BOTTOM_MARGIN = 0.16
-SUBPLOT_VERTICAL_SPACING = 0.95
+SUBPLOT_VERTICAL_SPACING = 1.15
 APP_TOTAL_COLOR = 'crimson'
 FLOOD_COLOR = 'darkorange'
 APP_OTHER_COLOR = 'steelblue'
@@ -90,19 +91,23 @@ def _configure_paper_style():
     plt.rcParams["font.family"] = "serif"
 
 
-def _place_legend_above_axis(ax) -> None:
-    """Place the legend above the axis and below the axis title."""
+def _place_title_and_legend(ax, title: str) -> None:
+    """Place the title above the legend with spacing derived from legend rows."""
     handles, labels = ax.get_legend_handles_labels()
     if not handles:
+        ax.set_title(title)
         return
+
     legend_columns = min(len(handles), LEGEND_MAX_COLUMNS)
     legend_rows = math.ceil(len(handles) / legend_columns)
-    vertical_offset = LEGEND_BASE_OFFSET + LEGEND_EXTRA_ROW_OFFSET * (legend_rows - 1)
+    legend_offset = LEGEND_BASE_OFFSET + LEGEND_EXTRA_ROW_OFFSET * (legend_rows - 1)
+    title_offset = legend_offset + TITLE_LEGEND_GAP + TITLE_EXTRA_ROW_GAP * (legend_rows - 1)
+
     ax.legend(
         handles,
         labels,
         loc='lower center',
-        bbox_to_anchor=(0.5, vertical_offset),
+        bbox_to_anchor=(0.5, legend_offset),
         ncol=legend_columns,
         frameon=False,
         borderaxespad=0.0,
@@ -110,11 +115,7 @@ def _place_legend_above_axis(ax) -> None:
         handlelength=1.5,
         handletextpad=0.5,
     )
-
-
-def _set_axis_title(ax, title: str) -> None:
-    """Place the axis title above the legend region."""
-    ax.set_title(title, y=TITLE_VERTICAL_POSITION, pad=0.0)
+    ax.set_title(title, y=title_offset, pad=0.0)
 
 
 def _set_nonnegative_ylim_with_headroom(ax, values: List[float]) -> None:
@@ -485,7 +486,6 @@ def main():
 
     ax_timeseries.set_xlabel('Time (seconds)')
     ax_timeseries.set_ylabel('Relay Load (bytes/s)')
-    _set_axis_title(ax_timeseries, 'Network Overhead Over Time')
     _set_nonnegative_ylim_with_headroom(
         ax_timeseries,
         [
@@ -495,7 +495,7 @@ def main():
         ],
     )
     ax_timeseries.xaxis.set_major_locator(MaxNLocator(nbins=X_TICK_BINS, integer=True))
-    _place_legend_above_axis(ax_timeseries)
+    _place_title_and_legend(ax_timeseries, 'Network Overhead Over Time')
     ax_timeseries.grid(True, which='both', ls='--')
 
     summary_items = handoff_summaries if handoff_summaries else [full_run_summary]
@@ -542,10 +542,9 @@ def main():
     ax_summary.set_xticklabels(summary_tick_labels)
     ax_summary.tick_params(axis='x', pad=1.5)
     ax_summary.set_ylabel('Bytes in Window')
-    _set_axis_title(ax_summary, 'Window Summaries')
     _set_nonnegative_ylim_with_headroom(ax_summary, [float(ymax)])
     ax_summary.yaxis.set_major_locator(MaxNLocator(nbins=4))
-    _place_legend_above_axis(ax_summary)
+    _place_title_and_legend(ax_summary, 'Window Summaries')
     ax_summary.grid(True, axis='y', linestyle='--', alpha=0.7)
 
     fig.subplots_adjust(
