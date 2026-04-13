@@ -27,7 +27,8 @@ HANDOFF_BAR_COLOR = 'orangered'
 STEADY_BAR_COLOR = 'deepskyblue'
 VALUE_LABEL_OFFSET_MIN = 0.02
 VALUE_LABEL_OFFSET_RATIO = 0.025
-LOSS_Y_MAX_HEADROOM = 1.0
+LOSS_Y_TOP_PADDING = 0.08
+TITLE_PAD_POINTS = 4.0
 
 
 def _paper_figure_size():
@@ -191,20 +192,24 @@ def main():
     # TUNING: Use '\n' in labels to avoid overlap on narrow figures.
     labels = ['During\nHandoffs', 'Steady\nState']
     ratios = [handoff_ratio, steady_state_ratio]
+    max_ratio = max(ratios) if ratios else 0.0
+    label_offset = max(VALUE_LABEL_OFFSET_MIN, VALUE_LABEL_OFFSET_RATIO * max_ratio)
     ax.bar(labels, ratios, color=[HANDOFF_BAR_COLOR, STEADY_BAR_COLOR])
     ax.set_ylabel('Unmet-Interest Ratio')
-    ax.set_title(f'Comparison of Unmet-Interest Ratio (deadline={args.deadline:.1f}s)')
-    # TUNING: Upper y-axis headroom uses LOSS_Y_MAX_HEADROOM multiplier.
-    ax.set_ylim(0, max(1.0, max(ratios) * LOSS_Y_MAX_HEADROOM))
+    ax.set_title(
+        f'Comparison of Unmet-Interest Ratio (deadline={args.deadline:.1f}s)',
+        pad=TITLE_PAD_POINTS,
+    )
+    # TUNING: Upper y-axis headroom keeps tall bars and value labels below the title.
+    ax.set_ylim(0, max(1.0 + LOSS_Y_TOP_PADDING, max_ratio + label_offset + LOSS_Y_TOP_PADDING))
     ax.grid(axis='y', linestyle='--', alpha=0.7)
     
     for i, v in enumerate(ratios):
         # TUNING: Value label offset above each bar.
-        offset = max(VALUE_LABEL_OFFSET_MIN, VALUE_LABEL_OFFSET_RATIO * max(ratios))
-        ax.text(i, v + offset, f"{v:.3f}", ha='center', va='bottom')
+        ax.text(i, v + label_offset, f"{v:.3f}", ha='center', va='bottom')
         
     fig.tight_layout()
-    plt.savefig(os.path.join(args.output_dir, 'loss_comparison.pdf'))
+    fig.savefig(os.path.join(args.output_dir, 'loss_comparison.pdf'), bbox_inches='tight')
     plt.close(fig)
 
     print(f"Generated R2 (Unmet-Interest Ratio) metrics and plot in {args.output_dir}")

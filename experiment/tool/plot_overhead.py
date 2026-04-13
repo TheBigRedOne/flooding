@@ -34,9 +34,13 @@ HANDOFF_SHADE_ALPHA = 0.18
 X_TICK_BINS = 5
 SUMMARY_BAR_WIDTH = 0.32
 LEGEND_MAX_COLUMNS = 2
-LEGEND_BASE_OFFSET = 1.10
-LEGEND_EXTRA_ROW_OFFSET = 0.10
-TITLE_PAD_POINTS = 2.0
+LEGEND_BASE_OFFSET = 1.01
+LEGEND_EXTRA_ROW_OFFSET = 0.05
+TITLE_VERTICAL_POSITION = 1.20
+Y_AXIS_HEADROOM_RATIO = 0.08
+Y_AXIS_HEADROOM_MIN = 1.0
+SUMMARY_Y_TOP_MULTIPLIER = 6.0
+SUBPLOT_VERTICAL_PADDING = 2.2
 APP_TOTAL_COLOR = 'crimson'
 FLOOD_COLOR = 'darkorange'
 APP_OTHER_COLOR = 'steelblue'
@@ -84,7 +88,7 @@ def _configure_paper_style():
 
 
 def _place_legend_above_axis(ax) -> None:
-    """Place the legend above the axis with spacing that avoids the axis title."""
+    """Place the legend above the axis and below the axis title."""
     handles, labels = ax.get_legend_handles_labels()
     if not handles:
         return
@@ -103,6 +107,18 @@ def _place_legend_above_axis(ax) -> None:
         handlelength=1.5,
         handletextpad=0.5,
     )
+
+
+def _set_axis_title(ax, title: str) -> None:
+    """Place the axis title above the legend region."""
+    ax.set_title(title, y=TITLE_VERTICAL_POSITION, pad=0.0)
+
+
+def _set_nonnegative_ylim_with_headroom(ax, values: List[float]) -> None:
+    """Set a non-negative y-axis range with top headroom for plotted values."""
+    max_value = max(values) if values else 0.0
+    headroom = max(Y_AXIS_HEADROOM_MIN, max_value * Y_AXIS_HEADROOM_RATIO)
+    ax.set_ylim(0, max(max_value + headroom, Y_AXIS_HEADROOM_MIN))
 
 
 def _write_empty_outputs(output_dir: str) -> None:
@@ -455,26 +471,17 @@ def main():
             label=label,
         )
 
-    full_run_box = "\n".join([
-        "Full Run",
-        f"FCR={_format_ratio(full_run_summary.forwarding_cost_ratio)}",
-        f"Flood={_format_ratio(full_run_summary.flood_share, percent=True)}",
-        f"Control={full_run_summary.control_bytes} B",
-    ])
-    ax_timeseries.text(
-        0.02,
-        0.98,
-        full_run_box,
-        transform=ax_timeseries.transAxes,
-        ha='left',
-        va='top',
-        bbox={'boxstyle': 'round', 'facecolor': 'white', 'alpha': 0.85, 'edgecolor': '0.8'},
-    )
-
     ax_timeseries.set_xlabel('Time (seconds)')
     ax_timeseries.set_ylabel('Relay Load (bytes/s)')
-    ax_timeseries.set_title('Network Overhead Over Time', pad=TITLE_PAD_POINTS)
-    ax_timeseries.set_ylim(bottom=0)
+    _set_axis_title(ax_timeseries, 'Network Overhead Over Time')
+    _set_nonnegative_ylim_with_headroom(
+        ax_timeseries,
+        [
+            float(relay_app_series.max()),
+            float(relay_flood_series.max()),
+            float(relay_control_series.max()),
+        ],
+    )
     ax_timeseries.xaxis.set_major_locator(MaxNLocator(nbins=X_TICK_BINS, integer=True))
     _place_legend_above_axis(ax_timeseries)
     ax_timeseries.grid(True, which='both', ls='--')
@@ -534,13 +541,13 @@ def main():
     ax_summary.set_xticks(x)
     ax_summary.set_xticklabels(summary_labels)
     ax_summary.set_ylabel('Bytes in Window')
-    ax_summary.set_title('Window Summaries', pad=TITLE_PAD_POINTS)
-    ax_summary.set_ylim(0, ymax + label_offset * 3.0)
+    _set_axis_title(ax_summary, 'Window Summaries')
+    ax_summary.set_ylim(0, ymax + label_offset * SUMMARY_Y_TOP_MULTIPLIER)
     ax_summary.yaxis.set_major_locator(MaxNLocator(nbins=4))
     _place_legend_above_axis(ax_summary)
     ax_summary.grid(True, axis='y', linestyle='--', alpha=0.7)
 
-    fig.tight_layout(h_pad=1.6)
+    fig.tight_layout(h_pad=SUBPLOT_VERTICAL_PADDING)
     fig.savefig(os.path.join(args.output_dir, 'overhead_timeseries.pdf'), bbox_inches='tight')
     plt.close(fig)
 

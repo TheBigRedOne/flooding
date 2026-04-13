@@ -39,9 +39,11 @@ HANDOFF_SHADE_ALPHA = 0.2
 Y_TICK_BINS = 5
 X_TICK_BINS = 5
 LEGEND_MAX_COLUMNS = 2
-LEGEND_BASE_OFFSET = 1.10
-LEGEND_EXTRA_ROW_OFFSET = 0.10
-TITLE_PAD_POINTS = 2.0
+LEGEND_BASE_OFFSET = 1.01
+LEGEND_EXTRA_ROW_OFFSET = 0.05
+TITLE_VERTICAL_POSITION = 1.20
+Y_AXIS_HEADROOM_RATIO = 0.08
+Y_AXIS_HEADROOM_MIN = 1.0
 
 
 def _paper_figure_size() -> Tuple[float, float]:
@@ -66,7 +68,7 @@ def _configure_paper_style() -> None:
 
 
 def _place_legend_above_axis(ax) -> None:
-    """Place the legend above the axis with spacing that avoids the axis title."""
+    """Place the legend above the axis and below the axis title."""
     handles, labels = ax.get_legend_handles_labels()
     if not handles:
         return
@@ -85,6 +87,18 @@ def _place_legend_above_axis(ax) -> None:
         handlelength=1.5,
         handletextpad=0.5,
     )
+
+
+def _set_axis_title(ax, title: str) -> None:
+    """Place the axis title above the legend region."""
+    ax.set_title(title, y=TITLE_VERTICAL_POSITION, pad=0.0)
+
+
+def _set_nonnegative_ylim_with_headroom(ax, values: List[int]) -> None:
+    """Set a non-negative y-axis range with top headroom for plotted values."""
+    max_value = max(values) if values else 0
+    headroom = max(Y_AXIS_HEADROOM_MIN, max_value * Y_AXIS_HEADROOM_RATIO)
+    ax.set_ylim(0, max(max_value + headroom, Y_AXIS_HEADROOM_MIN))
 
 
 def _load_packets(csv_path: str) -> List[Tuple[float, int]]:
@@ -248,13 +262,13 @@ def main() -> None:
 
     ax.set_xlabel("Time (seconds)")
     ax.set_ylabel("Throughput (bytes/s)")
-    ax.set_title("Throughput Over Time", pad=TITLE_PAD_POINTS)
+    _set_axis_title(ax, "Throughput Over Time")
     _place_legend_above_axis(ax)
     ax.grid(True)
     ax.yaxis.set_major_formatter(ScalarFormatter(useMathText=False))
     ax.ticklabel_format(style="plain", axis="y")
-    # TUNING: Keep y-axis anchored at zero to avoid misleading auto-scaling.
-    ax.set_ylim(bottom=0)
+    # TUNING: Keep y-axis anchored at zero with extra top margin for line visibility.
+    _set_nonnegative_ylim_with_headroom(ax, values)
     # TUNING: Number of y-axis ticks is controlled by Y_TICK_BINS.
     ax.yaxis.set_major_locator(MaxNLocator(nbins=Y_TICK_BINS))
 
