@@ -1,5 +1,6 @@
 import argparse
 import csv
+import math
 import os
 from collections import defaultdict
 from typing import Dict, Iterable, List, Tuple
@@ -38,7 +39,9 @@ HANDOFF_SHADE_ALPHA = 0.2
 Y_TICK_BINS = 5
 X_TICK_BINS = 5
 LEGEND_MAX_COLUMNS = 2
-LEGEND_VERTICAL_OFFSET = 1.05
+LEGEND_BASE_OFFSET = 1.10
+LEGEND_EXTRA_ROW_OFFSET = 0.10
+TITLE_PAD_POINTS = 2.0
 
 
 def _paper_figure_size() -> Tuple[float, float]:
@@ -63,16 +66,19 @@ def _configure_paper_style() -> None:
 
 
 def _place_legend_above_axis(ax) -> None:
-    """Place the legend above the axis to avoid covering the throughput curve."""
+    """Place the legend above the axis with spacing that avoids the axis title."""
     handles, labels = ax.get_legend_handles_labels()
     if not handles:
         return
+    legend_columns = min(len(handles), LEGEND_MAX_COLUMNS)
+    legend_rows = math.ceil(len(handles) / legend_columns)
+    vertical_offset = LEGEND_BASE_OFFSET + LEGEND_EXTRA_ROW_OFFSET * (legend_rows - 1)
     ax.legend(
         handles,
         labels,
         loc="lower center",
-        bbox_to_anchor=(0.5, LEGEND_VERTICAL_OFFSET),
-        ncol=min(len(handles), LEGEND_MAX_COLUMNS),
+        bbox_to_anchor=(0.5, vertical_offset),
+        ncol=legend_columns,
         frameon=False,
         borderaxespad=0.0,
         columnspacing=0.8,
@@ -242,7 +248,7 @@ def main() -> None:
 
     ax.set_xlabel("Time (seconds)")
     ax.set_ylabel("Throughput (bytes/s)")
-    ax.set_title("Throughput Over Time")
+    ax.set_title("Throughput Over Time", pad=TITLE_PAD_POINTS)
     _place_legend_above_axis(ax)
     ax.grid(True)
     ax.yaxis.set_major_formatter(ScalarFormatter(useMathText=False))

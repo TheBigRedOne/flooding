@@ -1,4 +1,5 @@
 import argparse
+import math
 import os
 from dataclasses import dataclass
 from typing import List, Optional
@@ -33,7 +34,9 @@ HANDOFF_SHADE_ALPHA = 0.18
 X_TICK_BINS = 5
 SUMMARY_BAR_WIDTH = 0.32
 LEGEND_MAX_COLUMNS = 2
-LEGEND_VERTICAL_OFFSET = 1.05
+LEGEND_BASE_OFFSET = 1.10
+LEGEND_EXTRA_ROW_OFFSET = 0.10
+TITLE_PAD_POINTS = 2.0
 APP_TOTAL_COLOR = 'crimson'
 FLOOD_COLOR = 'darkorange'
 APP_OTHER_COLOR = 'steelblue'
@@ -81,16 +84,19 @@ def _configure_paper_style():
 
 
 def _place_legend_above_axis(ax) -> None:
-    """Place the legend above the axis to avoid covering plotted series and bars."""
+    """Place the legend above the axis with spacing that avoids the axis title."""
     handles, labels = ax.get_legend_handles_labels()
     if not handles:
         return
+    legend_columns = min(len(handles), LEGEND_MAX_COLUMNS)
+    legend_rows = math.ceil(len(handles) / legend_columns)
+    vertical_offset = LEGEND_BASE_OFFSET + LEGEND_EXTRA_ROW_OFFSET * (legend_rows - 1)
     ax.legend(
         handles,
         labels,
         loc='lower center',
-        bbox_to_anchor=(0.5, LEGEND_VERTICAL_OFFSET),
-        ncol=min(len(handles), LEGEND_MAX_COLUMNS),
+        bbox_to_anchor=(0.5, vertical_offset),
+        ncol=legend_columns,
         frameon=False,
         borderaxespad=0.0,
         columnspacing=0.8,
@@ -467,7 +473,7 @@ def main():
 
     ax_timeseries.set_xlabel('Time (seconds)')
     ax_timeseries.set_ylabel('Relay Load (bytes/s)')
-    ax_timeseries.set_title('Network Overhead Over Time')
+    ax_timeseries.set_title('Network Overhead Over Time', pad=TITLE_PAD_POINTS)
     ax_timeseries.set_ylim(bottom=0)
     ax_timeseries.xaxis.set_major_locator(MaxNLocator(nbins=X_TICK_BINS, integer=True))
     _place_legend_above_axis(ax_timeseries)
@@ -528,13 +534,13 @@ def main():
     ax_summary.set_xticks(x)
     ax_summary.set_xticklabels(summary_labels)
     ax_summary.set_ylabel('Bytes in Window')
-    ax_summary.set_title('Window Summaries')
+    ax_summary.set_title('Window Summaries', pad=TITLE_PAD_POINTS)
     ax_summary.set_ylim(0, ymax + label_offset * 3.0)
     ax_summary.yaxis.set_major_locator(MaxNLocator(nbins=4))
     _place_legend_above_axis(ax_summary)
     ax_summary.grid(True, axis='y', linestyle='--', alpha=0.7)
 
-    fig.tight_layout(h_pad=1.2)
+    fig.tight_layout(h_pad=1.6)
     fig.savefig(os.path.join(args.output_dir, 'overhead_timeseries.pdf'), bbox_inches='tight')
     plt.close(fig)
 
