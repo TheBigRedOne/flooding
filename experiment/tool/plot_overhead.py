@@ -42,6 +42,7 @@ FIGURE_BOTTOM_MARGIN = 0.20
 GRID_VERTICAL_SPACING = 0.28
 HEADER_HEIGHT_RATIO = 0.80
 TIMESERIES_HEIGHT_RATIO = 1.8
+INTER_PANEL_SPACER_HEIGHT_RATIO = 0.45
 SUMMARY_HEIGHT_RATIO = 1.2
 APP_TOTAL_COLOR = 'crimson'
 FLOOD_COLOR = 'darkorange'
@@ -446,7 +447,7 @@ def main():
 
     fig = plt.figure(figsize=_paper_figure_size())
     grid = fig.add_gridspec(
-        4,
+        5,
         1,
         left=FIGURE_LEFT_MARGIN,
         right=FIGURE_RIGHT_MARGIN,
@@ -456,14 +457,17 @@ def main():
         height_ratios=[
             HEADER_HEIGHT_RATIO,
             TIMESERIES_HEIGHT_RATIO,
+            INTER_PANEL_SPACER_HEIGHT_RATIO,
             HEADER_HEIGHT_RATIO,
             SUMMARY_HEIGHT_RATIO,
         ],
     )
     ax_timeseries_header = fig.add_subplot(grid[0])
     ax_timeseries = fig.add_subplot(grid[1])
-    ax_summary_header = fig.add_subplot(grid[2])
-    ax_summary = fig.add_subplot(grid[3])
+    ax_panel_gap = fig.add_subplot(grid[2])
+    ax_summary_header = fig.add_subplot(grid[3])
+    ax_summary = fig.add_subplot(grid[4])
+    ax_panel_gap.set_axis_off()
 
     ax_timeseries.plot(
         time_axis,
