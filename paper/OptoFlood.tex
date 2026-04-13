@@ -150,7 +150,9 @@ react to the change. Can parameters be tuned?}
     \centering
     \includegraphics[width=\columnwidth]{baseline_throughput.pdf}
     \caption{Baseline Throughput Disruption \csp{Text in the figure is too
-small to read}}
+small to read} %
+      \ryo{throughput needs to split between interest and data loads}%
+    }
     \label{fig:baseline_throughput}
 \end{figure}
 
@@ -278,7 +280,9 @@ The links are configured as follows:
 \begin{figure}
     \centering
     \includegraphics[width=1\linewidth]{Topology.pdf}
-	\caption{Experiment topology used in the mobility evaluation.}
+	\caption{Experiment topology used in the mobility evaluation. %
+    \ryo{change the style of topology diagram to be consistent with Figure \ref{fig:Interest Flooding}}%
+    }
     \label{exp_topo}
 \end{figure}
 
@@ -314,7 +318,9 @@ With OptoFlood, the behaviour is qualitatively different. The stream remains con
 \begin{figure}
     \centering
     \includegraphics[width=\columnwidth]{solution_disruption.pdf}
-    \caption{Per-handoff service disruption with OptoFlood.}
+    \caption{Per-handoff service disruption with OptoFlood.%
+    %
+    }
     \label{fig:solution_disruption}
 \end{figure}
 
@@ -350,7 +356,10 @@ Taken together, the overhead results support the intended design point: OptoFloo
 \begin{figure}
     \centering
     \includegraphics[width=\columnwidth]{baseline_overhead.pdf}
-    \caption{Forwarding and control load under baseline forwarding.}
+    \caption{Forwarding and control load under baseline forwarding.%
+    \ryo{1. These needs to be a sub figure, also have consistent y-axis limits with upper plot in Figure \ref{fig:solution_overhead}.}%
+     \ryo{2. Throughput needs to be split between interest and data.}%
+     }
     \label{fig:baseline_overhead}
 \end{figure}
 \begin{figure}
