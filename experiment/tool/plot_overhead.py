@@ -1,5 +1,4 @@
 import argparse
-import math
 import os
 from dataclasses import dataclass
 from typing import List, Optional
@@ -14,7 +13,7 @@ from matplotlib.ticker import MaxNLocator
 # ---------------------------------------------------------------------------
 CM_TO_INCH = 1.0 / 2.54
 PAPER_FIGURE_WIDTH_CM = 8.0
-PAPER_FIGURE_HEIGHT_CM = 10.0
+PAPER_FIGURE_HEIGHT_CM = 12.0
 
 # ---------------------------------------------------------------------------
 # TUNING: Text sizes inside the plot.
@@ -34,17 +33,16 @@ HANDOFF_SHADE_ALPHA = 0.18
 X_TICK_BINS = 5
 SUMMARY_BAR_WIDTH = 0.32
 LEGEND_MAX_COLUMNS = 2
-LEGEND_BASE_OFFSET = 1.00
-LEGEND_EXTRA_ROW_OFFSET = 0.03
-TITLE_LEGEND_GAP = 0.16
-TITLE_EXTRA_ROW_GAP = 0.06
 Y_AXIS_HEADROOM_RATIO = 0.10
 Y_AXIS_HEADROOM_MIN = 1.0
 FIGURE_LEFT_MARGIN = 0.16
 FIGURE_RIGHT_MARGIN = 0.98
-FIGURE_TOP_MARGIN = 0.84
-FIGURE_BOTTOM_MARGIN = 0.16
-SUBPLOT_VERTICAL_SPACING = 1.15
+FIGURE_TOP_MARGIN = 0.98
+FIGURE_BOTTOM_MARGIN = 0.20
+GRID_VERTICAL_SPACING = 0.28
+HEADER_HEIGHT_RATIO = 0.80
+TIMESERIES_HEIGHT_RATIO = 1.8
+SUMMARY_HEIGHT_RATIO = 1.2
 APP_TOTAL_COLOR = 'crimson'
 FLOOD_COLOR = 'darkorange'
 APP_OTHER_COLOR = 'steelblue'
@@ -91,31 +89,34 @@ def _configure_paper_style():
     plt.rcParams["font.family"] = "serif"
 
 
-def _place_title_and_legend(ax, title: str) -> None:
-    """Place the title above the legend with spacing derived from legend rows."""
-    handles, labels = ax.get_legend_handles_labels()
+def _populate_header_axis(header_ax, plot_ax, title: str) -> None:
+    """Render a dedicated header band containing the subplot title and legend."""
+    header_ax.set_axis_off()
+    header_ax.text(
+        0.5,
+        0.98,
+        title,
+        ha='center',
+        va='top',
+        transform=header_ax.transAxes,
+    )
+
+    handles, labels = plot_ax.get_legend_handles_labels()
     if not handles:
-        ax.set_title(title)
         return
 
-    legend_columns = min(len(handles), LEGEND_MAX_COLUMNS)
-    legend_rows = math.ceil(len(handles) / legend_columns)
-    legend_offset = LEGEND_BASE_OFFSET + LEGEND_EXTRA_ROW_OFFSET * (legend_rows - 1)
-    title_offset = legend_offset + TITLE_LEGEND_GAP + TITLE_EXTRA_ROW_GAP * (legend_rows - 1)
-
-    ax.legend(
+    header_ax.legend(
         handles,
         labels,
         loc='lower center',
-        bbox_to_anchor=(0.5, legend_offset),
-        ncol=legend_columns,
+        bbox_to_anchor=(0.5, 0.02),
+        ncol=min(len(handles), LEGEND_MAX_COLUMNS),
         frameon=False,
         borderaxespad=0.0,
         columnspacing=0.8,
         handlelength=1.5,
         handletextpad=0.5,
     )
-    ax.set_title(title, y=title_offset, pad=0.0)
 
 
 def _set_nonnegative_ylim_with_headroom(ax, values: List[float]) -> None:
@@ -443,12 +444,26 @@ def main():
         delivered_data_in,
     )
 
-    fig, (ax_timeseries, ax_summary) = plt.subplots(
-        2,
+    fig = plt.figure(figsize=_paper_figure_size())
+    grid = fig.add_gridspec(
+        4,
         1,
-        figsize=_paper_figure_size(),
-        gridspec_kw={'height_ratios': [1.8, 1.2]},
+        left=FIGURE_LEFT_MARGIN,
+        right=FIGURE_RIGHT_MARGIN,
+        top=FIGURE_TOP_MARGIN,
+        bottom=FIGURE_BOTTOM_MARGIN,
+        hspace=GRID_VERTICAL_SPACING,
+        height_ratios=[
+            HEADER_HEIGHT_RATIO,
+            TIMESERIES_HEIGHT_RATIO,
+            HEADER_HEIGHT_RATIO,
+            SUMMARY_HEIGHT_RATIO,
+        ],
     )
+    ax_timeseries_header = fig.add_subplot(grid[0])
+    ax_timeseries = fig.add_subplot(grid[1])
+    ax_summary_header = fig.add_subplot(grid[2])
+    ax_summary = fig.add_subplot(grid[3])
 
     ax_timeseries.plot(
         time_axis,
@@ -495,7 +510,6 @@ def main():
         ],
     )
     ax_timeseries.xaxis.set_major_locator(MaxNLocator(nbins=X_TICK_BINS, integer=True))
-    _place_title_and_legend(ax_timeseries, 'Network Overhead Over Time')
     ax_timeseries.grid(True, which='both', ls='--')
 
     summary_items = handoff_summaries if handoff_summaries else [full_run_summary]
@@ -544,16 +558,10 @@ def main():
     ax_summary.set_ylabel('Bytes in Window')
     _set_nonnegative_ylim_with_headroom(ax_summary, [float(ymax)])
     ax_summary.yaxis.set_major_locator(MaxNLocator(nbins=4))
-    _place_title_and_legend(ax_summary, 'Window Summaries')
     ax_summary.grid(True, axis='y', linestyle='--', alpha=0.7)
 
-    fig.subplots_adjust(
-        left=FIGURE_LEFT_MARGIN,
-        right=FIGURE_RIGHT_MARGIN,
-        top=FIGURE_TOP_MARGIN,
-        bottom=FIGURE_BOTTOM_MARGIN,
-        hspace=SUBPLOT_VERTICAL_SPACING,
-    )
+    _populate_header_axis(ax_timeseries_header, ax_timeseries, 'Network Overhead Over Time')
+    _populate_header_axis(ax_summary_header, ax_summary, 'Window Summaries')
     fig.savefig(os.path.join(args.output_dir, 'overhead_timeseries.pdf'), bbox_inches='tight')
     plt.close(fig)
 
