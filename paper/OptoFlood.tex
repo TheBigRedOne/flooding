@@ -310,6 +310,10 @@ We report four complementary views of performance:
 % ------------------------------------------------------------------------------
 \subsection{Results}
 
+\csp{I think we need to separate discussion of baseline results, using NLSR
+with various parameter tunings, from the results using OptoFlood. Directly
+comparing them makes limited sense because the differences are so large.}
+
 The results show that baseline NDN exhibits long service interruptions after producer movement. OptoFlood reduces these interruptions to short transients while keeping the additional network load bounded.
 
 \subsubsection{Service Continuity}
@@ -320,25 +324,25 @@ With OptoFlood, the stream remains continuous except for a narrow disturbance ar
 
 \begin{figure}
     \centering
+    \includegraphics[width=\columnwidth]{solution_disruption.pdf}
+    \caption{Per-handoff service disruption with OptoFlood. \csp{This plot is light on information. Is it possible to plot service disruption time against time taken for the handover to complete, or variation with topology changes, or something?}}
+    \label{fig:solution_disruption}
+\end{figure}
+
+\begin{figure}
+    \centering
     \includegraphics[width=\columnwidth]{solution_throughput.pdf}
     \caption{Throughput continuity with OptoFlood.}
     \label{fig:solution_throughput}
 \end{figure}
 
-\begin{figure}
-    \centering
-    \includegraphics[width=\columnwidth]{solution_disruption.pdf}
-    \caption{Per-handoff service disruption with OptoFlood.%
-    %
-    }
-    \label{fig:solution_disruption}
-\end{figure}
 
 \subsubsection{Delivery Reliability}
 
 The unmet-interest results follow the same trend. In the baseline case, the immediate post-handoff window contains a high fraction of unsatisfied requests. The consumer continues to issue Interests, but stale forwarding state prevents many of them from being satisfied before their deadline. Figure~\ref{fig:baseline_loss} captures this behaviour directly.
 
 Under OptoFlood, the unmet-interest ratio in the hand-off window falls close to the steady-state level, as shown in Figure~\ref{fig:solution_loss}. This indicates that temporary flooded paths and short-lived forwarding hints are sufficient to sustain delivery while routing converges. The steady-state ratio remains low as well. Normal forwarding therefore remains stable after a valid path has been re-established.
+\csp{Again, these plots would be more convincing if they showed a trend as handover time changed, or as the topology changed, or similar.}
 
 \begin{figure}
     \centering
