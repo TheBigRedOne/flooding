@@ -5,6 +5,7 @@
 \usepackage{amsmath,amssymb,amsfonts}
 \usepackage{algorithmic}
 \usepackage{graphicx}
+\usepackage[caption=false,font=footnotesize]{subfig}
 \usepackage{textcomp}
 \usepackage{xcolor}
 \usepackage{url}
@@ -307,13 +308,13 @@ Because the figures are regenerated from fresh experiment runs, small run-to-run
 % ------------------------------------------------------------------------------
 \subsection{Results}
 
-The results consistently show the same overall pattern across reruns: baseline NDN experiences long hand-off outages while OptoFlood converts those outages into short transients, and it does so without causing an uncontrolled increase in network load.
+The results show that baseline NDN exhibits long service interruptions after producer movement. OptoFlood reduces these interruptions to short transients while keeping the additional network load bounded.
 
 \subsubsection{Service Continuity}
 
-Under baseline forwarding, each hand-off produces a pronounced collapse in delivered throughput and a long interval during which the consumer continues to send Interests but receives little or no Data. Recovery is only observed after ordinary routing convergence catches up, which leads to disruption on the order of tens of seconds, as illustrated by the baseline throughput and disruption plots in Figures~\ref{fig:baseline_throughput} and~\ref{fig:baseline_disruption}.
+Under baseline forwarding, each hand-off is followed by a sharp drop in delivered throughput. The consumer continues to issue Interests, but receives little or no Data during the outage interval. Recovery appears only after routing convergence catches up. Figures~\ref{fig:baseline_throughput} and~\ref{fig:baseline_disruption} show disruption on the order of tens of seconds.
 
-With OptoFlood, the behaviour is qualitatively different. The stream remains continuous apart from a very narrow disturbance around each hand-off, and the disruption plot in Figure~\ref{fig:solution_disruption} shows recovery on the order of tens of milliseconds rather than tens of seconds. In other words, the producer move is no longer visible as a prolonged service outage but as a brief perturbation. The aggregate delivered throughput over the full run also increases, because the long blind period that dominates the baseline run is largely removed.
+With OptoFlood, the stream remains continuous except for a narrow disturbance around each hand-off. Figure~\ref{fig:solution_disruption} shows recovery on the order of tens of milliseconds. The throughput trace in Figure~\ref{fig:solution_throughput} is correspondingly stable across the mobility events.
 
 \begin{figure}
     \centering
@@ -326,9 +327,9 @@ With OptoFlood, the behaviour is qualitatively different. The stream remains con
 
 \subsubsection{Delivery Reliability}
 
-The unmet-interest results show the same transition from failure-dominated recovery to near-continuous delivery. In the baseline case, the immediate post-handoff window is dominated by unsatisfied requests: the consumer continues to issue Interests, but stale forwarding state prevents them from being satisfied before their deadline. This is exactly the failure mode expected from pure routing-plane recovery.
+The unmet-interest results follow the same trend. In the baseline case, the immediate post-handoff window contains a high fraction of unsatisfied requests. The consumer continues to issue Interests, but stale forwarding state prevents many of them from being satisfied before their deadline. Figure~\ref{fig:baseline_loss} captures this behaviour directly.
 
-Under OptoFlood, the hand-off window ratio drops to near the steady-state regime, showing that the temporary flooded paths and short-lived forwarding hints are effective in rescuing pending requests while routing converges. Just as importantly, the steady-state unmet-interest ratio remains low and similar to the baseline case, indicating that the mechanism does not destabilise normal forwarding once a valid path has been restored.
+Under OptoFlood, the unmet-interest ratio in the hand-off window falls close to the steady-state level, as shown in Figure~\ref{fig:solution_loss}. This indicates that temporary flooded paths and short-lived forwarding hints are sufficient to sustain delivery while routing converges. The steady-state ratio remains low as well. Normal forwarding therefore remains stable after a valid path has been re-established.
 
 \begin{figure}
     \centering
@@ -345,31 +346,40 @@ Under OptoFlood, the hand-off window ratio drops to near the steady-state regime
 
 \subsubsection{Forwarding Overhead and Control Activity}
 
-The overhead figures must be read as a decomposition of network activity, not simply as a count of flooded packets. The main time series shows the total application relay load, the explicit flood component, and the NLSR control component, all observed across the relay nodes.
+The overhead figures report network activity of relay load. Figures~\ref{fig:baseline_overhead_timeseries} and~\ref{fig:solution_overhead_timeseries} show the non-flood and flooded relay traffic for Interests and Data, and also show the NLSR control messages. Figures~\ref{fig:baseline_overhead_summary} and~\ref{fig:solution_overhead_summary} summarise the same quantities over the hand-off windows and the full run. The summary panels also report the forwarding-cost ratio and flood share for each window.
 
-Several features are noteworthy. First, the full-run forwarding cost under OptoFlood remains in the same range as the baseline. This means the gain in service continuity is not bought by an uncontrolled explosion of hop-by-hop forwarding load. Second, the explicit flood component is concentrated around the hand-offs, where path repair is actually needed, and remains a small fraction of the total application forwarding load over the whole run. Third, the control-plane activity appears earlier and more strongly under OptoFlood, which is expected because Fast-LSA and related NLSR activity are triggered promptly once useful temporary paths are discovered.
+Two features are clear in the OptoFlood traces. First, the additional relay load is concentrated around the hand-offs in Figure~\ref{fig:solution_overhead_timeseries}. The flooded Interest and Data packets rise during recovery and then subside. Second, the full-run summary in Figure~\ref{fig:solution_overhead_summary} remains in the same general range as the baseline. The mechanism therefore adds traffic at the points where recovery occurs, rather than raising relay load throughout the run. The NLSR control messages also appear earlier under OptoFlood, which is consistent with prompt Fast-LSA triggering after temporary paths are discovered.
 
-The baseline overhead plot requires a slightly different interpretation. In the immediate post-handoff windows, the consumer may receive no Data at all, so a normalised forwarding-cost ratio for those windows is undefined. This is not a plotting artefact; it is itself evidence of a severe service outage. The baseline still shows routing control activity, but it tends to appear later, after service has already been disrupted for much longer. By contrast, OptoFlood keeps delivery active during the same windows, so the forwarding-cost ratio remains meaningful even while recovery is in progress.
+The baseline overhead figures show a different pattern. In the immediate post-handoff windows, the consumer may receive no Data. The forwarding-cost ratio is therefore undefined in those windows, as shown in Figure~\ref{fig:baseline_overhead_summary}. This reflects the severity of the disruption. Figure~\ref{fig:baseline_overhead_timeseries} still shows routing control activity, but it tends to appear later, after the disruption has already persisted for much longer.
 
-Taken together, the overhead results support the intended design point: OptoFlood adds extra traffic where recovery is needed, but that traffic is temporally localised, operationally bounded, and comparable in overall scale to the forwarding cost already incurred by the baseline during prolonged disruption and retransmission.
+Taken together, the overhead results are consistent with the design target. OptoFlood introduces additional traffic during recovery. That traffic is temporally localised and remains bounded. The figures therefore indicate that the gain in continuity is achieved through short-lived overhead around mobility events, rather than through a persistent increase in relay load.
 
 \begin{figure}
     \centering
-    \includegraphics[width=\columnwidth]{baseline_overhead.pdf}
-    \caption{Forwarding and control load under baseline forwarding.%
-    \ryo{1. These needs to be a sub figure, also have consistent y-axis limits with upper plot in Figure \ref{fig:solution_overhead}.}%
-     \ryo{2. Throughput needs to be split between interest and data.}%
-     }
+    \subfloat[Time-series decomposition by packet type.\label{fig:baseline_overhead_timeseries}]{
+        \includegraphics[width=\columnwidth]{baseline_overhead_timeseries.pdf}
+    }
+
+    \subfloat[Window summaries by packet type.\label{fig:baseline_overhead_summary}]{
+        \includegraphics[width=\columnwidth]{baseline_overhead_summary.pdf}
+    }
+    \caption{Forwarding and control load under baseline forwarding.}
     \label{fig:baseline_overhead}
 \end{figure}
 \begin{figure}
     \centering
-    \includegraphics[width=\columnwidth]{solution_overhead.pdf}
+    \subfloat[Time-series decomposition by packet type.\label{fig:solution_overhead_timeseries}]{
+        \includegraphics[width=\columnwidth]{solution_overhead_timeseries.pdf}
+    }
+
+    \subfloat[Window summaries by packet type.\label{fig:solution_overhead_summary}]{
+        \includegraphics[width=\columnwidth]{solution_overhead_summary.pdf}
+    }
     \caption{Forwarding and control load with OptoFlood.}
     \label{fig:solution_overhead}
 \end{figure}
 
-Overall, the evaluation shows that OptoFlood converts producer hand-offs from long user-visible outages into brief transients, keeps unmet requests near the steady-state regime during mobility, and does so with additional forwarding and control traffic that remains bounded rather than escalating uncontrollably.
+Overall, the evaluation shows that OptoFlood shortens producer hand-off disruption from long outages to brief transients. It keeps unmet requests close to the steady-state regime during mobility. The additional forwarding and control traffic remains bounded.
 
 % ==============================================================================
 

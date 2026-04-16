@@ -45,8 +45,10 @@ BASELINE_LOSS_PDF := results/baseline/loss_comparison.pdf
 SOLUTION_LOSS_PDF := results/solution/loss_comparison.pdf
 
 # (R4) Flooding Overhead
-BASELINE_OVERHEAD_PDF := results/baseline/overhead_timeseries.pdf
-SOLUTION_OVERHEAD_PDF := results/solution/overhead_timeseries.pdf
+BASELINE_OVERHEAD_TIMESERIES_PDF := results/baseline/overhead_timeseries.pdf
+BASELINE_OVERHEAD_SUMMARY_PDF := results/baseline/overhead_summary.pdf
+SOLUTION_OVERHEAD_TIMESERIES_PDF := results/solution/overhead_timeseries.pdf
+SOLUTION_OVERHEAD_SUMMARY_PDF := results/solution/overhead_summary.pdf
 
 # --- Paper Figure Dependencies ---
 # These variables link the experiment outputs to the figures in the paper.
@@ -60,14 +62,20 @@ BASELINE_DISRUPTION_FIGURE := paper/figures/baseline_disruption.pdf
 SOLUTION_DISRUPTION_FIGURE := paper/figures/solution_disruption.pdf
 BASELINE_LOSS_FIGURE       := paper/figures/baseline_loss.pdf
 SOLUTION_LOSS_FIGURE       := paper/figures/solution_loss.pdf
-BASELINE_OVERHEAD_FIGURE   := paper/figures/baseline_overhead.pdf
-SOLUTION_OVERHEAD_FIGURE   := paper/figures/solution_overhead.pdf
+BASELINE_OVERHEAD_TIMESERIES_FIGURE := paper/figures/baseline_overhead_timeseries.pdf
+BASELINE_OVERHEAD_SUMMARY_FIGURE    := paper/figures/baseline_overhead_summary.pdf
+SOLUTION_OVERHEAD_TIMESERIES_FIGURE := paper/figures/solution_overhead_timeseries.pdf
+SOLUTION_OVERHEAD_SUMMARY_FIGURE    := paper/figures/solution_overhead_summary.pdf
 BASELINE_THROUGHPUT_FIGURE := paper/figures/baseline_throughput.pdf
 SOLUTION_THROUGHPUT_FIGURE := paper/figures/solution_throughput.pdf
 
 # Group all figures needed for the paper
-BASELINE_PAPER_FIGURES := $(BASELINE_DISRUPTION_FIGURE) $(BASELINE_LOSS_FIGURE) $(BASELINE_OVERHEAD_FIGURE) $(BASELINE_THROUGHPUT_FIGURE)
-SOLUTION_PAPER_FIGURES := $(SOLUTION_DISRUPTION_FIGURE) $(SOLUTION_LOSS_FIGURE) $(SOLUTION_OVERHEAD_FIGURE) $(SOLUTION_THROUGHPUT_FIGURE)
+BASELINE_PAPER_FIGURES := $(BASELINE_DISRUPTION_FIGURE) $(BASELINE_LOSS_FIGURE) \
+                          $(BASELINE_OVERHEAD_TIMESERIES_FIGURE) $(BASELINE_OVERHEAD_SUMMARY_FIGURE) \
+                          $(BASELINE_THROUGHPUT_FIGURE)
+SOLUTION_PAPER_FIGURES := $(SOLUTION_DISRUPTION_FIGURE) $(SOLUTION_LOSS_FIGURE) \
+                          $(SOLUTION_OVERHEAD_TIMESERIES_FIGURE) $(SOLUTION_OVERHEAD_SUMMARY_FIGURE) \
+                          $(SOLUTION_THROUGHPUT_FIGURE)
 
 PAPER_PDF := paper/OptoFlood.pdf
 STATIC_FIGURES := paper/figures/NDN_Packets_Processing_Flow.pdf \
@@ -98,6 +106,7 @@ EXPERIMENT_TOOL_SRCS := experiment/tool/exp.py \
 PLOT_LATENCY_SCRIPT := experiment/tool/plot_latency.py
 PLOT_LOSS_SCRIPT := experiment/tool/plot_loss.py
 PLOT_OVERHEAD_SCRIPT := experiment/tool/plot_overhead.py
+PLOT_OVERHEAD_YMAX_SCRIPT := experiment/tool/compute_overhead_ymax.py
 PLOT_THROUGHPUT_SCRIPT := experiment/tool/plot_throughput.py
 PLOT_NLSR_SENSITIVITY_SUMMARY_SCRIPT := experiment/tool/summarize_nlsr_sensitivity.py
 PLOT_NLSR_SENSITIVITY_DISRUPTION_SCRIPT := experiment/tool/plot_nlsr_disruption_comparison.py
@@ -105,6 +114,7 @@ PLOT_NLSR_SENSITIVITY_COST_SCRIPT := experiment/tool/plot_nlsr_network_cost_comp
 PLOT_TOOL_SRCS := $(PLOT_LATENCY_SCRIPT) \
                   $(PLOT_LOSS_SCRIPT) \
                   $(PLOT_OVERHEAD_SCRIPT) \
+                  $(PLOT_OVERHEAD_YMAX_SCRIPT) \
                   $(PLOT_THROUGHPUT_SCRIPT) \
                   $(PLOT_NLSR_SENSITIVITY_SUMMARY_SCRIPT) \
                   $(PLOT_NLSR_SENSITIVITY_DISRUPTION_SCRIPT) \
@@ -200,12 +210,14 @@ plot: | $(VENV_DIR)
 	@test -f $(OVERHEAD_CSV_SOLUTION) || (echo "Missing CSV: $(OVERHEAD_CSV_SOLUTION). Run 'make experiment-solution' first." && exit 1)
 	$(PYTHON) $(PLOT_LATENCY_SCRIPT) --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
 	$(PYTHON) $(PLOT_LOSS_SCRIPT) --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
-	$(PYTHON) $(PLOT_OVERHEAD_SCRIPT) --input $(OVERHEAD_CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
 	$(PYTHON) $(PLOT_THROUGHPUT_SCRIPT) --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
 	$(PYTHON) $(PLOT_LATENCY_SCRIPT) --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
 	$(PYTHON) $(PLOT_LOSS_SCRIPT) --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
-	$(PYTHON) $(PLOT_OVERHEAD_SCRIPT) --input $(OVERHEAD_CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
 	$(PYTHON) $(PLOT_THROUGHPUT_SCRIPT) --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
+	set -- $$($(PYTHON) $(PLOT_OVERHEAD_YMAX_SCRIPT) --inputs $(OVERHEAD_CSV_BASELINE) $(OVERHEAD_CSV_SOLUTION) --handoff-times "120, 240"); \
+	TS_Y_MAX=$$1; SUMMARY_Y_MAX=$$2; \
+	$(PYTHON) $(PLOT_OVERHEAD_SCRIPT) --input $(OVERHEAD_CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240" --timeseries-y-max $$TS_Y_MAX --summary-y-max $$SUMMARY_Y_MAX; \
+	$(PYTHON) $(PLOT_OVERHEAD_SCRIPT) --input $(OVERHEAD_CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240" --timeseries-y-max $$TS_Y_MAX --summary-y-max $$SUMMARY_Y_MAX
 
 plot-nlsr-tuning: $(NLSR_TUNING_SUMMARY_CSV) $(NLSR_TUNING_DISRUPTION_PDF) $(NLSR_TUNING_COST_PDF)
 
@@ -302,6 +314,7 @@ $$(NLSR_TUNING_DIR_$(1))/disruption_metrics.txt &: \
 	$$(PYTHON) $$(PLOT_LATENCY_SCRIPT) --input $$(NLSR_TUNING_DIR_$(1))/consumer_capture.csv --output-dir $$(NLSR_TUNING_DIR_$(1)) --handoff-times "120, 240"
 
 $$(NLSR_TUNING_DIR_$(1))/overhead_timeseries.pdf \
+$$(NLSR_TUNING_DIR_$(1))/overhead_summary.pdf \
 $$(NLSR_TUNING_DIR_$(1))/overhead_total.txt &: \
 	$$(NLSR_TUNING_DIR_$(1))/.complete \
 	$$(NLSR_TUNING_DIR_$(1))/network_overhead.csv \
@@ -328,8 +341,13 @@ $(BASELINE_DISRUPTION_PDF) $(BASELINE_DIR)/disruption_metrics.txt &: $(CSV_BASEL
 $(BASELINE_LOSS_PDF) $(BASELINE_DIR)/loss_ratio.txt &: $(CSV_BASELINE) $(PLOT_LOSS_SCRIPT) | $(VENV_DIR) $(BASELINE_DIR)
 	$(PYTHON) $(PLOT_LOSS_SCRIPT) --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
 
-$(BASELINE_OVERHEAD_PDF) $(BASELINE_DIR)/overhead_total.txt &: $(OVERHEAD_CSV_BASELINE) $(PLOT_OVERHEAD_SCRIPT) | $(VENV_DIR) $(BASELINE_DIR)
-	$(PYTHON) $(PLOT_OVERHEAD_SCRIPT) --input $(OVERHEAD_CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
+$(BASELINE_OVERHEAD_TIMESERIES_PDF) $(BASELINE_OVERHEAD_SUMMARY_PDF) $(BASELINE_DIR)/overhead_total.txt \
+$(SOLUTION_OVERHEAD_TIMESERIES_PDF) $(SOLUTION_OVERHEAD_SUMMARY_PDF) $(SOLUTION_DIR)/overhead_total.txt &: \
+	$(OVERHEAD_CSV_BASELINE) $(OVERHEAD_CSV_SOLUTION) $(PLOT_OVERHEAD_SCRIPT) $(PLOT_OVERHEAD_YMAX_SCRIPT) | $(VENV_DIR) $(BASELINE_DIR) $(SOLUTION_DIR)
+	set -- $$($(PYTHON) $(PLOT_OVERHEAD_YMAX_SCRIPT) --inputs $(OVERHEAD_CSV_BASELINE) $(OVERHEAD_CSV_SOLUTION) --handoff-times "120, 240"); \
+	TS_Y_MAX=$$1; SUMMARY_Y_MAX=$$2; \
+	$(PYTHON) $(PLOT_OVERHEAD_SCRIPT) --input $(OVERHEAD_CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240" --timeseries-y-max $$TS_Y_MAX --summary-y-max $$SUMMARY_Y_MAX; \
+	$(PYTHON) $(PLOT_OVERHEAD_SCRIPT) --input $(OVERHEAD_CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240" --timeseries-y-max $$TS_Y_MAX --summary-y-max $$SUMMARY_Y_MAX
 
 $(BASELINE_THROUGHPUT_PDF) $(BASELINE_DIR)/throughput_metrics.txt &: $(CSV_BASELINE) $(PLOT_THROUGHPUT_SCRIPT) | $(VENV_DIR) $(BASELINE_DIR)
 	$(PYTHON) $(PLOT_THROUGHPUT_SCRIPT) --input $(CSV_BASELINE) --output-dir $(BASELINE_DIR) --handoff-times "120, 240"
@@ -340,9 +358,6 @@ $(SOLUTION_DISRUPTION_PDF) $(SOLUTION_DIR)/disruption_metrics.txt &: $(CSV_SOLUT
 
 $(SOLUTION_LOSS_PDF) $(SOLUTION_DIR)/loss_ratio.txt &: $(CSV_SOLUTION) $(PLOT_LOSS_SCRIPT) | $(VENV_DIR) $(SOLUTION_DIR)
 	$(PYTHON) $(PLOT_LOSS_SCRIPT) --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
-
-$(SOLUTION_OVERHEAD_PDF) $(SOLUTION_DIR)/overhead_total.txt &: $(OVERHEAD_CSV_SOLUTION) $(PLOT_OVERHEAD_SCRIPT) | $(VENV_DIR) $(SOLUTION_DIR)
-	$(PYTHON) $(PLOT_OVERHEAD_SCRIPT) --input $(OVERHEAD_CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
 
 $(SOLUTION_THROUGHPUT_PDF) $(SOLUTION_DIR)/throughput_metrics.txt &: $(CSV_SOLUTION) $(PLOT_THROUGHPUT_SCRIPT) | $(VENV_DIR) $(SOLUTION_DIR)
 	$(PYTHON) $(PLOT_THROUGHPUT_SCRIPT) --input $(CSV_SOLUTION) --output-dir $(SOLUTION_DIR) --handoff-times "120, 240"
@@ -364,8 +379,11 @@ $(BASELINE_DISRUPTION_FIGURE): $(BASELINE_DISRUPTION_PDF) | paper/figures
 $(BASELINE_LOSS_FIGURE): $(BASELINE_LOSS_PDF) | paper/figures
 	cp $(BASELINE_LOSS_PDF) $@
 
-$(BASELINE_OVERHEAD_FIGURE): $(BASELINE_OVERHEAD_PDF) | paper/figures
-	cp $(BASELINE_OVERHEAD_PDF) $@
+$(BASELINE_OVERHEAD_TIMESERIES_FIGURE): $(BASELINE_OVERHEAD_TIMESERIES_PDF) | paper/figures
+	cp $(BASELINE_OVERHEAD_TIMESERIES_PDF) $@
+
+$(BASELINE_OVERHEAD_SUMMARY_FIGURE): $(BASELINE_OVERHEAD_SUMMARY_PDF) | paper/figures
+	cp $(BASELINE_OVERHEAD_SUMMARY_PDF) $@
 
 $(BASELINE_THROUGHPUT_FIGURE): $(BASELINE_THROUGHPUT_PDF) | paper/figures
 	cp $(BASELINE_THROUGHPUT_PDF) $@
@@ -376,8 +394,11 @@ $(SOLUTION_DISRUPTION_FIGURE): $(SOLUTION_DISRUPTION_PDF) | paper/figures
 $(SOLUTION_LOSS_FIGURE): $(SOLUTION_LOSS_PDF) | paper/figures
 	cp $(SOLUTION_LOSS_PDF) $@
 
-$(SOLUTION_OVERHEAD_FIGURE): $(SOLUTION_OVERHEAD_PDF) | paper/figures
-	cp $(SOLUTION_OVERHEAD_PDF) $@
+$(SOLUTION_OVERHEAD_TIMESERIES_FIGURE): $(SOLUTION_OVERHEAD_TIMESERIES_PDF) | paper/figures
+	cp $(SOLUTION_OVERHEAD_TIMESERIES_PDF) $@
+
+$(SOLUTION_OVERHEAD_SUMMARY_FIGURE): $(SOLUTION_OVERHEAD_SUMMARY_PDF) | paper/figures
+	cp $(SOLUTION_OVERHEAD_SUMMARY_PDF) $@
 
 $(SOLUTION_THROUGHPUT_FIGURE): $(SOLUTION_THROUGHPUT_PDF) | paper/figures
 	cp $(SOLUTION_THROUGHPUT_PDF) $@
