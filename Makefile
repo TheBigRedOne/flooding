@@ -173,6 +173,9 @@ REFRESH_SOLUTION_SSH_CONFIG = $(VAGRANT_SOLUTION) ssh-config --host solution > $
 # Run one experiment VM workflow from the repository root.
 RUN_EXPERIMENT_VM = PROVIDER=$(PROVIDER) MOBILITY_LOG_NODES="$(MOBILITY_LOG_NODES)" sh scripts/run-experiment-vm.sh
 
+# Run repository cleanup workflows from the repository root.
+RUN_CLEANUP = PROVIDER=$(PROVIDER) LATEXMK=$(LATEXMK) sh scripts/cleanup.sh
+
 # Main target (set DISABLE_TEST=1 to skip tests)
 all: $(BOXES) experiment $(if $(DISABLE_TEST),,$(TEST_VALIDATE_OK)) result paper
 
@@ -414,46 +417,19 @@ $(PAPER_BIN):
 
 
 # Cleanup
-clean: clean-ssh-config
-	rm -rf results
-	rm -rf $(VENV_DIR)
-	$(LATEXMK) -c $(MAIN_TEX)
-	rm -f $(PAPER_PDF)
-	rm -rf $(PAPER_BIN)
-	# remove copied paper figures
-	rm -f $(BASELINE_PAPER_FIGURES) $(SOLUTION_PAPER_FIGURES)
-	# remove test artifacts on host
-	rm -rf test/pcap test/results
-	rm -f test/consumer test/producer test/*.txt test/*.conf test/.ssh_config_solution \
-	      test/.validate_ok test/.sync_solution_*
+clean:
+	$(RUN_CLEANUP) clean
 
 deep-clean: clean
-	rm -rf $(BASELINE_FIGURE) $(SOLUTION_FIGURE) $(PAPER_PDF)
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant destroy -f || true
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant destroy -f || true
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=test vagrant destroy -f || true
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/baseline vagrant destroy -f || true
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/solution vagrant destroy -f || true
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/initial  vagrant destroy -f || true
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) vagrant box remove box/baseline/baseline.$(PROVIDER).box || true
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) vagrant box remove box/solution/solution.$(PROVIDER).box || true
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) vagrant box remove box/initial/initial.$(PROVIDER).box || true
-	rm -f box/baseline/baseline.$(PROVIDER).box
-	rm -f box/solution/solution.$(PROVIDER).box
-	rm -f box/initial/initial.$(PROVIDER).box
+	$(RUN_CLEANUP) deep-clean
 
 # Clean SSH config file
 clean-ssh-config:
 	rm -f $(BASELINE_SSH_CONFIG) $(SOLUTION_SSH_CONFIG)
 
 # Destroy all VMs (keep boxes)
-vm-clean: clean-ssh-config
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/baseline vagrant destroy -f || true
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=experiment/solution vagrant destroy -f || true
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=test vagrant destroy -f || true
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/baseline vagrant destroy -f || true
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/solution vagrant destroy -f || true
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=box/initial vagrant destroy -f || true
+vm-clean:
+	$(RUN_CLEANUP) vm-clean
 
 
 .PHONY: all build-boxes clean deep-clean clean-ssh-config box box-initial box-baseline box-solution experiment experiment-baseline experiment-solution result paper
