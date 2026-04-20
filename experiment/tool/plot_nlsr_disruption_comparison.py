@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Plot per-handoff disruption comparison from the summary CSV.
+Plot per-handoff disruption comparison across baseline parameter sets.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ BAR_WIDTH = 0.35
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Plot per-handoff disruption comparison across NLSR sensitivity profiles."
+        description="Plot per-handoff disruption comparison across baseline parameter sets."
     )
     parser.add_argument("--input", required=True, help="Input summary CSV.")
     parser.add_argument("--output", required=True, help="Output PDF path.")
@@ -89,9 +89,9 @@ def main() -> int:
     fig, ax = plt.subplots(figsize=_paper_figure_size())
     ax.bar(x - BAR_WIDTH / 2, handoff_1_values, BAR_WIDTH, label="Handoff 1", color="steelblue")
     ax.bar(x + BAR_WIDTH / 2, handoff_2_values, BAR_WIDTH, label="Handoff 2", color="darkorange")
-    ax.set_xlabel("NLSR Parameter Set (hello / adj-lsa / route-calc)")
+    ax.set_xlabel("Baseline Parameter Set (hello / adj-lsa / route-calc)")
     ax.set_ylabel("Disruption Time (ms)")
-    ax.set_title("Per-Handoff Disruption Under Baseline NLSR Tuning")
+    ax.set_title("Per-Handoff Disruption Across Baseline Parameter Sets")
     ax.set_xticks(x)
     ax.set_xticklabels(labels)
     ax.set_ylim(bottom=0)

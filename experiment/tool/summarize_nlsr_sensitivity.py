@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Summarize NLSR sensitivity experiment outputs into a single CSV."""
+"""Summarize baseline profile outputs into a single comparison CSV."""
 
 from __future__ import annotations
 
@@ -11,13 +11,17 @@ from typing import Dict, List, Optional
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Summarize NLSR sensitivity experiment outputs into one CSV."
+        description="Summarize baseline profile outputs into one comparison CSV."
     )
     parser.add_argument("--root-dir", required=True, help="Root directory containing per-profile result folders.")
     parser.add_argument(
         "--profiles",
         required=True,
         help="Comma-separated profile directory names in the desired output order.",
+    )
+    parser.add_argument(
+        "--default-profile",
+        help="Profile directory name that should be annotated as the default baseline.",
     )
     parser.add_argument("--output", required=True, help="Summary CSV output path.")
     return parser.parse_args()
@@ -112,9 +116,13 @@ def main() -> int:
             hello = params["neighbors.hello-interval"]
             adj = params["neighbors.adj-lsa-build-interval"]
             route = params["fib.routing-calc-interval"]
+            profile_label = f"{hello}/{adj}/{route}"
+            if args.default_profile and profile == args.default_profile:
+                profile_label = f"{profile_label} (default)"
+
             writer.writerow({
                 "profile": profile,
-                "profile_label": f"{hello}/{adj}/{route}",
+                "profile_label": profile_label,
                 "hello_interval": hello,
                 "adj_lsa_build_interval": adj,
                 "routing_calc_interval": route,
