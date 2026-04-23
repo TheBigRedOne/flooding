@@ -8,12 +8,13 @@
 # [NLSR_ROUTING_CALC_INTERVAL=<seconds>] [NLSR_TUNING_PROFILE=<name>]
 # sh scripts/run-result-collection.sh <vagrant_dir> <host_alias> <ssh_config>
 # <box_env_name> <box_path> <source_dir> <remote_dir> <experiment_subdir>
-# <local_results_dir> [--require-params]
+# <local_results_dir> [--mode <raw|derived>] [--pcap-nodes <comma-separated-nodes>]
+# [--require-params]
 
 set -eu
 
-if [ $# -lt 9 ] || [ $# -gt 10 ]; then
-  echo "Usage: $0 <vagrant_dir> <host_alias> <ssh_config> <box_env_name> <box_path> <source_dir> <remote_dir> <experiment_subdir> <local_results_dir> [--require-params]"
+if [ $# -lt 9 ]; then
+  echo "Usage: $0 <vagrant_dir> <host_alias> <ssh_config> <box_env_name> <box_path> <source_dir> <remote_dir> <experiment_subdir> <local_results_dir> [--mode <raw|derived>] [--pcap-nodes <comma-separated-nodes>] [--require-params]"
   exit 1
 fi
 
@@ -26,7 +27,32 @@ SOURCE_DIR=$6
 REMOTE_DIR=$7
 EXPERIMENT_SUBDIR=$8
 LOCAL_RESULTS_DIR=$9
-REQUIRE_PARAMS=${10:-}
+shift 9
+
+VALIDATION_MODE=raw
+PCAP_NODES=
+REQUIRE_PARAMS=
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --mode)
+      VALIDATION_MODE=$2
+      shift 2
+      ;;
+    --pcap-nodes)
+      PCAP_NODES=$2
+      shift 2
+      ;;
+    --require-params)
+      REQUIRE_PARAMS=--require-params
+      shift 1
+      ;;
+    *)
+      echo "Unknown option: $1"
+      exit 1
+      ;;
+  esac
+done
 
 sh scripts/run-experiment-vm.sh \
   "$VAGRANT_DIR" \
@@ -39,8 +65,12 @@ sh scripts/run-experiment-vm.sh \
   "$EXPERIMENT_SUBDIR" \
   "$LOCAL_RESULTS_DIR"
 
-if [ "$REQUIRE_PARAMS" = "--require-params" ]; then
-  python3 scripts/validate_result_dir.py --result-dir "$LOCAL_RESULTS_DIR" --require-params
-else
-  python3 scripts/validate_result_dir.py --result-dir "$LOCAL_RESULTS_DIR"
+set -- --mode "$VALIDATION_MODE" --result-dir "$LOCAL_RESULTS_DIR"
+if [ -n "$PCAP_NODES" ]; then
+  set -- "$@" --pcap-nodes "$PCAP_NODES"
 fi
+if [ "$REQUIRE_PARAMS" = "--require-params" ]; then
+  set -- "$@" --require-params
+fi
+
+python3 scripts/validate_result_dir.py "$@"
