@@ -93,6 +93,11 @@ BASELINE_PROFILE_COST_PDF := $(BASELINE_ROOT_DIR)/network_cost_comparison.pdf
 BASELINE_PROFILE_COMPARE_OUTPUTS := $(BASELINE_PROFILE_SUMMARY_CSV) \
                                    $(BASELINE_PROFILE_DISRUPTION_PDF) \
                                    $(BASELINE_PROFILE_COST_PDF)
+BASELINE_DEFAULT_SHARED_OUTPUTS := $(BASELINE_DISRUPTION_PDF) \
+                                   $(BASELINE_DEFAULT_DIR)/disruption_metrics.txt \
+                                   $(BASELINE_OVERHEAD_TIMESERIES_PDF) \
+                                   $(BASELINE_OVERHEAD_SUMMARY_PDF) \
+                                   $(BASELINE_DEFAULT_DIR)/overhead_total.txt
 MAIN_RESULT_OUTPUTS := $(BASELINE_DISRUPTION_PDF) \
                        $(BASELINE_DEFAULT_DIR)/disruption_metrics.txt \
                        $(BASELINE_LOSS_PDF) \
@@ -353,14 +358,14 @@ REMOTE_DIR := /home/vagrant/flooding
 # Baseline parameter-set collection
 define DEFINE_BASELINE_PROFILE
 $$(BASELINE_PROFILE_DIR_$(1))/consumer_capture.pcap \
-$$(foreach node,$(OVERHEAD_CAPTURE_NODES),$$(BASELINE_PROFILE_DIR_$(1))/pcap_nodes/$(node).pcap) \
+$$(foreach node,$(OVERHEAD_CAPTURE_NODES),$$(BASELINE_PROFILE_DIR_$(1))/pcap_nodes/$$(node).pcap) \
 $$(BASELINE_PROFILE_DIR_$(1))/params.txt &: \
 	$(APP_SRCS) $(BASELINE_SRCS) $(EXPERIMENT_TOOL_SRCS) $(PIPELINE_TOOL_SRCS) $(RUN_RESULT_COLLECTION_SCRIPT) $(BASELINE_SSH_CONFIG) | $$(BASELINE_PROFILE_DIR_$(1)) $$(BASELINE_PROFILE_DIR_$(1))/pcap_nodes
 	CLEAR_LOCAL_RESULTS=1 \
 	NLSR_HELLO_INTERVAL=$$(BASELINE_PROFILE_HELLO_$(1)) \
 	NLSR_ADJ_LSA_BUILD_INTERVAL=$$(BASELINE_PROFILE_ADJ_$(1)) \
 	NLSR_ROUTING_CALC_INTERVAL=$$(BASELINE_PROFILE_ROUTE_$(1)) \
-	NLSR_TUNING_PROFILE=$$(notdir $$(BASELINE_PROFILE_DIR_$(1))) \
+	NLSR_TUNING_PROFILE="$$(notdir $$(BASELINE_PROFILE_DIR_$(1)))" \
 	$(RUN_RESULT_COLLECTION) experiment/baseline baseline $(BASELINE_SSH_CONFIG) ACTUAL_BASELINE_BOX_PATH box/baseline/baseline.$(PROVIDER).box ./ $$(REMOTE_DIR) experiment/baseline "$$(BASELINE_PROFILE_DIR_$(1))" --mode raw --pcap-nodes "$(OVERHEAD_CAPTURE_NODES_CSV)" --require-params
 
 $$(BASELINE_PROFILE_DIR_$(1))/consumer_capture.csv: \
@@ -368,7 +373,7 @@ $$(BASELINE_PROFILE_DIR_$(1))/consumer_capture.csv: \
 	tshark -r "$$<" -T fields -e frame.time_epoch -e frame.len -e ndn.type -e ndn.name -E separator=, -E header=y -E quote=d > "$$@"
 
 $$(BASELINE_PROFILE_DIR_$(1))/network_overhead.csv: \
-	$$(foreach node,$(OVERHEAD_CAPTURE_NODES),$$(BASELINE_PROFILE_DIR_$(1))/pcap_nodes/$(node).pcap) \
+	$$(foreach node,$(OVERHEAD_CAPTURE_NODES),$$(BASELINE_PROFILE_DIR_$(1))/pcap_nodes/$$(node).pcap) \
 	$(OVERHEAD_EXTRACT_SCRIPT)
 	$(PYTHON) $(OVERHEAD_EXTRACT_SCRIPT) --pcap-dir "$$(BASELINE_PROFILE_DIR_$(1))/pcap_nodes" --output "$$@"
 
@@ -412,15 +417,13 @@ $(VENV_DIR): $(PLOT_ENV_SRCS)
 	touch $(VENV_DIR)
 
 # Plot baseline(default) and solution full metric sets with shared overhead axes
-$(BASELINE_DISRUPTION_PDF) $(BASELINE_DEFAULT_DIR)/disruption_metrics.txt \
 $(BASELINE_LOSS_PDF) $(BASELINE_DEFAULT_DIR)/loss_ratio.txt \
 $(BASELINE_THROUGHPUT_PDF) $(BASELINE_DEFAULT_DIR)/throughput_metrics.txt \
-$(BASELINE_OVERHEAD_TIMESERIES_PDF) $(BASELINE_OVERHEAD_SUMMARY_PDF) $(BASELINE_DEFAULT_DIR)/overhead_total.txt \
 $(SOLUTION_DISRUPTION_PDF) $(SOLUTION_DIR)/disruption_metrics.txt \
 $(SOLUTION_LOSS_PDF) $(SOLUTION_DIR)/loss_ratio.txt \
 $(SOLUTION_THROUGHPUT_PDF) $(SOLUTION_DIR)/throughput_metrics.txt \
 $(SOLUTION_OVERHEAD_TIMESERIES_PDF) $(SOLUTION_OVERHEAD_SUMMARY_PDF) $(SOLUTION_DIR)/overhead_total.txt &: \
-	$(CSV_BASELINE_DEFAULT) $(OVERHEAD_CSV_BASELINE_DEFAULT) $(CSV_SOLUTION) $(OVERHEAD_CSV_SOLUTION) \
+	$(CSV_BASELINE_DEFAULT) $(OVERHEAD_CSV_BASELINE_DEFAULT) $(BASELINE_DEFAULT_SHARED_OUTPUTS) $(CSV_SOLUTION) $(OVERHEAD_CSV_SOLUTION) \
 	$(PIPELINE_TOOL_SRCS) $(PLOT_RESULT_METRICS_SCRIPT) $(PLOT_MAIN_RESULTS_SCRIPT) $(PLOT_LATENCY_SCRIPT) $(PLOT_LOSS_SCRIPT) $(PLOT_THROUGHPUT_SCRIPT) \
 	$(PLOT_OVERHEAD_SCRIPT) $(PLOT_OVERHEAD_YMAX_SCRIPT) | $(VENV_DIR) $(SOLUTION_DIR)
 	$(PYTHON) $(PLOT_MAIN_RESULTS_SCRIPT) --baseline-dir "$(BASELINE_DEFAULT_DIR)" --solution-dir "$(SOLUTION_DIR)" --plot-driver $(PLOT_RESULT_METRICS_SCRIPT) --overhead-ymax-script $(PLOT_OVERHEAD_YMAX_SCRIPT) --latency-script $(PLOT_LATENCY_SCRIPT) --loss-script $(PLOT_LOSS_SCRIPT) --throughput-script $(PLOT_THROUGHPUT_SCRIPT) --overhead-script $(PLOT_OVERHEAD_SCRIPT) --handoff-times "120, 240"
