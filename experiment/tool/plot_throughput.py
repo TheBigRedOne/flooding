@@ -67,6 +67,29 @@ def _configure_paper_style() -> None:
     plt.rcParams["font.family"] = "serif"
 
 
+def _resolve_output_paths(
+    output_dir: str | None,
+    plot_output: str | None,
+    metrics_output: str | None,
+) -> Tuple[str | None, str | None]:
+    """Resolve explicit output paths for the throughput figure and metrics file."""
+    resolved_plot = plot_output
+    resolved_metrics = metrics_output
+    if output_dir:
+        resolved_plot = resolved_plot or os.path.join(output_dir, "throughput_timeseries.pdf")
+        resolved_metrics = resolved_metrics or os.path.join(output_dir, "throughput_metrics.txt")
+    if resolved_plot is None and resolved_metrics is None:
+        raise ValueError("At least one throughput output path must be specified.")
+    return resolved_plot, resolved_metrics
+
+
+def _ensure_parent_dir(path: str) -> None:
+    """Create the parent directory for one output path when needed."""
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+
+
 def _place_legend_above_axis(ax) -> None:
     """Place the legend above the axis and below the axis title."""
     handles, labels = ax.get_legend_handles_labels()
@@ -167,8 +190,10 @@ def _percentile(values: List[int], percentile: float) -> float:
     return sorted_vals[lower] + (sorted_vals[upper] - sorted_vals[lower]) * fraction
 
 
-def _write_metrics(out_dir: str, values: List[int], seconds: List[int]) -> None:
-    """Write throughput metrics to throughput_metrics.txt."""
+def _write_metrics(metrics_output: str | None, values: List[int], seconds: List[int]) -> None:
+    """Write throughput metrics to the requested text output."""
+    if metrics_output is None:
+        return
     if not values or not seconds:
         avg = peak = p95 = total_bytes = 0
         duration = 0
@@ -179,8 +204,8 @@ def _write_metrics(out_dir: str, values: List[int], seconds: List[int]) -> None:
         peak = max(values)
         p95 = _percentile(values, 95)
 
-    metrics_path = os.path.join(out_dir, "throughput_metrics.txt")
-    with open(metrics_path, "w", encoding="utf-8") as metrics_file:
+    _ensure_parent_dir(metrics_output)
+    with open(metrics_output, "w", encoding="utf-8") as metrics_file:
         metrics_file.write(f"Average: {avg:.2f} bytes/s\n")
         metrics_file.write(f"Peak: {peak:.2f} bytes/s\n")
         metrics_file.write(f"P95: {p95:.2f} bytes/s\n")
@@ -188,61 +213,30 @@ def _write_metrics(out_dir: str, values: List[int], seconds: List[int]) -> None:
         metrics_file.write(f"Duration: {duration:.2f} s\n")
 
 
-def _safe_empty_outputs(out_dir: str) -> None:
+def _safe_empty_outputs(plot_output: str | None, metrics_output: str | None) -> None:
     """Create empty outputs when input data is unusable."""
-    os.makedirs(out_dir, exist_ok=True)
-    metrics_path = os.path.join(out_dir, "throughput_metrics.txt")
-    with open(metrics_path, "w", encoding="utf-8") as metrics_file:
-        metrics_file.write("Average: 0.00 bytes/s\n")
-        metrics_file.write("Peak: 0.00 bytes/s\n")
-        metrics_file.write("P95: 0.00 bytes/s\n")
-        metrics_file.write("TotalBytes: 0\n")
-        metrics_file.write("Duration: 0.00 s\n")
-    _configure_paper_style()
-    fig, _ = plt.subplots(figsize=_paper_figure_size())
-    empty_pdf = os.path.join(out_dir, "throughput_timeseries.pdf")
-    fig.savefig(empty_pdf)
-    plt.close(fig)
+    _write_metrics(metrics_output, [], [])
+    if plot_output is not None:
+        _ensure_parent_dir(plot_output)
+        _configure_paper_style()
+        fig, _ = plt.subplots(figsize=_paper_figure_size())
+        fig.savefig(plot_output)
+        plt.close(fig)
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Plot throughput from tshark CSV.")
-    parser.add_argument("--input", required=True, help="Path to tshark CSV.")
-    parser.add_argument("--output-dir", required=True, help="Directory to write outputs.")
-    parser.add_argument("--handoff-times", help="Comma-separated handoff times in seconds (relative).")
-    parser.add_argument("--window", type=int, default=10, help="Shaded window length after each handoff (seconds).")
-    args = parser.parse_args()
-
-    os.makedirs(args.output_dir, exist_ok=True)
-
-    if not os.path.exists(args.input):
-        _safe_empty_outputs(args.output_dir)
+def _write_plot(
+    plot_output: str | None,
+    rel_times: List[int],
+    values: List[int],
+    handoff_times: str | None,
+    window: int,
+) -> None:
+    """Write the throughput time-series figure to the requested PDF output."""
+    if plot_output is None:
         return
-
-    try:
-        packets = _load_packets(args.input)
-    except Exception:
-        _safe_empty_outputs(args.output_dir)
-        return
-
-    per_second = _aggregate_per_second(packets)
-    if not per_second:
-        _safe_empty_outputs(args.output_dir)
-        return
-
-    full_seconds, values = _fill_missing_seconds(per_second)
-    if not full_seconds:
-        _safe_empty_outputs(args.output_dir)
-        return
-
-    start_second = full_seconds[0]
-    rel_times = [sec - start_second for sec in full_seconds]
-
-    _write_metrics(args.output_dir, values, full_seconds)
-
+    _ensure_parent_dir(plot_output)
     _configure_paper_style()
     fig, ax = plt.subplots(figsize=_paper_figure_size())
-    # TUNING: Throughput curve thickness is controlled by THROUGHPUT_LINE_WIDTH.
     ax.plot(
         rel_times,
         values,
@@ -251,13 +245,12 @@ def main() -> None:
         linewidth=THROUGHPUT_LINE_WIDTH,
     )
 
-    if args.handoff_times:
-        handoffs = [float(t.strip()) for t in args.handoff_times.split(",") if t.strip()]
+    if handoff_times:
+        handoffs = [float(t.strip()) for t in handoff_times.split(",") if t.strip()]
         for idx, handoff in enumerate(handoffs):
             start = handoff
-            end = handoff + args.window
+            end = handoff + window
             label = "Handoff Window" if idx == 0 else None
-            # TUNING: Handoff highlight transparency is controlled by HANDOFF_SHADE_ALPHA.
             ax.axvspan(start, end, color="orange", alpha=HANDOFF_SHADE_ALPHA, label=label)
 
     ax.set_xlabel("Time (seconds)")
@@ -267,19 +260,57 @@ def main() -> None:
     ax.grid(True)
     ax.yaxis.set_major_formatter(ScalarFormatter(useMathText=False))
     ax.ticklabel_format(style="plain", axis="y")
-    # TUNING: Keep y-axis anchored at zero with extra top margin for line visibility.
     _set_nonnegative_ylim_with_headroom(ax, values)
-    # TUNING: Number of y-axis ticks is controlled by Y_TICK_BINS.
     ax.yaxis.set_major_locator(MaxNLocator(nbins=Y_TICK_BINS))
-
-    # TUNING: Number of x-axis ticks is controlled by X_TICK_BINS.
     ax.xaxis.set_major_locator(MaxNLocator(nbins=X_TICK_BINS, integer=True))
     ax.get_xaxis().get_major_formatter().set_useOffset(False)
 
     fig.tight_layout()
-    output_pdf = os.path.join(args.output_dir, "throughput_timeseries.pdf")
-    fig.savefig(output_pdf, bbox_inches="tight")
+    fig.savefig(plot_output, bbox_inches="tight")
     plt.close(fig)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Plot throughput from tshark CSV.")
+    parser.add_argument("--input", required=True, help="Path to tshark CSV.")
+    parser.add_argument("--output-dir", help="Legacy directory used to derive default output files.")
+    parser.add_argument("--plot-output", help="Path to the throughput PDF output.")
+    parser.add_argument("--metrics-output", help="Path to the throughput metrics text output.")
+    parser.add_argument("--handoff-times", help="Comma-separated handoff times in seconds (relative).")
+    parser.add_argument("--window", type=int, default=10, help="Shaded window length after each handoff (seconds).")
+    args = parser.parse_args()
+
+    plot_output, metrics_output = _resolve_output_paths(
+        args.output_dir,
+        args.plot_output,
+        args.metrics_output,
+    )
+
+    if not os.path.exists(args.input):
+        _safe_empty_outputs(plot_output, metrics_output)
+        return
+
+    try:
+        packets = _load_packets(args.input)
+    except Exception:
+        _safe_empty_outputs(plot_output, metrics_output)
+        return
+
+    per_second = _aggregate_per_second(packets)
+    if not per_second:
+        _safe_empty_outputs(plot_output, metrics_output)
+        return
+
+    full_seconds, values = _fill_missing_seconds(per_second)
+    if not full_seconds:
+        _safe_empty_outputs(plot_output, metrics_output)
+        return
+
+    start_second = full_seconds[0]
+    rel_times = [sec - start_second for sec in full_seconds]
+
+    _write_metrics(metrics_output, values, full_seconds)
+    _write_plot(plot_output, rel_times, values, args.handoff_times, args.window)
 
 
 if __name__ == "__main__":

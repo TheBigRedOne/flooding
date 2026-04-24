@@ -56,6 +56,7 @@ DEFAULT_RELAY_NODES = ['core', 'agg1', 'agg2', 'acc1', 'acc2', 'acc3', 'acc4', '
 LOCALHOST_PREFIX = '/localhost/'
 OVERHEAD_TIMESERIES_FILENAME = 'overhead_timeseries.pdf'
 OVERHEAD_SUMMARY_FILENAME = 'overhead_summary.pdf'
+OVERHEAD_METRICS_FILENAME = 'overhead_total.txt'
 
 
 @dataclass
@@ -166,6 +167,41 @@ def _save_empty_pdf(output_path: str, height_cm: float) -> None:
     plt.close(fig)
 
 
+def _resolve_output_paths(
+    output_dir: str | None,
+    timeseries_output: str | None,
+    summary_output: str | None,
+    metrics_output: str | None,
+) -> tuple[str | None, str | None, str | None]:
+    """Resolve explicit output paths for the requested overhead artifacts."""
+    resolved_timeseries = timeseries_output
+    resolved_summary = summary_output
+    resolved_metrics = metrics_output
+    if output_dir:
+        resolved_timeseries = resolved_timeseries or os.path.join(output_dir, OVERHEAD_TIMESERIES_FILENAME)
+        resolved_summary = resolved_summary or os.path.join(output_dir, OVERHEAD_SUMMARY_FILENAME)
+        resolved_metrics = resolved_metrics or os.path.join(output_dir, OVERHEAD_METRICS_FILENAME)
+    if resolved_timeseries is None and resolved_summary is None and resolved_metrics is None:
+        raise ValueError("At least one overhead output path must be specified.")
+    return resolved_timeseries, resolved_summary, resolved_metrics
+
+
+def _ensure_parent_dir(path: str) -> None:
+    """Create the parent directory for one output path when needed."""
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+
+
+def _load_limits_file(path: str) -> tuple[float, float]:
+    """Read shared overhead y-axis limits from one text file."""
+    with open(path, 'r', encoding='utf-8') as input_file:
+        values = input_file.read().strip().split()
+    if len(values) != 2:
+        raise ValueError(f"Invalid overhead limits file: {path}")
+    return float(values[0]), float(values[1])
+
+
 def _compute_y_axis_upper_bound(values: List[float]) -> float:
     """Compute a non-negative y-axis upper bound with top headroom."""
     max_value = max(values) if values else 0.0
@@ -213,11 +249,22 @@ def _compute_summary_y_max(analysis: OverheadAnalysis) -> float:
     ])
 
 
-def _write_empty_outputs(output_dir: str) -> None:
-    _save_empty_pdf(os.path.join(output_dir, OVERHEAD_TIMESERIES_FILENAME), TIMESERIES_FIGURE_HEIGHT_CM)
-    _save_empty_pdf(os.path.join(output_dir, OVERHEAD_SUMMARY_FILENAME), SUMMARY_FIGURE_HEIGHT_CM)
-    with open(os.path.join(output_dir, 'overhead_total.txt'), 'w', encoding='utf-8') as output_file:
-        output_file.write("No usable overhead data available.\n")
+def _write_empty_outputs(
+    timeseries_output: str | None,
+    summary_output: str | None,
+    metrics_output: str | None,
+) -> None:
+    """Create empty placeholder outputs for missing or unusable input data."""
+    if timeseries_output is not None:
+        _ensure_parent_dir(timeseries_output)
+        _save_empty_pdf(timeseries_output, TIMESERIES_FIGURE_HEIGHT_CM)
+    if summary_output is not None:
+        _ensure_parent_dir(summary_output)
+        _save_empty_pdf(summary_output, SUMMARY_FIGURE_HEIGHT_CM)
+    if metrics_output is not None:
+        _ensure_parent_dir(metrics_output)
+        with open(metrics_output, 'w', encoding='utf-8') as output_file:
+            output_file.write("No usable overhead data available.\n")
 
 
 def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -545,42 +592,17 @@ def _write_summary_file(
             output_file.write("\n")
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Analyze and plot network forwarding overhead from unified multi-node NDN CSV."
-    )
-    parser.add_argument('--input', type=str, required=True, help='Input CSV file extracted from node pcaps.')
-    parser.add_argument('--output-dir', type=str, default='.', help='Directory to save output files.')
-    parser.add_argument('--handoff-times', type=str, help='Comma-separated list of handoff event times in seconds.')
-    parser.add_argument('--window', type=float, default=10.0, help='Time window in seconds after a handoff for summary metrics.')
-    parser.add_argument('--prefix', type=str, default='/example/LiveStream', help='Application prefix to include.')
-    parser.add_argument('--relay-nodes', type=str, default=','.join(DEFAULT_RELAY_NODES),
-                        help='Comma-separated relay nodes counted in the forwarding-cost numerator.')
-    parser.add_argument('--consumer-node', type=str, default='consumer',
-                        help='Consumer node name used for delivered-data reference.')
-    parser.add_argument('--timeseries-y-max', type=float,
-                        help='Shared y-axis upper bound for the time-series overhead figure.')
-    parser.add_argument('--summary-y-max', type=float,
-                        help='Shared y-axis upper bound for the summary overhead figure.')
-    args = parser.parse_args()
-
-    os.makedirs(args.output_dir, exist_ok=True)
-    _configure_paper_style()
-
-    try:
-        analysis = _load_analysis(
-            args.input,
-            args.prefix,
-            args.relay_nodes,
-            args.consumer_node,
-            args.handoff_times,
-            args.window,
-        )
-    except ValueError as exc:
-        print(f"Warning: {exc} Cannot generate overhead plot.")
-        _write_empty_outputs(args.output_dir)
+def _write_timeseries_plot(
+    output_path: str | None,
+    analysis: OverheadAnalysis,
+    handoff_times_arg: str | None,
+    window: float,
+    explicit_max: Optional[float],
+) -> None:
+    """Write the overhead time-series figure to the requested PDF output."""
+    if output_path is None:
         return
-
+    _ensure_parent_dir(output_path)
     timeseries_fig, ax_timeseries_header, ax_timeseries = _create_figure_with_header(
         TIMESERIES_FIGURE_HEIGHT_CM,
         TIMESERIES_FIGURE_BOTTOM_MARGIN,
@@ -626,11 +648,11 @@ def main():
             linestyle=':',
         )
 
-    for index, handoff_time in enumerate(_parse_handoff_times(args.handoff_times)):
+    for index, handoff_time in enumerate(_parse_handoff_times(handoff_times_arg)):
         label = 'Handoff Window' if index == 0 else None
         ax_timeseries.axvspan(
             handoff_time,
-            handoff_time + args.window,
+            handoff_time + window,
             color='orange',
             alpha=HANDOFF_SHADE_ALPHA,
             label=label,
@@ -647,17 +669,24 @@ def main():
             float(analysis.data_flood_series.max()),
             float(analysis.control_series.max()),
         ],
-        explicit_max=args.timeseries_y_max,
+        explicit_max=explicit_max,
     )
     ax_timeseries.xaxis.set_major_locator(MaxNLocator(nbins=X_TICK_BINS, integer=True))
     ax_timeseries.grid(True, which='both', ls='--')
     _populate_header_axis(ax_timeseries_header, ax_timeseries, 'Network Overhead Time Series')
-    timeseries_fig.savefig(
-        os.path.join(args.output_dir, OVERHEAD_TIMESERIES_FILENAME),
-        bbox_inches='tight',
-    )
+    timeseries_fig.savefig(output_path, bbox_inches='tight')
     plt.close(timeseries_fig)
 
+
+def _write_summary_plot(
+    output_path: str | None,
+    analysis: OverheadAnalysis,
+    explicit_max: Optional[float],
+) -> None:
+    """Write the overhead summary figure to the requested PDF output."""
+    if output_path is None:
+        return
+    _ensure_parent_dir(output_path)
     summary_items = analysis.handoff_summaries if analysis.handoff_summaries else [analysis.full_run_summary]
     interest_other = [item.interest_relay_bytes - item.interest_flood_bytes for item in summary_items]
     interest_flood = [item.interest_flood_bytes for item in summary_items]
@@ -725,27 +754,88 @@ def main():
     ax_summary.set_xticklabels(summary_tick_labels)
     ax_summary.tick_params(axis='x', pad=1.5)
     ax_summary.set_ylabel('Bytes in Window')
-    _set_nonnegative_ylim_with_headroom(ax_summary, [float(ymax)], explicit_max=args.summary_y_max)
+    _set_nonnegative_ylim_with_headroom(ax_summary, [float(ymax)], explicit_max=explicit_max)
     ax_summary.yaxis.set_major_locator(MaxNLocator(nbins=4))
     ax_summary.grid(True, axis='y', linestyle='--', alpha=0.7)
 
     _populate_header_axis(ax_summary_header, ax_summary, 'Window Summaries')
-    summary_fig.savefig(
-        os.path.join(args.output_dir, OVERHEAD_SUMMARY_FILENAME),
-        bbox_inches='tight',
-    )
+    summary_fig.savefig(output_path, bbox_inches='tight')
     plt.close(summary_fig)
 
-    _write_summary_file(
-        os.path.join(args.output_dir, 'overhead_total.txt'),
-        analysis.relay_nodes,
-        args.consumer_node,
-        args.window,
-        analysis.handoff_summaries,
-        analysis.full_run_summary,
-    )
 
-    print(f"Generated overhead plots and metrics in {args.output_dir}")
+def main():
+    parser = argparse.ArgumentParser(
+        description="Analyze and plot network forwarding overhead from unified multi-node NDN CSV."
+    )
+    parser.add_argument('--input', type=str, required=True, help='Input CSV file extracted from node pcaps.')
+    parser.add_argument('--output-dir', type=str, help='Legacy directory used to derive default output files.')
+    parser.add_argument('--timeseries-output', type=str, help='Path to the overhead time-series PDF output.')
+    parser.add_argument('--summary-output', type=str, help='Path to the overhead summary PDF output.')
+    parser.add_argument('--metrics-output', type=str, help='Path to the overhead metrics text output.')
+    parser.add_argument('--handoff-times', type=str, help='Comma-separated list of handoff event times in seconds.')
+    parser.add_argument('--window', type=float, default=10.0, help='Time window in seconds after a handoff for summary metrics.')
+    parser.add_argument('--prefix', type=str, default='/example/LiveStream', help='Application prefix to include.')
+    parser.add_argument('--relay-nodes', type=str, default=','.join(DEFAULT_RELAY_NODES),
+                        help='Comma-separated relay nodes counted in the forwarding-cost numerator.')
+    parser.add_argument('--consumer-node', type=str, default='consumer',
+                        help='Consumer node name used for delivered-data reference.')
+    parser.add_argument('--timeseries-y-max', type=float,
+                        help='Shared y-axis upper bound for the time-series overhead figure.')
+    parser.add_argument('--summary-y-max', type=float,
+                        help='Shared y-axis upper bound for the summary overhead figure.')
+    parser.add_argument('--limits-file', type=str,
+                        help='Path to a text file containing shared time-series and summary y-axis limits.')
+    args = parser.parse_args()
+
+    timeseries_output, summary_output, metrics_output = _resolve_output_paths(
+        args.output_dir,
+        args.timeseries_output,
+        args.summary_output,
+        args.metrics_output,
+    )
+    _configure_paper_style()
+
+    if args.limits_file:
+        args.timeseries_y_max, args.summary_y_max = _load_limits_file(args.limits_file)
+
+    try:
+        analysis = _load_analysis(
+            args.input,
+            args.prefix,
+            args.relay_nodes,
+            args.consumer_node,
+            args.handoff_times,
+            args.window,
+        )
+    except ValueError as exc:
+        print(f"Warning: {exc} Cannot generate overhead plot.")
+        _write_empty_outputs(timeseries_output, summary_output, metrics_output)
+        return
+
+    _write_timeseries_plot(
+        timeseries_output,
+        analysis,
+        args.handoff_times,
+        args.window,
+        args.timeseries_y_max,
+    )
+    _write_summary_plot(
+        summary_output,
+        analysis,
+        args.summary_y_max,
+    )
+    if metrics_output is not None:
+        _ensure_parent_dir(metrics_output)
+        _write_summary_file(
+            metrics_output,
+            analysis.relay_nodes,
+            args.consumer_node,
+            args.window,
+            analysis.handoff_summaries,
+            analysis.full_run_summary,
+        )
+
+    print("Generated overhead outputs")
 
 
 if __name__ == '__main__':

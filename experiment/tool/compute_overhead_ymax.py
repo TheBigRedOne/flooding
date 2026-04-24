@@ -42,6 +42,10 @@ def main() -> None:
         default="consumer",
         help="Consumer node name used for delivered-data reference.",
     )
+    parser.add_argument(
+        "--output",
+        help="Optional file that receives the computed time-series and summary y-axis limits.",
+    )
     args = parser.parse_args()
 
     timeseries_y_max = 0.0
@@ -58,7 +62,11 @@ def main() -> None:
         timeseries_y_max = max(timeseries_y_max, plot_overhead._compute_timeseries_y_max(analysis))
         summary_y_max = max(summary_y_max, plot_overhead._compute_summary_y_max(analysis))
 
-    print(f"{timeseries_y_max:.6f} {summary_y_max:.6f}")
+    output_text = f"{timeseries_y_max:.6f} {summary_y_max:.6f}\n"
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as output_file:
+            output_file.write(output_text)
+    print(output_text, end="")
 
 
 if __name__ == "__main__":

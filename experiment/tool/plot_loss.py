@@ -51,6 +51,91 @@ def _configure_paper_style():
     plt.rcParams["font.family"] = "serif"
 
 
+def _resolve_output_paths(
+    output_dir: str | None,
+    plot_output: str | None,
+    metrics_output: str | None,
+) -> tuple[str | None, str | None]:
+    """Resolve explicit output paths for the loss figure and metrics file."""
+    resolved_plot = plot_output
+    resolved_metrics = metrics_output
+    if output_dir:
+        resolved_plot = resolved_plot or os.path.join(output_dir, 'loss_comparison.pdf')
+        resolved_metrics = resolved_metrics or os.path.join(output_dir, 'loss_ratio.txt')
+    if resolved_plot is None and resolved_metrics is None:
+        raise ValueError("At least one loss output path must be specified.")
+    return resolved_plot, resolved_metrics
+
+
+def _ensure_parent_dir(path: str) -> None:
+    """Create the parent directory for one output path when needed."""
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+
+
+def _write_empty_outputs(plot_output: str | None, metrics_output: str | None) -> None:
+    """Create empty or default outputs when the input data is unusable."""
+    if metrics_output is not None:
+        _ensure_parent_dir(metrics_output)
+        with open(metrics_output, 'w', encoding='utf-8') as output_file:
+            output_file.write("Handoff Window Ratio: 1.0\n")
+            output_file.write("Steady State Ratio: 1.0\n")
+    if plot_output is not None:
+        _ensure_parent_dir(plot_output)
+        open(plot_output, 'w').close()
+
+
+def _write_metrics(
+    metrics_output: str | None,
+    handoff_ratio: float,
+    steady_state_ratio: float,
+    handoff_total: int,
+    handoff_unmet: int,
+    steady_total: int,
+    steady_unmet: int,
+    deadline: float,
+) -> None:
+    """Write the unmet-interest metrics to the requested text output."""
+    if metrics_output is None:
+        return
+    _ensure_parent_dir(metrics_output)
+    with open(metrics_output, 'w', encoding='utf-8') as output_file:
+        output_file.write(f"Handoff Window Ratio: {handoff_ratio:.4f}\n")
+        output_file.write(f"Steady State Ratio: {steady_state_ratio:.4f}\n")
+        output_file.write(f"Handoff Requests: {handoff_total}\n")
+        output_file.write(f"Handoff Unmet: {handoff_unmet}\n")
+        output_file.write(f"Steady Requests: {steady_total}\n")
+        output_file.write(f"Steady Unmet: {steady_unmet}\n")
+        output_file.write(f"Deadline Seconds: {deadline:.2f}\n")
+
+
+def _write_plot(plot_output: str | None, ratios: list[float], deadline: float) -> None:
+    """Write the unmet-interest comparison figure to the requested PDF output."""
+    if plot_output is None:
+        return
+    _ensure_parent_dir(plot_output)
+    fig, ax = plt.subplots(figsize=_paper_figure_size())
+    labels = ['During\nHandoffs', 'Steady\nState']
+    max_ratio = max(ratios) if ratios else 0.0
+    label_offset = max(VALUE_LABEL_OFFSET_MIN, VALUE_LABEL_OFFSET_RATIO * max_ratio)
+    ax.bar(labels, ratios, color=[HANDOFF_BAR_COLOR, STEADY_BAR_COLOR])
+    ax.set_ylabel('Unmet-Interest Ratio')
+    ax.set_title(
+        f'Comparison of Unmet-Interest Ratio (deadline={deadline:.1f}s)',
+        pad=TITLE_PAD_POINTS,
+    )
+    ax.set_ylim(0, max(1.0 + LOSS_Y_TOP_PADDING, max_ratio + label_offset + LOSS_Y_TOP_PADDING))
+    ax.grid(axis='y', linestyle='--', alpha=0.7)
+
+    for i, value in enumerate(ratios):
+        ax.text(i, value + label_offset, f"{value:.3f}", ha='center', va='bottom')
+
+    fig.tight_layout()
+    fig.savefig(plot_output, bbox_inches='tight')
+    plt.close(fig)
+
+
 def normalize_name(name: str) -> str:
     """
     Keep only the canonical data name part before signer metadata.
@@ -71,7 +156,9 @@ def calculate_unmet_ratio(requests_df: pd.DataFrame) -> float:
 def main():
     parser = argparse.ArgumentParser(description="Calculate and compare Unmet-Interest ratio from NDN pcap CSV.")
     parser.add_argument('--input', type=str, required=True, help='Input CSV file from tshark.')
-    parser.add_argument('--output-dir', type=str, default='.', help='Directory to save the output files.')
+    parser.add_argument('--output-dir', type=str, help='Legacy directory used to derive default output files.')
+    parser.add_argument('--plot-output', type=str, help='Path to the loss comparison PDF output.')
+    parser.add_argument('--metrics-output', type=str, help='Path to the unmet-interest metrics text output.')
     parser.add_argument('--handoff-times', type=str, required=True, help='Comma-separated list of handoff event times.')
     parser.add_argument('--window', type=float, default=10.0, help='Analysis window duration in seconds after each handoff.')
     parser.add_argument('--prefix', type=str, default='/example/LiveStream', help='Application prefix to include.')
@@ -79,7 +166,11 @@ def main():
                         help='Deadline in seconds to consider an Interest satisfied by Data.')
     args = parser.parse_args()
 
-    os.makedirs(args.output_dir, exist_ok=True)
+    plot_output, metrics_output = _resolve_output_paths(
+        args.output_dir,
+        args.plot_output,
+        args.metrics_output,
+    )
     _configure_paper_style()
 
     try:
@@ -88,10 +179,7 @@ def main():
             raise pd.errors.EmptyDataError
     except (pd.errors.EmptyDataError, FileNotFoundError):
         print(f"Warning: Input file {args.input} is empty or not found. No loss calculated.")
-        with open(os.path.join(args.output_dir, 'loss_ratio.txt'), 'w') as f:
-            f.write("Handoff Window Ratio: 1.0\n")
-            f.write("Steady State Ratio: 1.0\n")
-        open(os.path.join(args.output_dir, 'loss_comparison.pdf'), 'w').close()
+        _write_empty_outputs(plot_output, metrics_output)
         return
 
     df.rename(columns={'frame.time_epoch': 'time', 'ndn.type': 'type', 'ndn.name': 'name'}, inplace=True)
@@ -104,20 +192,14 @@ def main():
     df = df[~df['name'].astype(str).str.startswith('/localhop/ndn/nlsr/')]
     if df.empty:
         print(f"Warning: No packets under prefix {app_prefix}. No loss calculated.")
-        with open(os.path.join(args.output_dir, 'loss_ratio.txt'), 'w') as f:
-            f.write("Handoff Window Ratio: 1.0\n")
-            f.write("Steady State Ratio: 1.0\n")
-        open(os.path.join(args.output_dir, 'loss_comparison.pdf'), 'w').close()
+        _write_empty_outputs(plot_output, metrics_output)
         return
 
     df['type'] = df['type'].str.lower()
     df = df[df['type'].isin(['interest', 'data'])].copy()
     if df.empty:
         print("Warning: No Interest/Data packets after filtering. No loss calculated.")
-        with open(os.path.join(args.output_dir, 'loss_ratio.txt'), 'w') as f:
-            f.write("Handoff Window Ratio: 1.0\n")
-            f.write("Steady State Ratio: 1.0\n")
-        open(os.path.join(args.output_dir, 'loss_comparison.pdf'), 'w').close()
+        _write_empty_outputs(plot_output, metrics_output)
         return
     df['base_name'] = df['name'].apply(normalize_name)
 
@@ -129,10 +211,7 @@ def main():
     data = df[df['type'] == 'data'][['time', 'base_name']].sort_values('time')
     if interests.empty:
         print("Warning: No Interests after filtering. No loss calculated.")
-        with open(os.path.join(args.output_dir, 'loss_ratio.txt'), 'w') as f:
-            f.write("Handoff Window Ratio: 1.0\n")
-            f.write("Steady State Ratio: 1.0\n")
-        open(os.path.join(args.output_dir, 'loss_comparison.pdf'), 'w').close()
+        _write_empty_outputs(plot_output, metrics_output)
         return
 
     first_requests = interests.groupby('base_name', as_index=False)['time'].min()
@@ -176,43 +255,20 @@ def main():
     handoff_unmet = int((~handoff_df['met']).sum()) if handoff_total else 0
     steady_unmet = int((~steady_state_df['met']).sum()) if steady_total else 0
 
-    # Save metrics to text file
-    output_file = os.path.join(args.output_dir, 'loss_ratio.txt')
-    with open(output_file, 'w') as f:
-        f.write(f"Handoff Window Ratio: {handoff_ratio:.4f}\n")
-        f.write(f"Steady State Ratio: {steady_state_ratio:.4f}\n")
-        f.write(f"Handoff Requests: {handoff_total}\n")
-        f.write(f"Handoff Unmet: {handoff_unmet}\n")
-        f.write(f"Steady Requests: {steady_total}\n")
-        f.write(f"Steady Unmet: {steady_unmet}\n")
-        f.write(f"Deadline Seconds: {args.deadline:.2f}\n")
-    
-    # --- Paired Comparison Plot ---
-    fig, ax = plt.subplots(figsize=_paper_figure_size())
-    # TUNING: Use '\n' in labels to avoid overlap on narrow figures.
-    labels = ['During\nHandoffs', 'Steady\nState']
     ratios = [handoff_ratio, steady_state_ratio]
-    max_ratio = max(ratios) if ratios else 0.0
-    label_offset = max(VALUE_LABEL_OFFSET_MIN, VALUE_LABEL_OFFSET_RATIO * max_ratio)
-    ax.bar(labels, ratios, color=[HANDOFF_BAR_COLOR, STEADY_BAR_COLOR])
-    ax.set_ylabel('Unmet-Interest Ratio')
-    ax.set_title(
-        f'Comparison of Unmet-Interest Ratio (deadline={args.deadline:.1f}s)',
-        pad=TITLE_PAD_POINTS,
+    _write_metrics(
+        metrics_output,
+        handoff_ratio,
+        steady_state_ratio,
+        handoff_total,
+        handoff_unmet,
+        steady_total,
+        steady_unmet,
+        args.deadline,
     )
-    # TUNING: Upper y-axis headroom keeps tall bars and value labels below the title.
-    ax.set_ylim(0, max(1.0 + LOSS_Y_TOP_PADDING, max_ratio + label_offset + LOSS_Y_TOP_PADDING))
-    ax.grid(axis='y', linestyle='--', alpha=0.7)
-    
-    for i, v in enumerate(ratios):
-        # TUNING: Value label offset above each bar.
-        ax.text(i, v + label_offset, f"{v:.3f}", ha='center', va='bottom')
-        
-    fig.tight_layout()
-    fig.savefig(os.path.join(args.output_dir, 'loss_comparison.pdf'), bbox_inches='tight')
-    plt.close(fig)
+    _write_plot(plot_output, ratios, args.deadline)
 
-    print(f"Generated R2 (Unmet-Interest Ratio) metrics and plot in {args.output_dir}")
+    print("Generated unmet-interest outputs")
 
 if __name__ == '__main__':
     main()
