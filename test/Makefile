@@ -55,19 +55,16 @@ vm-halt:
 vm-destroy:
 	$(VAGRANT_SOLUTION) destroy -f || true
 
-# Ensure VM is recreated from the latest solution box and emit SSH config
-$(SSH_CONFIG): $(ROOT_DIR)/test/Vagrantfile $(SOLUTION_BOX)
+# Sync sources from host to VM via rsync (standardized entry)
+sync: $(SYNC_STAMP)
+
+# Recreate the dedicated test VM from the latest solution box and sync inputs.
+$(SYNC_STAMP): $(ROOT_DIR)/test/Vagrantfile $(SOLUTION_BOX) $(SYNC_INPUTS)
 	# Force destroy to avoid stale base box snapshots
 	$(VAGRANT_SOLUTION) destroy -f || true
 	# Remove previously cached box to force reload from local package
 	$(VAGRANT_SOLUTION) box remove $(BOX_NAME) --provider=$(PROVIDER) || true
 	$(VAGRANT_ENV) $(VAGRANT_SOLUTION) up --provision
-	$(REFRESH_SSH_CONFIG)
-
-# Sync sources from host to VM via rsync (standardized entry)
-sync: $(SYNC_STAMP)
-
-$(SYNC_STAMP): $(SSH_CONFIG) $(SYNC_INPUTS)
 	$(REFRESH_SSH_CONFIG)
 	$(RSYNC_SOLUTION) $(RSYNC_EXCLUDES) $(ROOT_DIR)/ solution:$(REMOTE_DIR)/
 	@echo OK > $@
@@ -80,8 +77,9 @@ RIBS  := $(RESULTS_DIR)/r3_T1_rib.txt $(RESULTS_DIR)/r3_T2_rib.txt
 VALIDATE_OK := $(ROOT_DIR)/test/.validate_ok
 VM_VALIDATE_STAMP := $(RESULTS_DIR)/.validate_ok_vm
 
-# Produce test artifacts via one VM run, then rsync back (grouped target)
-$(PCAPS) $(RIBS) &: $(SYNC_STAMP)
+# Produce test artifacts via one dedicated VM run, then rsync back.
+$(PCAPS) $(RIBS) $(VM_VALIDATE_STAMP) &: $(SYNC_STAMP)
+	$(VAGRANT_ENV) $(VAGRANT_SOLUTION) up --provision
 	$(REFRESH_SSH_CONFIG)
 	# Build apps inside VM from rsynced sources under $(REMOTE_DIR)
 	$(VAGRANT_SOLUTION) ssh -c 'set -e; test -d $(REMOTE_DIR)/experiment/app || (echo "rsync failed: $(REMOTE_DIR)/experiment/app missing" && exit 1)'
