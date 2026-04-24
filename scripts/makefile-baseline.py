@@ -108,7 +108,7 @@ def emit_raw_rule(profile: str, assignments: dict[str, str]) -> list[str]:
     ]
     return [
         f"# Baseline profile: {profile}",
-        f"{' '.join(raw_targets)} &: $(APP_SRCS) $(BASELINE_SRCS) $(EXPERIMENT_TOOL_SRCS) $(PIPELINE_CONFIG_SRCS) $(BASELINE_SSH_CONFIG) | {profile_dir} {profile_dir}/pcap_nodes",
+        f"{' '.join(raw_targets)} &: $(APP_SRCS) $(BASELINE_SRCS) $(EXPERIMENT_TOOL_SRCS) $(PIPELINE_CONFIG_SRCS) box/baseline/baseline.$(PROVIDER).box | {profile_dir} {profile_dir}/pcap_nodes",
         *emit_workflow_recipe(
             vagrant_dir="experiment/baseline",
             host_alias="baseline",

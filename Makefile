@@ -337,22 +337,6 @@ box/solution/solution.$(PROVIDER).box: box/solution/Vagrantfile box/initial/init
 # =============================================================================
 
 
-# SSH config file for baseline experiment
-$(BASELINE_SSH_CONFIG): experiment/baseline/Vagrantfile box/baseline/baseline.$(PROVIDER).box
-	# Force destroy any lingering VM to ensure a clean state
-	$(VAGRANT_BASELINE) destroy -f || true
-	ACTUAL_BASELINE_BOX_PATH="box/baseline/baseline.$(PROVIDER).box" \
-	$(VAGRANT_BASELINE) up --provision
-	$(REFRESH_BASELINE_SSH_CONFIG)
-
-# SSH config file for solution experiment
-$(SOLUTION_SSH_CONFIG): experiment/solution/Vagrantfile box/solution/solution.$(PROVIDER).box
-	# Force destroy any lingering VM to ensure a clean state
-	$(VAGRANT_SOLUTION) destroy -f || true
-	ACTUAL_SOLUTION_BOX_PATH="box/solution/solution.$(PROVIDER).box" \
-	$(VAGRANT_SOLUTION) up --provision
-	$(REFRESH_SOLUTION_SSH_CONFIG)
-
 # Remote working directory inside VMs (standardized for rsync-based runs)
 REMOTE_DIR := /home/vagrant/flooding
 

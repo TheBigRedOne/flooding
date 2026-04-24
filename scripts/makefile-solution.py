@@ -79,7 +79,7 @@ def main() -> int:
         "# Source: scripts/makefile-solution.py",
         "",
         "# Solution experiment",
-        f"{' '.join(raw_targets)} &: $(APP_SRCS) $(SOLUTION_SRCS) $(EXPERIMENT_TOOL_SRCS) $(SOLUTION_SSH_CONFIG) | results/solution $(SOLUTION_DIR)/pcap_nodes",
+        f"{' '.join(raw_targets)} &: $(APP_SRCS) $(SOLUTION_SRCS) $(EXPERIMENT_TOOL_SRCS) box/solution/solution.$(PROVIDER).box | results/solution $(SOLUTION_DIR)/pcap_nodes",
         *emit_workflow_recipe(
             vagrant_dir="experiment/solution",
             host_alias="solution",
