@@ -18,6 +18,8 @@ MAIN_TEX=paper/OptoFlood.tex
 PAPER_PDF=paper/OptoFlood.pdf
 PAPER_BIN=paper/bin
 VENV_DIR=experiment/tool/.venv
+BASELINE_MAKEFILE=Makefile.baseline
+SOLUTION_MAKEFILE=Makefile.solution
 BASELINE_SSH_CONFIG=.ssh_config_baseline
 SOLUTION_SSH_CONFIG=.ssh_config_solution
 
@@ -52,6 +54,7 @@ remove_host_artifacts() {
   remove_ssh_configs
   rm -rf results
   rm -rf "$VENV_DIR"
+  rm -f "$BASELINE_MAKEFILE" "$SOLUTION_MAKEFILE"
   "$LATEXMK_CMD" -c "$MAIN_TEX"
   rm -f "$PAPER_PDF"
   rm -rf "$PAPER_BIN"

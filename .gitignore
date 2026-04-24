@@ -90,3 +90,7 @@ __pycache__/
 test/results/
 test/minindn/
 results
+
+#Generated makefiles
+Makefile.baseline
+Makefile.solution

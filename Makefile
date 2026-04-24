@@ -43,11 +43,14 @@ SOLUTION_DIR := results/solution
 
 # Baseline parameter-set configuration
 include experiment/tool/baseline_profiles.mk
+BASELINE_MAKEFILE := Makefile.baseline
+BASELINE_MAKEFILE_SCRIPT := scripts/makefile-baseline.py
+SOLUTION_MAKEFILE := Makefile.solution
+SOLUTION_MAKEFILE_SCRIPT := scripts/makefile-solution.py
 BASELINE_DEFAULT_DIR := $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))
 BASELINE_MODERATE_DIR := $(BASELINE_PROFILE_DIR_moderate)
 BASELINE_AGGRESSIVE_DIR := $(BASELINE_PROFILE_DIR_aggressive)
 BASELINE_PROFILE_DIRS := $(foreach profile,$(BASELINE_PROFILE_IDS),$(BASELINE_PROFILE_DIR_$(profile)))
-BASELINE_COMPARE_PROFILE_IDS := $(filter-out $(BASELINE_DEFAULT_PROFILE),$(BASELINE_PROFILE_IDS))
 BASELINE_PROFILE_ORDER := $(foreach profile,$(BASELINE_PROFILE_IDS),$(notdir $(BASELINE_PROFILE_DIR_$(profile))))
 BASELINE_DEFAULT_CONSUMER_PCAP := $(BASELINE_DEFAULT_DIR)/consumer_capture.pcap
 BASELINE_MODERATE_CONSUMER_PCAP := $(BASELINE_MODERATE_DIR)/consumer_capture.pcap
@@ -353,69 +356,14 @@ $(SOLUTION_SSH_CONFIG): experiment/solution/Vagrantfile box/solution/solution.$(
 # Remote working directory inside VMs (standardized for rsync-based runs)
 REMOTE_DIR := /home/vagrant/flooding
 
-define RUN_EXPERIMENT_WORKFLOW
-	@echo "*** Running experiment VM workflow: $(6) ($(PROVIDER), dir=$(1))"
-	env "$(4)=$(5)" VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=$(1) vagrant up --provision
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=$(1) vagrant ssh-config --host $(2) > $(3)
-	rsync -avH -e "ssh -F $(3)" --exclude .git --exclude .vagrant --exclude results --exclude paper/bin ./ $(2):$(REMOTE_DIR)/
-	$(if $(strip $(8)),rm -rf "$(7)"/*,)
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=$(1) vagrant ssh -c "set -e; cd $(REMOTE_DIR)/$(6) && make clean && $(9); mkdir -p results/minindn-logs; if [ -d /tmp/minindn ]; then for name in $(MOBILITY_LOG_NODES); do node=/tmp/minindn/\$$name; if [ -d \"\$$node/log\" ]; then mkdir -p \"results/minindn-logs/\$$name\"; cp -f \"\$$node/log/nfd.log\" \"results/minindn-logs/\$$name/\" 2>/dev/null || true; cp -f \"\$$node/log/nlsr.log\" \"results/minindn-logs/\$$name/\" 2>/dev/null || true; fi; done; fi"
-	rsync -avH -e "ssh -F $(3)" "$(2):$(REMOTE_DIR)/$(6)/results/." "$(7)/"
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=$(1) vagrant halt -f || true
-	@echo ""
-	@echo "*** Finished experiment VM workflow: $(6) ($(PROVIDER), dir=$(1))"
-	@echo ""
-endef
+$(BASELINE_MAKEFILE): $(BASELINE_MAKEFILE_SCRIPT) $(BASELINE_PROFILE_CONFIG_MK)
+	python3 $(BASELINE_MAKEFILE_SCRIPT) > "$@"
 
-define ASSERT_RAW_RESULT_DIR
-	test -d "$(1)" || { echo "Missing result directory: $(1)"; exit 1; }
-	test -f "$(1)/consumer_capture.pcap" || { echo "Missing result file: $(1)/consumer_capture.pcap"; exit 1; }
-	$(foreach node,$(OVERHEAD_CAPTURE_NODES),test -f "$(1)/pcap_nodes/$(node).pcap" || { echo "Missing result file: $(1)/pcap_nodes/$(node).pcap"; exit 1; };)
-	$(if $(strip $(2)),test -f "$(1)/params.txt" || { echo "Missing result file: $(1)/params.txt"; exit 1; };)
-endef
+$(SOLUTION_MAKEFILE): $(SOLUTION_MAKEFILE_SCRIPT)
+	python3 $(SOLUTION_MAKEFILE_SCRIPT) > "$@"
 
-# Baseline default: one experiment run produces the complete raw result set.
-$(BASELINE_DEFAULT_RAW_OUTPUTS) &: $(APP_SRCS) $(BASELINE_SRCS) $(EXPERIMENT_TOOL_SRCS) $(PIPELINE_CONFIG_SRCS) $(BASELINE_SSH_CONFIG) | $(BASELINE_DEFAULT_DIR) $(BASELINE_DEFAULT_DIR)/pcap_nodes
-	$(call RUN_EXPERIMENT_WORKFLOW,experiment/baseline,baseline,$(BASELINE_SSH_CONFIG),ACTUAL_BASELINE_BOX_PATH,box/baseline/baseline.$(PROVIDER).box,experiment/baseline,$(BASELINE_DEFAULT_DIR),1,NLSR_HELLO_INTERVAL='$(BASELINE_PROFILE_HELLO_default)' NLSR_ADJ_LSA_BUILD_INTERVAL='$(BASELINE_PROFILE_ADJ_default)' NLSR_ROUTING_CALC_INTERVAL='$(BASELINE_PROFILE_ROUTE_default)' NLSR_TUNING_PROFILE='$(notdir $(BASELINE_DEFAULT_DIR))' make all)
-	$(call ASSERT_RAW_RESULT_DIR,$(BASELINE_DEFAULT_DIR),require-params)
-
-# Baseline moderate: one experiment run produces the complete raw result set.
-$(BASELINE_MODERATE_RAW_OUTPUTS) &: $(APP_SRCS) $(BASELINE_SRCS) $(EXPERIMENT_TOOL_SRCS) $(PIPELINE_CONFIG_SRCS) $(BASELINE_SSH_CONFIG) | $(BASELINE_MODERATE_DIR) $(BASELINE_MODERATE_DIR)/pcap_nodes
-	$(call RUN_EXPERIMENT_WORKFLOW,experiment/baseline,baseline,$(BASELINE_SSH_CONFIG),ACTUAL_BASELINE_BOX_PATH,box/baseline/baseline.$(PROVIDER).box,experiment/baseline,$(BASELINE_MODERATE_DIR),1,NLSR_HELLO_INTERVAL='$(BASELINE_PROFILE_HELLO_moderate)' NLSR_ADJ_LSA_BUILD_INTERVAL='$(BASELINE_PROFILE_ADJ_moderate)' NLSR_ROUTING_CALC_INTERVAL='$(BASELINE_PROFILE_ROUTE_moderate)' NLSR_TUNING_PROFILE='$(notdir $(BASELINE_MODERATE_DIR))' make all)
-	$(call ASSERT_RAW_RESULT_DIR,$(BASELINE_MODERATE_DIR),require-params)
-
-# Baseline aggressive: one experiment run produces the complete raw result set.
-$(BASELINE_AGGRESSIVE_RAW_OUTPUTS) &: $(APP_SRCS) $(BASELINE_SRCS) $(EXPERIMENT_TOOL_SRCS) $(PIPELINE_CONFIG_SRCS) $(BASELINE_SSH_CONFIG) | $(BASELINE_AGGRESSIVE_DIR) $(BASELINE_AGGRESSIVE_DIR)/pcap_nodes
-	$(call RUN_EXPERIMENT_WORKFLOW,experiment/baseline,baseline,$(BASELINE_SSH_CONFIG),ACTUAL_BASELINE_BOX_PATH,box/baseline/baseline.$(PROVIDER).box,experiment/baseline,$(BASELINE_AGGRESSIVE_DIR),1,NLSR_HELLO_INTERVAL='$(BASELINE_PROFILE_HELLO_aggressive)' NLSR_ADJ_LSA_BUILD_INTERVAL='$(BASELINE_PROFILE_ADJ_aggressive)' NLSR_ROUTING_CALC_INTERVAL='$(BASELINE_PROFILE_ROUTE_aggressive)' NLSR_TUNING_PROFILE='$(notdir $(BASELINE_AGGRESSIVE_DIR))' make all)
-	$(call ASSERT_RAW_RESULT_DIR,$(BASELINE_AGGRESSIVE_DIR),require-params)
-
-define DEFINE_BASELINE_PROFILE_DATA_RULES
-$$(BASELINE_PROFILE_DIR_$(1))/consumer_capture.csv: $$(BASELINE_PROFILE_DIR_$(1))/consumer_capture.pcap
-	tshark -r "$$<" -T fields -e frame.time_epoch -e frame.len -e ndn.type -e ndn.name -E separator=, -E header=y -E quote=d > "$$@"
-
-$$(BASELINE_PROFILE_DIR_$(1))/network_overhead.csv: $$(foreach node,$(OVERHEAD_CAPTURE_NODES),$$(BASELINE_PROFILE_DIR_$(1))/pcap_nodes/$$(node).pcap) $(OVERHEAD_EXTRACT_SCRIPT)
-	$$(PYTHON) $$(OVERHEAD_EXTRACT_SCRIPT) --pcap-dir "$$(BASELINE_PROFILE_DIR_$(1))/pcap_nodes" --output "$$@"
-endef
-
-define DEFINE_BASELINE_PROFILE_COMPARE_RULES
-$$(BASELINE_PROFILE_DIR_$(1))/disruption_times.pdf: $$(BASELINE_PROFILE_DIR_$(1))/consumer_capture.csv $(PLOT_LATENCY_SCRIPT) | $(VENV_DIR)
-	$$(PYTHON) $$(PLOT_LATENCY_SCRIPT) --input "$$(BASELINE_PROFILE_DIR_$(1))/consumer_capture.csv" --plot-output "$$@" --handoff-times "120, 240"
-
-$$(BASELINE_PROFILE_DIR_$(1))/disruption_metrics.txt: $$(BASELINE_PROFILE_DIR_$(1))/consumer_capture.csv $(PLOT_LATENCY_SCRIPT) | $(VENV_DIR)
-	$$(PYTHON) $$(PLOT_LATENCY_SCRIPT) --input "$$(BASELINE_PROFILE_DIR_$(1))/consumer_capture.csv" --metrics-output "$$@" --handoff-times "120, 240"
-
-$$(BASELINE_PROFILE_DIR_$(1))/overhead_timeseries.pdf: $$(BASELINE_PROFILE_DIR_$(1))/network_overhead.csv $(PLOT_OVERHEAD_SCRIPT) | $(VENV_DIR)
-	$$(PYTHON) $$(PLOT_OVERHEAD_SCRIPT) --input "$$(BASELINE_PROFILE_DIR_$(1))/network_overhead.csv" --timeseries-output "$$@" --handoff-times "120, 240"
-
-$$(BASELINE_PROFILE_DIR_$(1))/overhead_summary.pdf: $$(BASELINE_PROFILE_DIR_$(1))/network_overhead.csv $(PLOT_OVERHEAD_SCRIPT) | $(VENV_DIR)
-	$$(PYTHON) $$(PLOT_OVERHEAD_SCRIPT) --input "$$(BASELINE_PROFILE_DIR_$(1))/network_overhead.csv" --summary-output "$$@" --handoff-times "120, 240"
-
-$$(BASELINE_PROFILE_DIR_$(1))/overhead_total.txt: $$(BASELINE_PROFILE_DIR_$(1))/network_overhead.csv $(PLOT_OVERHEAD_SCRIPT) | $(VENV_DIR)
-	$$(PYTHON) $$(PLOT_OVERHEAD_SCRIPT) --input "$$(BASELINE_PROFILE_DIR_$(1))/network_overhead.csv" --metrics-output "$$@" --handoff-times "120, 240"
-endef
-
-$(foreach profile,$(BASELINE_PROFILE_IDS),$(eval $(call DEFINE_BASELINE_PROFILE_DATA_RULES,$(profile))))
-$(foreach profile,$(BASELINE_COMPARE_PROFILE_IDS),$(eval $(call DEFINE_BASELINE_PROFILE_COMPARE_RULES,$(profile))))
+-include $(BASELINE_MAKEFILE)
+-include $(SOLUTION_MAKEFILE)
 
 $(BASELINE_PROFILE_SUMMARY_CSV): $(BASELINE_PROFILE_SUMMARY_INPUTS) $(BASELINE_PROFILE_SUMMARY_SCRIPT) $(BASELINE_PROFILE_CONFIG_MK) | $(VENV_DIR) results/baseline
 	$(PYTHON) $(BASELINE_PROFILE_SUMMARY_SCRIPT) --root-dir $(BASELINE_ROOT_DIR) --profiles "$(BASELINE_PROFILE_ORDER)" --default-profile "$(notdir $(BASELINE_DEFAULT_DIR))" --output "$@"
@@ -425,18 +373,6 @@ $(BASELINE_PROFILE_DISRUPTION_PDF): $(BASELINE_PROFILE_SUMMARY_CSV) $(BASELINE_P
 
 $(BASELINE_PROFILE_COST_PDF): $(BASELINE_PROFILE_SUMMARY_CSV) $(BASELINE_PROFILE_COST_SCRIPT) | $(VENV_DIR) results/baseline
 	$(PYTHON) $(BASELINE_PROFILE_COST_SCRIPT) --input "$(BASELINE_PROFILE_SUMMARY_CSV)" --output "$@"
-
-# Solution: build CSV via one VM run, then host will plot PDFs from CSV
-$(CONSUMER_PCAP_SOLUTION) \
-$(SOLUTION_NODE_PCAPS) &: $(APP_SRCS) $(SOLUTION_SRCS) $(EXPERIMENT_TOOL_SRCS) $(SOLUTION_SSH_CONFIG) | results/solution $(SOLUTION_DIR)/pcap_nodes
-	$(call RUN_EXPERIMENT_WORKFLOW,experiment/solution,solution,$(SOLUTION_SSH_CONFIG),ACTUAL_SOLUTION_BOX_PATH,box/solution/solution.$(PROVIDER).box,experiment/solution,$(SOLUTION_DIR),,make all)
-	$(call ASSERT_RAW_RESULT_DIR,$(SOLUTION_DIR),)
-
-$(CSV_SOLUTION): $(CONSUMER_PCAP_SOLUTION)
-	tshark -r "$<" -T fields -e frame.time_epoch -e frame.len -e ndn.type -e ndn.name -E separator=, -E header=y -E quote=d > "$@"
-
-$(OVERHEAD_CSV_SOLUTION): $(SOLUTION_NODE_PCAPS) $(OVERHEAD_EXTRACT_SCRIPT)
-	$(PYTHON) $(OVERHEAD_EXTRACT_SCRIPT) --pcap-dir "$(SOLUTION_DIR)/pcap_nodes" --output "$@"
 
 # Host-side venv for plotting
 $(VENV_DIR): $(PLOT_ENV_SRCS)
@@ -463,24 +399,6 @@ $(BASELINE_THROUGHPUT_PDF): $(CSV_BASELINE_DEFAULT) $(PLOT_THROUGHPUT_SCRIPT) | 
 $(BASELINE_DEFAULT_DIR)/throughput_metrics.txt: $(CSV_BASELINE_DEFAULT) $(PLOT_THROUGHPUT_SCRIPT) | $(VENV_DIR)
 	$(PYTHON) $(PLOT_THROUGHPUT_SCRIPT) --input "$(CSV_BASELINE_DEFAULT)" --metrics-output "$@" --handoff-times "120, 240"
 
-$(SOLUTION_DISRUPTION_PDF): $(CSV_SOLUTION) $(PLOT_LATENCY_SCRIPT) | $(VENV_DIR)
-	$(PYTHON) $(PLOT_LATENCY_SCRIPT) --input "$(CSV_SOLUTION)" --plot-output "$@" --handoff-times "120, 240"
-
-$(SOLUTION_DIR)/disruption_metrics.txt: $(CSV_SOLUTION) $(PLOT_LATENCY_SCRIPT) | $(VENV_DIR)
-	$(PYTHON) $(PLOT_LATENCY_SCRIPT) --input "$(CSV_SOLUTION)" --metrics-output "$@" --handoff-times "120, 240"
-
-$(SOLUTION_LOSS_PDF): $(CSV_SOLUTION) $(PLOT_LOSS_SCRIPT) | $(VENV_DIR)
-	$(PYTHON) $(PLOT_LOSS_SCRIPT) --input "$(CSV_SOLUTION)" --plot-output "$@" --handoff-times "120, 240"
-
-$(SOLUTION_DIR)/loss_ratio.txt: $(CSV_SOLUTION) $(PLOT_LOSS_SCRIPT) | $(VENV_DIR)
-	$(PYTHON) $(PLOT_LOSS_SCRIPT) --input "$(CSV_SOLUTION)" --metrics-output "$@" --handoff-times "120, 240"
-
-$(SOLUTION_THROUGHPUT_PDF): $(CSV_SOLUTION) $(PLOT_THROUGHPUT_SCRIPT) | $(VENV_DIR)
-	$(PYTHON) $(PLOT_THROUGHPUT_SCRIPT) --input "$(CSV_SOLUTION)" --plot-output "$@" --handoff-times "120, 240"
-
-$(SOLUTION_DIR)/throughput_metrics.txt: $(CSV_SOLUTION) $(PLOT_THROUGHPUT_SCRIPT) | $(VENV_DIR)
-	$(PYTHON) $(PLOT_THROUGHPUT_SCRIPT) --input "$(CSV_SOLUTION)" --metrics-output "$@" --handoff-times "120, 240"
-
 $(MAIN_OVERHEAD_LIMITS_TXT): $(OVERHEAD_CSV_BASELINE_DEFAULT) $(OVERHEAD_CSV_SOLUTION) $(PLOT_OVERHEAD_YMAX_SCRIPT) $(PLOT_OVERHEAD_SCRIPT) | $(VENV_DIR) results
 	$(PYTHON) $(PLOT_OVERHEAD_YMAX_SCRIPT) --inputs "$(OVERHEAD_CSV_BASELINE_DEFAULT)" "$(OVERHEAD_CSV_SOLUTION)" --handoff-times "120, 240" --output "$@"
 
@@ -492,15 +410,6 @@ $(BASELINE_OVERHEAD_SUMMARY_PDF): $(OVERHEAD_CSV_BASELINE_DEFAULT) $(MAIN_OVERHE
 
 $(BASELINE_DEFAULT_DIR)/overhead_total.txt: $(OVERHEAD_CSV_BASELINE_DEFAULT) $(PLOT_OVERHEAD_SCRIPT) | $(VENV_DIR)
 	$(PYTHON) $(PLOT_OVERHEAD_SCRIPT) --input "$(OVERHEAD_CSV_BASELINE_DEFAULT)" --metrics-output "$@" --handoff-times "120, 240"
-
-$(SOLUTION_OVERHEAD_TIMESERIES_PDF): $(OVERHEAD_CSV_SOLUTION) $(MAIN_OVERHEAD_LIMITS_TXT) $(PLOT_OVERHEAD_SCRIPT) | $(VENV_DIR)
-	$(PYTHON) $(PLOT_OVERHEAD_SCRIPT) --input "$(OVERHEAD_CSV_SOLUTION)" --timeseries-output "$@" --handoff-times "120, 240" --limits-file "$(MAIN_OVERHEAD_LIMITS_TXT)"
-
-$(SOLUTION_OVERHEAD_SUMMARY_PDF): $(OVERHEAD_CSV_SOLUTION) $(MAIN_OVERHEAD_LIMITS_TXT) $(PLOT_OVERHEAD_SCRIPT) | $(VENV_DIR)
-	$(PYTHON) $(PLOT_OVERHEAD_SCRIPT) --input "$(OVERHEAD_CSV_SOLUTION)" --summary-output "$@" --handoff-times "120, 240" --limits-file "$(MAIN_OVERHEAD_LIMITS_TXT)"
-
-$(SOLUTION_DIR)/overhead_total.txt: $(OVERHEAD_CSV_SOLUTION) $(PLOT_OVERHEAD_SCRIPT) | $(VENV_DIR)
-	$(PYTHON) $(PLOT_OVERHEAD_SCRIPT) --input "$(OVERHEAD_CSV_SOLUTION)" --metrics-output "$@" --handoff-times "120, 240"
 
 # --- Copy Results to Paper Directory ---
 
@@ -518,21 +427,6 @@ $(BASELINE_OVERHEAD_SUMMARY_FIGURE): $(BASELINE_OVERHEAD_SUMMARY_PDF) | paper/fi
 
 $(BASELINE_THROUGHPUT_FIGURE): $(BASELINE_THROUGHPUT_PDF) | paper/figures
 	cp "$(BASELINE_THROUGHPUT_PDF)" "$@"
-
-$(SOLUTION_DISRUPTION_FIGURE): $(SOLUTION_DISRUPTION_PDF) | paper/figures
-	cp "$(SOLUTION_DISRUPTION_PDF)" "$@"
-
-$(SOLUTION_LOSS_FIGURE): $(SOLUTION_LOSS_PDF) | paper/figures
-	cp "$(SOLUTION_LOSS_PDF)" "$@"
-
-$(SOLUTION_OVERHEAD_TIMESERIES_FIGURE): $(SOLUTION_OVERHEAD_TIMESERIES_PDF) | paper/figures
-	cp "$(SOLUTION_OVERHEAD_TIMESERIES_PDF)" "$@"
-
-$(SOLUTION_OVERHEAD_SUMMARY_FIGURE): $(SOLUTION_OVERHEAD_SUMMARY_PDF) | paper/figures
-	cp "$(SOLUTION_OVERHEAD_SUMMARY_PDF)" "$@"
-
-$(SOLUTION_THROUGHPUT_FIGURE): $(SOLUTION_THROUGHPUT_PDF) | paper/figures
-	cp "$(SOLUTION_THROUGHPUT_PDF)" "$@"
 
 # Generate the paper
 $(PAPER_PDF): $(MAIN_TEX) $(ALL_FIGURES) | $(PAPER_BIN)
