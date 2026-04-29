@@ -8,9 +8,13 @@ def main() -> None:
         description="Compute shared y-axis limits for paired overhead plots."
     )
     parser.add_argument(
+        "paths",
+        nargs="*",
+        help="Optional positional input CSV files followed by the output path.",
+    )
+    parser.add_argument(
         "--inputs",
         nargs="+",
-        required=True,
         help="Input network-overhead CSV files that should share axis limits.",
     )
     parser.add_argument(
@@ -48,9 +52,19 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    inputs = args.inputs
+    output = args.output
+    if args.paths:
+        if len(args.paths) < 2:
+            raise ValueError("positional mode requires at least one input CSV and an output path")
+        inputs = args.paths[:-1]
+        output = args.paths[-1]
+    if not inputs:
+        raise ValueError("at least one input CSV is required")
+
     timeseries_y_max = 0.0
     summary_y_max = 0.0
-    for input_path in args.inputs:
+    for input_path in inputs:
         analysis = plot_overhead._load_analysis(
             input_path,
             args.prefix,
@@ -63,8 +77,8 @@ def main() -> None:
         summary_y_max = max(summary_y_max, plot_overhead._compute_summary_y_max(analysis))
 
     output_text = f"{timeseries_y_max:.6f} {summary_y_max:.6f}\n"
-    if args.output:
-        with open(args.output, "w", encoding="utf-8") as output_file:
+    if output:
+        with open(output, "w", encoding="utf-8") as output_file:
             output_file.write(output_text)
     print(output_text, end="")
 

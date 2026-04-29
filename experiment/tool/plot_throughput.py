@@ -272,13 +272,26 @@ def _write_plot(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Plot throughput from tshark CSV.")
-    parser.add_argument("--input", required=True, help="Path to tshark CSV.")
+    parser.add_argument("paths", nargs="*", help="Optional positional input CSV followed by output path.")
+    parser.add_argument("--input", help="Path to tshark CSV.")
     parser.add_argument("--output-dir", help="Legacy directory used to derive default output files.")
     parser.add_argument("--plot-output", help="Path to the throughput PDF output.")
     parser.add_argument("--metrics-output", help="Path to the throughput metrics text output.")
-    parser.add_argument("--handoff-times", help="Comma-separated handoff times in seconds (relative).")
+    parser.add_argument("--handoff-times", default="120, 240", help="Comma-separated handoff times in seconds (relative).")
     parser.add_argument("--window", type=int, default=10, help="Shaded window length after each handoff (seconds).")
     args = parser.parse_args()
+
+    input_path = args.input
+    if args.paths:
+        if len(args.paths) != 2:
+            raise ValueError("positional mode requires input CSV and output path")
+        input_path = args.paths[0]
+        if args.paths[1].endswith(".pdf"):
+            args.plot_output = args.paths[1]
+        else:
+            args.metrics_output = args.paths[1]
+    if input_path is None:
+        raise ValueError("input CSV is required")
 
     plot_output, metrics_output = _resolve_output_paths(
         args.output_dir,
@@ -286,12 +299,12 @@ def main() -> None:
         args.metrics_output,
     )
 
-    if not os.path.exists(args.input):
+    if not os.path.exists(input_path):
         _safe_empty_outputs(plot_output, metrics_output)
         return
 
     try:
-        packets = _load_packets(args.input)
+        packets = _load_packets(input_path)
     except Exception:
         _safe_empty_outputs(plot_output, metrics_output)
         return

@@ -1,37 +1,38 @@
 # Makefile for the BASELINE experiment, to be run inside the VM.
 
-# --- Variables ---
-PCAP_FILE := results/consumer_capture.pcap
-PARAMS_FILE := results/params.txt
-OVERHEAD_PCAP_DIR := results/pcap_nodes
-OVERHEAD_CAPTURE_NODES := core agg1 agg2 acc1 acc2 acc3 acc4 acc5 acc6 producer consumer
-OVERHEAD_PCAP_FILES := $(foreach node,$(OVERHEAD_CAPTURE_NODES),$(OVERHEAD_PCAP_DIR)/$(node).pcap)
-
-CXX      := g++
-CXXFLAGS := -std=c++17 -g -O2
-LDFLAGS  := $(shell pkg-config --cflags --libs libndn-cxx)
-
-APP_DIR  := ../app
-TOOL_DIR := ../tool
+# --- Target groups ---
+EXPERIMENT_RESULTS = results/consumer_capture.pcap \
+                     results/pcap_nodes/core.pcap \
+                     results/pcap_nodes/agg1.pcap \
+                     results/pcap_nodes/agg2.pcap \
+                     results/pcap_nodes/acc1.pcap \
+                     results/pcap_nodes/acc2.pcap \
+                     results/pcap_nodes/acc3.pcap \
+                     results/pcap_nodes/acc4.pcap \
+                     results/pcap_nodes/acc5.pcap \
+                     results/pcap_nodes/acc6.pcap \
+                     results/pcap_nodes/producer.pcap \
+                     results/pcap_nodes/consumer.pcap \
+                     results/params.txt
 
 # --- Targets ---
 
 # The default target produces only raw experiment artifacts for host-side analysis.
-all: $(PCAP_FILE) $(OVERHEAD_PCAP_FILES) $(PARAMS_FILE)
+all: $(EXPERIMENT_RESULTS)
 
 # The experiment script generates the complete raw result set in one run.
-$(PCAP_FILE) $(OVERHEAD_PCAP_FILES) $(PARAMS_FILE) &: $(TOOL_DIR)/exp.py producer consumer
+$(EXPERIMENT_RESULTS) &: ../tool/exp.py producer consumer
 	mkdir -p results
 	# Run the experiment script using sudo, preserving EXPERIMENT_DIR environment.
-	sudo -E env EXPERIMENT_DIR=$(shell pwd) python3 $(TOOL_DIR)/exp.py
+	sudo -E env EXPERIMENT_DIR=$(shell pwd) python3 ../tool/exp.py
 
 # Recipe to compile the producer.
-producer: $(APP_DIR)/producer.cpp
-	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS)
+producer: ../app/producer.cpp
+	g++ -std=c++17 -g -O2 -o $@ $< $$(pkg-config --cflags --libs libndn-cxx)
 
 # Recipe to compile the consumer.
-consumer: $(APP_DIR)/consumer.cpp
-	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS)
+consumer: ../app/consumer.cpp
+	g++ -std=c++17 -g -O2 -o $@ $< $$(pkg-config --cflags --libs libndn-cxx)
 
 # A target to clean up all generated files.
 clean:

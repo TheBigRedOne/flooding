@@ -4,115 +4,96 @@ export PROVIDER
 # Purpose: Run solution VM validations (S1–S5) and manage VM lifecycle
 # Interface: test-all, validate-s[1..5], vm-up|vm-halt|vm-destroy; PROVIDER=kvm|vb
 
-ROOT_DIR := ..
-SOLUTION_BOX := $(ROOT_DIR)/box/solution/solution.$(PROVIDER).box
-BOX_NAME := optoflood-solution-test
-VAGRANT_SOLUTION := VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=$(ROOT_DIR)/test vagrant
-VAGRANT_ENV := ACTUAL_SOLUTION_BOX_PATH="$(SOLUTION_BOX)" SOLUTION_BOX_NAME=$(BOX_NAME)
-SSH_CONFIG := .ssh_config_solution
-REFRESH_SSH_CONFIG := $(VAGRANT_SOLUTION) ssh-config --host solution > $(SSH_CONFIG)
-
-# Remote working directory for rsync-based test runs
-REMOTE_DIR := /home/vagrant/flooding
-
-# Local rsync wrapper using ssh-config generated for the solution VM
-RSYNC_SOLUTION := rsync -avH -e "ssh -F $(SSH_CONFIG)"
-
-# Files/dirs excluded from rsync push (keep host-only artifacts out of VM)
-RSYNC_EXCLUDES := \
-	--exclude .git \
-	--exclude .vagrant \
-	--exclude results \
-	--exclude paper/bin
-
 # Host->VM sync stamp to avoid re-running test flow when nothing changed.
-SYNC_STAMP := $(ROOT_DIR)/test/.sync_solution_$(PROVIDER)
 SYNC_INPUTS := \
-	$(ROOT_DIR)/test/Makefile \
-	$(ROOT_DIR)/test/Vagrantfile \
-	$(ROOT_DIR)/test/exp_test.py \
-	$(ROOT_DIR)/test/validate.py \
-	$(ROOT_DIR)/experiment/app/producer.cpp \
-	$(ROOT_DIR)/experiment/app/consumer.cpp \
-	$(ROOT_DIR)/experiment/app/trust-schema.conf \
-	$(ROOT_DIR)/experiment/tool/ndn.lua
+	../test/Makefile \
+	../test/Vagrantfile \
+	../test/exp_test.py \
+	../test/validate.py \
+	../experiment/app/producer.cpp \
+	../experiment/app/consumer.cpp \
+	../experiment/app/trust-schema.conf \
+	../experiment/tool/ndn.lua
+
+# Expected artifacts on host (collected under test/results)
+PCAPS := ../test/results/pcap/consumer.pcap \
+         ../test/results/pcap/producer.pcap \
+         ../test/results/pcap/r1.pcap \
+         ../test/results/pcap/r2.pcap \
+         ../test/results/pcap/r3.pcap \
+         ../test/results/pcap/r4.pcap \
+         ../test/results/pcap/r5.pcap
+RIBS  := ../test/results/r3_T1_rib.txt \
+         ../test/results/r3_T2_rib.txt
 
 .PHONY: test-all validate sync test-s1 test-s2 test-s3 test-s4 test-s5 \
         vm-up vm-halt vm-destroy
 
 # Ensure solution box exists (build via parent Makefile if missing)
-$(SOLUTION_BOX):
-	$(MAKE) -C $(ROOT_DIR) PROVIDER=$(PROVIDER) box-solution
+../box/solution/solution.$(PROVIDER).box:
+	$(MAKE) -C .. PROVIDER=$(PROVIDER) box-solution
 
 # Convenience VM lifecycle helpers (explicit; not auto-run unless invoked)
-vm-up: $(SOLUTION_BOX)
-	$(VAGRANT_ENV) $(VAGRANT_SOLUTION) up --provision
-	$(REFRESH_SSH_CONFIG)
+vm-up: ../box/solution/solution.$(PROVIDER).box
+	ACTUAL_SOLUTION_BOX_PATH="../box/solution/solution.$(PROVIDER).box" SOLUTION_BOX_NAME=optoflood-solution-test VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant up --provision
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh-config --host solution > .ssh_config_solution
 
 vm-halt:
-	$(VAGRANT_SOLUTION) halt -f || true
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant halt -f || true
 
 vm-destroy:
-	$(VAGRANT_SOLUTION) destroy -f || true
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant destroy -f || true
 
 # Sync sources from host to VM via rsync (standardized entry)
-sync: $(SYNC_STAMP)
+sync: ../test/.sync_solution_$(PROVIDER)
 
 # Recreate the dedicated test VM from the latest solution box and sync inputs.
-$(SYNC_STAMP): $(ROOT_DIR)/test/Vagrantfile $(SOLUTION_BOX) $(SYNC_INPUTS)
+../test/.sync_solution_$(PROVIDER): ../test/Vagrantfile ../box/solution/solution.$(PROVIDER).box $(SYNC_INPUTS)
 	# Force destroy to avoid stale base box snapshots
-	$(VAGRANT_SOLUTION) destroy -f || true
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant destroy -f || true
 	# Remove previously cached box to force reload from local package
-	$(VAGRANT_SOLUTION) box remove $(BOX_NAME) --provider=$(PROVIDER) || true
-	$(VAGRANT_ENV) $(VAGRANT_SOLUTION) up --provision
-	$(REFRESH_SSH_CONFIG)
-	$(RSYNC_SOLUTION) $(RSYNC_EXCLUDES) $(ROOT_DIR)/ solution:$(REMOTE_DIR)/
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant box remove optoflood-solution-test --provider=$(PROVIDER) || true
+	ACTUAL_SOLUTION_BOX_PATH="../box/solution/solution.$(PROVIDER).box" SOLUTION_BOX_NAME=optoflood-solution-test VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant up --provision
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh-config --host solution > .ssh_config_solution
+	rsync -avH -e "ssh -F .ssh_config_solution" --exclude .git --exclude .vagrant --exclude results --exclude paper/bin ../ solution:/home/vagrant/flooding/
 	@echo OK > $@
-
-# Expected artifacts on host (collected under test/results)
-RESULTS_DIR := $(ROOT_DIR)/test/results
-PCAP_DIR := $(RESULTS_DIR)/pcap
-PCAPS := $(PCAP_DIR)/consumer.pcap $(PCAP_DIR)/producer.pcap $(PCAP_DIR)/r1.pcap $(PCAP_DIR)/r2.pcap $(PCAP_DIR)/r3.pcap $(PCAP_DIR)/r4.pcap $(PCAP_DIR)/r5.pcap
-RIBS  := $(RESULTS_DIR)/r3_T1_rib.txt $(RESULTS_DIR)/r3_T2_rib.txt
-VALIDATE_OK := $(ROOT_DIR)/test/.validate_ok
-VM_VALIDATE_STAMP := $(RESULTS_DIR)/.validate_ok_vm
 
 # Produce test artifacts via one dedicated VM run, then rsync back.
-$(PCAPS) $(RIBS) $(VM_VALIDATE_STAMP) &: $(SYNC_STAMP)
-	$(VAGRANT_ENV) $(VAGRANT_SOLUTION) up --provision
-	$(REFRESH_SSH_CONFIG)
-	# Build apps inside VM from rsynced sources under $(REMOTE_DIR)
-	$(VAGRANT_SOLUTION) ssh -c 'set -e; test -d $(REMOTE_DIR)/experiment/app || (echo "rsync failed: $(REMOTE_DIR)/experiment/app missing" && exit 1)'
-	$(VAGRANT_SOLUTION) ssh -c 'set -e; cd $(REMOTE_DIR)/test && rm -f producer consumer && PKG="$$(pkg-config --cflags --libs libndn-cxx)" && g++ -std=c++17 -g -O2 -DSOLUTION_ENABLED -o producer $(REMOTE_DIR)/experiment/app/producer.cpp $$PKG && chmod -v +x producer'
-	$(VAGRANT_SOLUTION) ssh -c 'set -e; cd $(REMOTE_DIR)/test && PKG="$$(pkg-config --cflags --libs libndn-cxx)" && g++ -std=c++17 -g -O2 -DSOLUTION_ENABLED -o consumer $(REMOTE_DIR)/experiment/app/consumer.cpp $$PKG && chmod -v +x consumer'
+$(PCAPS) $(RIBS) ../test/results/.validate_ok_vm &: ../test/.sync_solution_$(PROVIDER)
+	ACTUAL_SOLUTION_BOX_PATH="../box/solution/solution.$(PROVIDER).box" SOLUTION_BOX_NAME=optoflood-solution-test VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant up --provision
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh-config --host solution > .ssh_config_solution
+	# Build apps inside VM from rsynced sources under /home/vagrant/flooding
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh -c 'set -e; test -d /home/vagrant/flooding/experiment/app || (echo "rsync failed: /home/vagrant/flooding/experiment/app missing" && exit 1)'
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh -c 'set -e; cd /home/vagrant/flooding/test && rm -f producer consumer && PKG="$$(pkg-config --cflags --libs libndn-cxx)" && g++ -std=c++17 -g -O2 -DSOLUTION_ENABLED -o producer /home/vagrant/flooding/experiment/app/producer.cpp $$PKG && chmod -v +x producer'
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh -c 'set -e; cd /home/vagrant/flooding/test && PKG="$$(pkg-config --cflags --libs libndn-cxx)" && g++ -std=c++17 -g -O2 -DSOLUTION_ENABLED -o consumer /home/vagrant/flooding/experiment/app/consumer.cpp $$PKG && chmod -v +x consumer'
 	# Ensure trust schema is available beside binaries (fail if missing)
-	$(VAGRANT_SOLUTION) ssh -c 'set -e; test -f $(REMOTE_DIR)/experiment/app/trust-schema.conf && cp -f $(REMOTE_DIR)/experiment/app/trust-schema.conf $(REMOTE_DIR)/test/'
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh -c 'set -e; test -f /home/vagrant/flooding/experiment/app/trust-schema.conf && cp -f /home/vagrant/flooding/experiment/app/trust-schema.conf /home/vagrant/flooding/test/'
 	# Ensure tshark loads updated NDN dissector (ndn.lua)
-	$(VAGRANT_SOLUTION) ssh -c 'set -e; sudo mkdir -p /usr/local/share/ndn-dissect-wireshark && sudo cp $(REMOTE_DIR)/experiment/tool/ndn.lua /usr/local/share/ndn-dissect-wireshark/ndn.lua'
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh -c 'set -e; sudo mkdir -p /usr/local/share/ndn-dissect-wireshark && sudo cp /home/vagrant/flooding/experiment/tool/ndn.lua /usr/local/share/ndn-dissect-wireshark/ndn.lua'
 	# Preflight check for tshark presence
-	$(VAGRANT_SOLUTION) ssh -c 'EXPERIMENT_DIR=$(REMOTE_DIR)/test WIRESHARK_RUN_FROM_BUILD_DIRECTORY=1 WIRESHARK_PLUGIN_DIR= /usr/bin/sudo -E tshark -v >/dev/null 2>&1'
-	# Run test topology; generate artifacts under $(REMOTE_DIR)/test
-	$(VAGRANT_SOLUTION) ssh -c 'EXPERIMENT_DIR=$(REMOTE_DIR)/test WIRESHARK_RUN_FROM_BUILD_DIRECTORY=1 WIRESHARK_PLUGIN_DIR= LUA_PATH="/usr/local/share/ndn-dissect-wireshark/?.lua;;" LUA_CPATH=";;" /usr/bin/sudo -E python3 $(REMOTE_DIR)/test/exp_test.py'
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh -c 'EXPERIMENT_DIR=/home/vagrant/flooding/test WIRESHARK_RUN_FROM_BUILD_DIRECTORY=1 WIRESHARK_PLUGIN_DIR= /usr/bin/sudo -E tshark -v >/dev/null 2>&1'
+	# Run test topology; generate artifacts under /home/vagrant/flooding/test
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh -c 'EXPERIMENT_DIR=/home/vagrant/flooding/test WIRESHARK_RUN_FROM_BUILD_DIRECTORY=1 WIRESHARK_PLUGIN_DIR= LUA_PATH="/usr/local/share/ndn-dissect-wireshark/?.lua;;" LUA_CPATH=";;" /usr/bin/sudo -E python3 /home/vagrant/flooding/test/exp_test.py'
 	# Ensure result directories exist in VM
-	$(VAGRANT_SOLUTION) ssh -c 'mkdir -p $(REMOTE_DIR)/test/results/pcap'
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh -c 'mkdir -p /home/vagrant/flooding/test/results/pcap'
 	# Run validation inside VM (uses system python3 + tshark in box)
-	$(VAGRANT_SOLUTION) ssh -c 'cd $(REMOTE_DIR)/test && /usr/bin/sudo -E sh -c "rm -f results/.validate_ok_vm results/.validate_fail; python3 validate.py && echo OK > results/.validate_ok_vm || echo FAIL > results/.validate_fail"'
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh -c 'cd /home/vagrant/flooding/test && /usr/bin/sudo -E sh -c "rm -f results/.validate_ok_vm results/.validate_fail; python3 validate.py && echo OK > results/.validate_ok_vm || echo FAIL > results/.validate_fail"'
 	# Ensure rsync can read results after validation
-	$(VAGRANT_SOLUTION) ssh -c 'cd $(REMOTE_DIR)/test && /usr/bin/sudo chown -R vagrant:vagrant $(REMOTE_DIR)/test/results'
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh -c 'cd /home/vagrant/flooding/test && /usr/bin/sudo chown -R vagrant:vagrant /home/vagrant/flooding/test/results'
 	# Rsync back test artifacts (including VM validate stamp) to host test/results
-	mkdir -p $(RESULTS_DIR)
-	$(RSYNC_SOLUTION) solution:$(REMOTE_DIR)/test/results/ $(RESULTS_DIR)/
-	@echo "Artifacts synced to $(RESULTS_DIR)/"
+	mkdir -p ../test/results
+	rsync -avH -e "ssh -F .ssh_config_solution" solution:/home/vagrant/flooding/test/results/ ../test/results/
+	@echo "Artifacts synced to ../test/results/"
 
 # Validation stamp (runs all validations)
-$(VALIDATE_OK): $(PCAPS) $(RIBS) $(VM_VALIDATE_STAMP)
-	@test -f $(VM_VALIDATE_STAMP) || (echo "VM validation missing: $(VM_VALIDATE_STAMP)" && exit 1)
+../test/.validate_ok: $(PCAPS) $(RIBS) ../test/results/.validate_ok_vm
+	@test -f ../test/results/.validate_ok_vm || (echo "VM validation missing: ../test/results/.validate_ok_vm" && exit 1)
 	@echo OK > $@
 
-validate: $(VALIDATE_OK)
+validate: ../test/.validate_ok
 
 # Test aggregator
-test-all: $(VALIDATE_OK)
+test-all: ../test/.validate_ok
 
 # S1: Data-side controllable flooding (LP OptoHopLimit decremented per hop)
 validate-s1:

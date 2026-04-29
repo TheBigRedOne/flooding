@@ -15,9 +15,9 @@
 BASELINE_PROFILE_IDS := default moderate aggressive
 BASELINE_DEFAULT_PROFILE := default
 
-BASELINE_PROFILE_DIR_default := $(BASELINE_ROOT_DIR)/h60-a10-r15(default)
-BASELINE_PROFILE_DIR_moderate := $(BASELINE_ROOT_DIR)/h48-a8-r12
-BASELINE_PROFILE_DIR_aggressive := $(BASELINE_ROOT_DIR)/h36-a6-r9
+BASELINE_PROFILE_DIR_default := results/baseline/h60-a10-r15-default
+BASELINE_PROFILE_DIR_moderate := results/baseline/h48-a8-r12
+BASELINE_PROFILE_DIR_aggressive := results/baseline/h36-a6-r9
 
 BASELINE_PROFILE_HELLO_default := 60
 BASELINE_PROFILE_HELLO_moderate := 48

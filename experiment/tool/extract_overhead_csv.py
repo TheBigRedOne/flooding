@@ -76,13 +76,16 @@ def parse_args() -> argparse.Namespace:
         description="Extract a unified OptoFlood overhead CSV from per-node pcaps."
     )
     parser.add_argument(
+        "paths",
+        nargs="*",
+        help="Input per-node pcap files followed by the output CSV path.",
+    )
+    parser.add_argument(
         "--pcap-dir",
-        required=True,
         help="Directory containing per-node *.pcap files.",
     )
     parser.add_argument(
         "--output",
-        required=True,
         help="Output CSV path.",
     )
     parser.add_argument(
@@ -338,17 +341,24 @@ def extract_base_rows(tshark: str, pcap_path: Path) -> List[Dict[str, str]]:
 def main() -> int:
     args = parse_args()
 
-    pcap_dir = Path(args.pcap_dir)
-    output_path = Path(args.output)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if args.paths:
+        if len(args.paths) < 2:
+            raise ValueError("positional mode requires at least one pcap and one output path")
+        pcaps = [Path(path) for path in args.paths[:-1]]
+        output_path = Path(args.paths[-1])
+    elif args.pcap_dir and args.output:
+        pcaps = list(iter_pcaps(Path(args.pcap_dir)))
+        output_path = Path(args.output)
+    else:
+        raise ValueError("specify pcaps followed by output, or use --pcap-dir with --output")
 
-    pcaps = list(iter_pcaps(pcap_dir))
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8", newline="") as output_file:
         writer = csv.DictWriter(output_file, fieldnames=OUTPUT_FIELDS, quoting=csv.QUOTE_ALL)
         writer.writeheader()
 
         if not pcaps:
-            print(f"Warning: no node pcaps found under {pcap_dir}", file=sys.stderr)
+            print("Warning: no node pcaps specified", file=sys.stderr)
             return 0
 
         for pcap_path in pcaps:

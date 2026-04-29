@@ -110,13 +110,26 @@ def _write_plot(plot_output: str | None, disruption_times: List[float]) -> None:
 
 def main():
     parser = argparse.ArgumentParser(description="Analyze service disruption time from NDN pcap CSV.")
-    parser.add_argument('--input', type=str, required=True, help='Input CSV file from tshark.')
+    parser.add_argument('paths', nargs='*', help='Optional positional input CSV followed by output path.')
+    parser.add_argument('--input', type=str, help='Input CSV file from tshark.')
     parser.add_argument('--output-dir', type=str, help='Legacy directory used to derive default output files.')
     parser.add_argument('--plot-output', type=str, help='Path to the disruption PDF output.')
     parser.add_argument('--metrics-output', type=str, help='Path to the disruption metrics text output.')
-    parser.add_argument('--handoff-times', type=str, required=True, help='Comma-separated list of handoff event times in seconds.')
+    parser.add_argument('--handoff-times', type=str, default='120, 240', help='Comma-separated list of handoff event times in seconds.')
     parser.add_argument('--prefix', type=str, default='/example/LiveStream', help='Application prefix to include.')
     args = parser.parse_args()
+
+    input_path = args.input
+    if args.paths:
+        if len(args.paths) != 2:
+            raise ValueError("positional mode requires input CSV and output path")
+        input_path = args.paths[0]
+        if args.paths[1].endswith('.pdf'):
+            args.plot_output = args.paths[1]
+        else:
+            args.metrics_output = args.paths[1]
+    if input_path is None:
+        raise ValueError("input CSV is required")
 
     plot_output, metrics_output = _resolve_output_paths(
         args.output_dir,
@@ -126,11 +139,11 @@ def main():
     _configure_paper_style()
     
     try:
-        df = pd.read_csv(args.input)
+        df = pd.read_csv(input_path)
         if df.empty:
             raise pd.errors.EmptyDataError
     except (pd.errors.EmptyDataError, FileNotFoundError):
-        print(f"Warning: Input file {args.input} is empty or not found. Skipping analysis.")
+        print(f"Warning: Input file {input_path} is empty or not found. Skipping analysis.")
         _write_empty_outputs(plot_output, metrics_output)
         return
 

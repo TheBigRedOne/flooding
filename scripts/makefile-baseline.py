@@ -52,49 +52,6 @@ def node_pcap_paths(profile_dir: str) -> list[str]:
     return [f"{profile_dir}/pcap_nodes/{node}.pcap" for node in nodes]
 
 
-def emit_workflow_recipe(
-    *,
-    vagrant_dir: str,
-    host_alias: str,
-    ssh_config_var: str,
-    box_env_name: str,
-    box_path: str,
-    experiment_subdir: str,
-    local_results_dir: str,
-    clear_local_results: bool,
-    remote_make_command: str,
-) -> list[str]:
-    """Emit the host-side VM workflow recipe lines for one experiment run."""
-    clear_line = f'\trm -rf "{local_results_dir}"/*' if clear_local_results else None
-    return [
-        f'\t@echo "*** Running experiment VM workflow: {experiment_subdir} ($(PROVIDER), dir={vagrant_dir})"',
-        f'\tenv "{box_env_name}={box_path}" VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD={vagrant_dir} vagrant up --provision',
-        f'\tVAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD={vagrant_dir} vagrant ssh-config --host {host_alias} > {ssh_config_var}',
-        f'\trsync -avH -e "ssh -F {ssh_config_var}" --exclude .git --exclude .vagrant --exclude results --exclude paper/bin ./ {host_alias}:$(REMOTE_DIR)/',
-        *([clear_line] if clear_line is not None else []),
-        (
-            f'\tVAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD={vagrant_dir} vagrant ssh -c '
-            f'"set -e; cd $(REMOTE_DIR)/{experiment_subdir} && make clean && {remote_make_command}; '
-            'mkdir -p results/minindn-logs; '
-            'if [ -d /tmp/minindn ]; then '
-            'for name in $(MOBILITY_LOG_NODES); do '
-            'node=/tmp/minindn/$$name; '
-            'if [ -d \\"$$node/log\\" ]; then '
-            'mkdir -p \\"results/minindn-logs/$$name\\"; '
-            'cp -f \\"$$node/log/nfd.log\\" \\"results/minindn-logs/$$name/\\" 2>/dev/null || true; '
-            'cp -f \\"$$node/log/nlsr.log\\" \\"results/minindn-logs/$$name/\\" 2>/dev/null || true; '
-            'fi; '
-            'done; '
-            'fi"'
-        ),
-        f'\trsync -avH -e "ssh -F {ssh_config_var}" "{host_alias}:$(REMOTE_DIR)/{experiment_subdir}/results/." "{local_results_dir}/"',
-        f'\tVAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD={vagrant_dir} vagrant halt -f || true',
-        '\t@echo ""',
-        f'\t@echo "*** Finished experiment VM workflow: {experiment_subdir} ($(PROVIDER), dir={vagrant_dir})"',
-        '\t@echo ""',
-    ]
-
-
 def emit_raw_rule(profile: str, assignments: dict[str, str]) -> list[str]:
     """Emit the grouped raw-output rule for one baseline profile."""
     profile_dir = assignments[f"BASELINE_PROFILE_DIR_{profile}"]
@@ -108,22 +65,14 @@ def emit_raw_rule(profile: str, assignments: dict[str, str]) -> list[str]:
     ]
     return [
         f"# Baseline profile: {profile}",
-        f"{' '.join(raw_targets)} &: $(APP_SRCS) $(BASELINE_SRCS) $(EXPERIMENT_TOOL_SRCS) $(PIPELINE_CONFIG_SRCS) box/baseline/baseline.$(PROVIDER).box | {profile_dir} {profile_dir}/pcap_nodes",
-        *emit_workflow_recipe(
-            vagrant_dir="experiment/baseline",
-            host_alias="baseline",
-            ssh_config_var="$(BASELINE_SSH_CONFIG)",
-            box_env_name="ACTUAL_BASELINE_BOX_PATH",
-            box_path="box/baseline/baseline.$(PROVIDER).box",
-            experiment_subdir="experiment/baseline",
-            local_results_dir=profile_dir,
-            clear_local_results=True,
-            remote_make_command=(
-                f"NLSR_HELLO_INTERVAL='{hello}' "
-                f"NLSR_ADJ_LSA_BUILD_INTERVAL='{adj}' "
-                f"NLSR_ROUTING_CALC_INTERVAL='{route}' "
-                f"NLSR_TUNING_PROFILE='{Path(profile_dir).name}' make all"
-            ),
+        f"{' '.join(raw_targets)} &: scripts/run-in-vm.sh box/baseline/baseline.$(PROVIDER).box $(APP_SRCS) $(BASELINE_SRCS) experiment/tool/exp.py experiment/tool/baseline_profiles.mk",
+        (
+            '\tRUN_IN_VM_CLEAR_LOCAL=1 '
+            f'RUN_IN_VM_REMOTE_MAKE="NLSR_HELLO_INTERVAL=\'{hello}\' '
+            f"NLSR_ADJ_LSA_BUILD_INTERVAL='{adj}' "
+            f"NLSR_ROUTING_CALC_INTERVAL='{route}' "
+            f"NLSR_TUNING_PROFILE='{Path(profile_dir).name}' make all\" "
+            "sh $^ $@"
         ),
         "",
     ]
@@ -136,8 +85,8 @@ def emit_data_rules(profile: str, assignments: dict[str, str]) -> list[str]:
         f"{profile_dir}/consumer_capture.csv: {profile_dir}/consumer_capture.pcap",
         '\ttshark -r "$<" -T fields -e frame.time_epoch -e frame.len -e ndn.type -e ndn.name -E separator=, -E header=y -E quote=d > "$@"',
         "",
-        f"{profile_dir}/network_overhead.csv: {' '.join(node_pcap_paths(profile_dir))} $(OVERHEAD_EXTRACT_SCRIPT)",
-        f'\t$(PYTHON) $(OVERHEAD_EXTRACT_SCRIPT) --pcap-dir "{profile_dir}/pcap_nodes" --output "$@"',
+        f"{profile_dir}/network_overhead.csv: experiment/tool/extract_overhead_csv.py {' '.join(node_pcap_paths(profile_dir))}",
+        "\tpython3 $^ $@",
         "",
     ]
 
@@ -146,20 +95,20 @@ def emit_compare_rules(profile: str, assignments: dict[str, str]) -> list[str]:
     """Emit host-side comparison-only plotting rules for one non-default profile."""
     profile_dir = assignments[f"BASELINE_PROFILE_DIR_{profile}"]
     return [
-        f"{profile_dir}/disruption_times.pdf: {profile_dir}/consumer_capture.csv $(PLOT_LATENCY_SCRIPT) | $(VENV_DIR)",
-        f'\t$(PYTHON) $(PLOT_LATENCY_SCRIPT) --input "{profile_dir}/consumer_capture.csv" --plot-output "$@" --handoff-times "120, 240"',
+        f"{profile_dir}/disruption_times.pdf: experiment/tool/plot_latency.py {profile_dir}/consumer_capture.csv",
+        "\tpython3 $^ $@",
         "",
-        f"{profile_dir}/disruption_metrics.txt: {profile_dir}/consumer_capture.csv $(PLOT_LATENCY_SCRIPT) | $(VENV_DIR)",
-        f'\t$(PYTHON) $(PLOT_LATENCY_SCRIPT) --input "{profile_dir}/consumer_capture.csv" --metrics-output "$@" --handoff-times "120, 240"',
+        f"{profile_dir}/disruption_metrics.txt: experiment/tool/plot_latency.py {profile_dir}/consumer_capture.csv",
+        "\tpython3 $^ $@",
         "",
-        f"{profile_dir}/overhead_timeseries.pdf: {profile_dir}/network_overhead.csv $(PLOT_OVERHEAD_SCRIPT) | $(VENV_DIR)",
-        f'\t$(PYTHON) $(PLOT_OVERHEAD_SCRIPT) --input "{profile_dir}/network_overhead.csv" --timeseries-output "$@" --handoff-times "120, 240"',
+        f"{profile_dir}/overhead_timeseries.pdf: experiment/tool/plot_overhead.py {profile_dir}/network_overhead.csv",
+        "\tpython3 $^ $@",
         "",
-        f"{profile_dir}/overhead_summary.pdf: {profile_dir}/network_overhead.csv $(PLOT_OVERHEAD_SCRIPT) | $(VENV_DIR)",
-        f'\t$(PYTHON) $(PLOT_OVERHEAD_SCRIPT) --input "{profile_dir}/network_overhead.csv" --summary-output "$@" --handoff-times "120, 240"',
+        f"{profile_dir}/overhead_summary.pdf: experiment/tool/plot_overhead.py {profile_dir}/network_overhead.csv",
+        "\tpython3 $^ $@",
         "",
-        f"{profile_dir}/overhead_total.txt: {profile_dir}/network_overhead.csv $(PLOT_OVERHEAD_SCRIPT) | $(VENV_DIR)",
-        f'\t$(PYTHON) $(PLOT_OVERHEAD_SCRIPT) --input "{profile_dir}/network_overhead.csv" --metrics-output "$@" --handoff-times "120, 240"',
+        f"{profile_dir}/overhead_total.txt: experiment/tool/plot_overhead.py {profile_dir}/network_overhead.csv",
+        "\tpython3 $^ $@",
         "",
     ]
 
