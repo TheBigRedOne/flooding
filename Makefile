@@ -66,18 +66,14 @@ MAIN_RESULT_OUTPUTS := $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/disru
 
 # --- Paper Figure Dependencies ---
 # These variables link the experiment outputs to the figures in the paper.
-BASELINE_PAPER_FIGURES := paper/figures/baseline_disruption.pdf \
-                          paper/figures/baseline_loss.pdf \
+BASELINE_PAPER_FIGURES := paper/figures/service_continuity_comparison.pdf \
+                          paper/figures/unmet_interest_comparison.pdf \
                           paper/figures/baseline_nlsr_disruption_comparison.pdf \
                           paper/figures/baseline_nlsr_network_cost_comparison.pdf \
                           paper/figures/baseline_overhead_timeseries.pdf \
-                          paper/figures/baseline_overhead_summary.pdf \
-                          paper/figures/baseline_throughput.pdf
-SOLUTION_PAPER_FIGURES := paper/figures/solution_disruption.pdf \
-                          paper/figures/solution_loss.pdf \
-                          paper/figures/solution_overhead_timeseries.pdf \
-                          paper/figures/solution_overhead_summary.pdf \
-                          paper/figures/solution_throughput.pdf
+                          paper/figures/baseline_overhead_summary.pdf
+SOLUTION_PAPER_FIGURES := paper/figures/solution_overhead_timeseries.pdf \
+                          paper/figures/solution_overhead_summary.pdf
 STATIC_FIGURES := paper/figures/NDN_Packets_Processing_Flow.pdf \
                   paper/figures/NDN_Producer_Mobility_Problem.pdf \
                   paper/figures/NDN_Producer_Mobility_Problem_Solution.pdf \
@@ -105,6 +101,8 @@ PLOT_TOOL_SRCS := experiment/tool/plot_latency.py \
                   experiment/tool/compute_overhead_ymax.py \
                   experiment/tool/plot_throughput.py \
                   experiment/tool/compute_throughput_metrics.py \
+                  experiment/tool/plot_service_continuity_comparison.py \
+                  experiment/tool/plot_unmet_interest_comparison.py \
                   experiment/tool/summarise_nlsr_sensitivity.py \
                   experiment/tool/plot_nlsr_disruption_comparison.py \
                   experiment/tool/plot_nlsr_network_cost_comparison.py
@@ -263,6 +261,18 @@ $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/overhead_total.txt: experime
 	python3 $^ $@
 
 # --- Copy Results to Paper Directory ---
+
+paper/figures/service_continuity_comparison.pdf: experiment/tool/plot_service_continuity_comparison.py \
+		$(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/consumer_capture.csv \
+		results/solution/consumer_capture.csv \
+		$(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/disruption_metrics.txt \
+		results/solution/disruption_metrics.txt | paper/figures
+	python3 $^ $@
+
+paper/figures/unmet_interest_comparison.pdf: experiment/tool/plot_unmet_interest_comparison.py \
+		$(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/loss_ratio.txt \
+		results/solution/loss_ratio.txt | paper/figures
+	python3 $^ $@ --log-scale
 
 paper/figures/baseline_disruption.pdf: $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/disruption_times.pdf | paper/figures
 	cp "$(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/disruption_times.pdf" "$@"

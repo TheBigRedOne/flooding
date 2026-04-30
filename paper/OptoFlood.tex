@@ -140,14 +140,14 @@ To test whether NLSR parameter tuning alone can address this limitation, we meas
 \begin{figure}
     \centering
     \includegraphics[width=\columnwidth]{baseline_nlsr_disruption_comparison.pdf}
-    \caption{Service disruption under baseline NDN forwarding with different NLSR parameter settings.}
+    \caption{Service disruption under baseline NDN forwarding}
     \label{fig:baseline_nlsr_disruption_comparison}
 \end{figure}
 
 \begin{figure}
     \centering
     \includegraphics[width=\columnwidth]{baseline_nlsr_network_cost_comparison.pdf}
-    \caption{Forwarding and NLSR control cost under the same baseline parameter settings.}
+    \caption{Forwarding and NLSR control cost}
     \label{fig:baseline_nlsr_network_cost_comparison}
 \end{figure}
 
@@ -304,57 +304,25 @@ The results show that baseline NDN exhibits long service interruptions after pro
 
 \subsubsection{Service Continuity}
 
-Under baseline forwarding, each hand-off is followed by a sharp drop in delivered throughput. The consumer continues to issue Interests, but receives little or no Data during the outage interval. Recovery appears only after routing convergence catches up. Figures~\ref{fig:baseline_throughput} and~\ref{fig:baseline_disruption} show disruption on the order of tens of seconds.
+Under baseline forwarding, each hand-off is followed by a sharp drop in delivered throughput. The consumer continues to issue Interests, but receives little or no Data during the outage interval. Recovery appears only after routing convergence catches up. With OptoFlood, the stream remains continuous except for a narrow disturbance around each hand-off. Figure~\ref{fig:service_continuity_comparison} compares the throughput traces and the per-handoff disruption times.
 
-\begin{figure}
+\begin{figure*}[t]
     \centering
-    \includegraphics[width=\columnwidth]{baseline_throughput.pdf}
-    \caption{Throughput continuity under baseline NDN forwarding with the default NLSR parameter setting.}
-    \label{fig:baseline_throughput}
-\end{figure}
-
-\begin{figure}
-    \centering
-    \includegraphics[width=\columnwidth]{baseline_disruption.pdf}
-    \caption{Per-handoff service disruption under baseline NDN forwarding with the default NLSR parameter setting.}
-    \label{fig:baseline_disruption}
-\end{figure}
-
-With OptoFlood, the stream remains continuous except for a narrow disturbance around each hand-off. Figure~\ref{fig:solution_disruption} shows recovery on the order of tens of milliseconds. The throughput trace in Figure~\ref{fig:solution_throughput} is correspondingly stable across the mobility events.
-
-\begin{figure}
-    \centering
-    \includegraphics[width=\columnwidth]{solution_disruption.pdf}
-    \caption{Per-handoff service disruption with OptoFlood. \csp{This plot is light on information. Is it possible to plot service disruption time against time taken for the handover to complete, or variation with topology changes, or something?}}
-    \label{fig:solution_disruption}
-\end{figure}
-
-\begin{figure}
-    \centering
-    \includegraphics[width=\columnwidth]{solution_throughput.pdf}
-    \caption{Throughput continuity with OptoFlood.}
-    \label{fig:solution_throughput}
-\end{figure}
+    \includegraphics[width=0.92\textwidth]{service_continuity_comparison.pdf}
+    \caption{Service continuity under baseline forwarding and OptoFlood}
+    \label{fig:service_continuity_comparison}
+\end{figure*}
 
 
 \subsubsection{Delivery Reliability}
 
-The unmet-interest results follow the same trend. In the baseline case, the immediate post-handoff window contains a high fraction of unsatisfied requests. The consumer continues to issue Interests, but stale forwarding state prevents many of them from being satisfied before their deadline. Figure~\ref{fig:baseline_loss} captures this behaviour directly.
-
-Under OptoFlood, the unmet-interest ratio in the hand-off window falls close to the steady-state level, as shown in Figure~\ref{fig:solution_loss}. This indicates that temporary flooded paths and short-lived forwarding hints are sufficient to sustain delivery while routing converges. The steady-state ratio remains low as well. Normal forwarding therefore remains stable after a valid path has been re-established.
-\csp{Again, these plots would be more convincing if they showed a trend as handover time changed, or as the topology changed, or similar.}
+The unmet-interest results follow the same trend. In the baseline case, the immediate post-handoff window contains a high fraction of unsatisfied requests. The consumer continues to issue Interests, but stale forwarding state prevents many of them from being satisfied before their deadline. Under OptoFlood, the unmet-interest ratio in the hand-off window falls close to the steady-state level. Figure~\ref{fig:unmet_interest_comparison} compares both regimes directly. This indicates that temporary flooded paths and short-lived forwarding hints are sufficient to sustain delivery while routing converges. The steady-state ratio remains low as well, indicating that normal forwarding remains stable after a valid path has been re-established.
 
 \begin{figure}
     \centering
-    \includegraphics[width=\columnwidth]{baseline_loss.pdf}
-    \caption{Unmet-interest ratio under baseline forwarding.}
-    \label{fig:baseline_loss}
-\end{figure}
-\begin{figure}
-    \centering
-    \includegraphics[width=\columnwidth]{solution_loss.pdf}
-    \caption{Unmet-interest ratio with OptoFlood.}
-    \label{fig:solution_loss}
+    \includegraphics[width=\columnwidth]{unmet_interest_comparison.pdf}
+    \caption{Unmet-interest ratio under baseline forwarding and OptoFlood}
+    \label{fig:unmet_interest_comparison}
 \end{figure}
 
 \subsubsection{Forwarding Overhead and Control Activity}
