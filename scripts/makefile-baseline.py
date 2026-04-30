@@ -82,8 +82,8 @@ def emit_data_rules(profile: str, assignments: dict[str, str]) -> list[str]:
     """Emit host-side CSV derivation rules for one baseline profile."""
     profile_dir = assignments[f"BASELINE_PROFILE_DIR_{profile}"]
     return [
-        f"{profile_dir}/consumer_capture.csv: {profile_dir}/consumer_capture.pcap",
-        '\ttshark -r "$<" -T fields -e frame.time_epoch -e frame.len -e ndn.type -e ndn.name -E separator=, -E header=y -E quote=d > "$@"',
+        f"{profile_dir}/consumer_capture.csv: {profile_dir}/consumer_capture.pcap experiment/tool/ndn.lua",
+        '\ttshark -X lua_script:experiment/tool/ndn.lua -r "$<" -T fields -e frame.time_epoch -e frame.len -e ndn.type -e ndn.name -E separator=, -E header=y -E quote=d > "$@"',
         "",
         f"{profile_dir}/network_overhead.csv: experiment/tool/extract_overhead_csv.py {' '.join(node_pcap_paths(profile_dir))}",
         "\tpython3 $^ $@",

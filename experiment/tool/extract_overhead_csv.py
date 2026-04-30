@@ -18,6 +18,8 @@ import sys
 from pathlib import Path
 from typing import Dict, Iterable, Iterator, List, Optional, Tuple
 
+LOCAL_NDN_DISSECTOR = Path(__file__).with_name("ndn.lua")
+
 
 BASE_TSHARK_FIELDS: List[str] = [
     "frame.number",
@@ -92,6 +94,11 @@ def parse_args() -> argparse.Namespace:
         "--tshark",
         default="tshark",
         help="Path to tshark executable.",
+    )
+    parser.add_argument(
+        "--lua-script",
+        default=str(LOCAL_NDN_DISSECTOR),
+        help="Lua dissector script loaded by tshark.",
     )
     return parser.parse_args()
 
@@ -290,8 +297,11 @@ def _extract_custom_fields_by_frame(pcap_path: Path) -> Dict[int, Dict[str, str]
     return by_frame
 
 
-def build_tshark_cmd(tshark: str, pcap_path: Path) -> List[str]:
-    cmd = [tshark, "-r", str(pcap_path), "-T", "fields"]
+def build_tshark_cmd(tshark: str, lua_script: str, pcap_path: Path) -> List[str]:
+    cmd = [tshark]
+    if lua_script and Path(lua_script).is_file():
+        cmd.extend(["-X", f"lua_script:{lua_script}"])
+    cmd.extend(["-r", str(pcap_path), "-T", "fields"])
     for field in BASE_TSHARK_FIELDS:
         cmd += ["-e", field]
     cmd += [
@@ -311,8 +321,8 @@ def iter_pcaps(pcap_dir: Path) -> Iterable[Path]:
     return sorted(pcap_dir.glob("*.pcap"))
 
 
-def extract_base_rows(tshark: str, pcap_path: Path) -> List[Dict[str, str]]:
-    cmd = build_tshark_cmd(tshark, pcap_path)
+def extract_base_rows(tshark: str, lua_script: str, pcap_path: Path) -> List[Dict[str, str]]:
+    cmd = build_tshark_cmd(tshark, lua_script, pcap_path)
     result = subprocess.run(
         cmd,
         stdout=subprocess.PIPE,
@@ -364,7 +374,7 @@ def main() -> int:
         for pcap_path in pcaps:
             node_name = pcap_path.stem
             custom_by_frame = _extract_custom_fields_by_frame(pcap_path)
-            for base_row in extract_base_rows(args.tshark, pcap_path):
+            for base_row in extract_base_rows(args.tshark, args.lua_script, pcap_path):
                 frame_number = int(base_row["frame.number"])
                 custom_fields = custom_by_frame.get(frame_number, {})
                 output_row = {
