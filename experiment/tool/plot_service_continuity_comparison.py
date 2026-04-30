@@ -22,8 +22,8 @@ AXIS_LABEL_SIZE = 8
 AXIS_TITLE_SIZE = 8
 TICK_LABEL_SIZE = 7
 LEGEND_SIZE = 7
-BASELINE_COLOR = "dimgray"
-SOLUTION_COLOR = "seagreen"
+BASELINE_COLOR = "#0072B2"
+SOLUTION_COLOR = "#D55E00"
 HANDOFF_SHADE_ALPHA = 0.14
 APP_PREFIX = "/example/LiveStream"
 
@@ -146,14 +146,16 @@ def main() -> int:
         baseline_times,
         baseline_values,
         color=BASELINE_COLOR,
-        linewidth=1.0,
+        linewidth=1.25,
+        linestyle="-",
         label="Baseline",
     )
     ax_throughput.plot(
         solution_times,
         solution_values,
         color=SOLUTION_COLOR,
-        linewidth=1.0,
+        linewidth=1.25,
+        linestyle="--",
         label="OptoFlood",
     )
     for index, handoff in enumerate(float(t.strip()) for t in args.handoff_times.split(",") if t.strip()):
@@ -193,7 +195,7 @@ def main() -> int:
     ax_disruption.set_yscale("log")
     ax_disruption.set_title("(b) Service disruption")
     ax_disruption.set_xlabel("Handoff")
-    ax_disruption.set_ylabel("Disruption time (ms, log scale)")
+    ax_disruption.set_ylabel("Disruption time (ms)")
     ax_disruption.set_xticks(x)
     ax_disruption.set_xticklabels([str(i + 1) for i in range(count)])
     ax_disruption.set_ylim(bottom=max(1.0, min(solution_disruption[:count]) * 0.45))

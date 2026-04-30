@@ -19,8 +19,8 @@ AXIS_LABEL_SIZE = 8
 AXIS_TITLE_SIZE = 8
 TICK_LABEL_SIZE = 7
 LEGEND_SIZE = 7
-BASELINE_COLOR = "dimgray"
-SOLUTION_COLOR = "seagreen"
+BASELINE_COLOR = "#0072B2"
+SOLUTION_COLOR = "#D55E00"
 VALUE_LABEL_OFFSET = 1.15
 
 
@@ -114,20 +114,20 @@ def main() -> int:
     if args.log_scale:
         ax.set_yscale("log")
         ax.set_ylim(bottom=1e-4, top=max(max(baseline_values), max(solution_values)) * 2.8)
-        ax.set_ylabel("Unmet-Interest ratio (log scale)")
+        ax.set_ylabel("Unmet-Interest ratio")
     else:
         ax.set_ylim(bottom=0, top=max(max(baseline_values), max(solution_values)) * 1.25)
         ax.set_ylabel("Unmet-Interest ratio")
 
-    ax.set_title("Delivery reliability across mobility phases")
+    ax.set_title("Delivery reliability across mobility phases", pad=18)
     ax.set_xticks(x)
     ax.set_xticklabels(categories)
-    ax.legend(loc="upper center", bbox_to_anchor=(0.5, 1.20), ncol=2, frameon=False)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, 1.12), ncol=2, frameon=False)
     ax.grid(True, axis="y", which="both", linestyle="--", alpha=0.65)
     _annotate_bars(ax, baseline_bars)
     _annotate_bars(ax, solution_bars)
 
-    fig.subplots_adjust(top=0.78, bottom=0.18, left=0.16, right=0.98)
+    fig.subplots_adjust(top=0.74, bottom=0.18, left=0.16, right=0.98)
     fig.savefig(args.output_pdf, bbox_inches="tight")
     plt.close(fig)
     return 0

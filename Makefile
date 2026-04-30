@@ -63,6 +63,14 @@ MAIN_RESULT_OUTPUTS := $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/disru
                        results/solution/overhead_timeseries.pdf \
                        results/solution/overhead_summary.pdf \
                        results/solution/overhead_total.txt
+SERVICE_CONTINUITY_COMPARISON_INPUTS := \
+                       $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/consumer_capture.csv \
+                       results/solution/consumer_capture.csv \
+                       $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/disruption_metrics.txt \
+                       results/solution/disruption_metrics.txt
+UNMET_INTEREST_COMPARISON_INPUTS := \
+                       $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/loss_ratio.txt \
+                       results/solution/loss_ratio.txt
 
 # --- Paper Figure Dependencies ---
 # These variables link the experiment outputs to the figures in the paper.
@@ -262,16 +270,10 @@ $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/overhead_total.txt: experime
 
 # --- Copy Results to Paper Directory ---
 
-paper/figures/service_continuity_comparison.pdf: experiment/tool/plot_service_continuity_comparison.py \
-		$(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/consumer_capture.csv \
-		results/solution/consumer_capture.csv \
-		$(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/disruption_metrics.txt \
-		results/solution/disruption_metrics.txt | paper/figures
+paper/figures/service_continuity_comparison.pdf: experiment/tool/plot_service_continuity_comparison.py $(SERVICE_CONTINUITY_COMPARISON_INPUTS) | paper/figures
 	python3 $^ $@
 
-paper/figures/unmet_interest_comparison.pdf: experiment/tool/plot_unmet_interest_comparison.py \
-		$(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/loss_ratio.txt \
-		results/solution/loss_ratio.txt | paper/figures
+paper/figures/unmet_interest_comparison.pdf: experiment/tool/plot_unmet_interest_comparison.py $(UNMET_INTEREST_COMPARISON_INPUTS) | paper/figures
 	python3 $^ $@ --log-scale
 
 paper/figures/baseline_disruption.pdf: $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/disruption_times.pdf | paper/figures
