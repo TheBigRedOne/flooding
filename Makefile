@@ -92,20 +92,22 @@ SOLUTION_SRCS := experiment/solution/Vagrantfile \
 
 # Tool groups used by aggregate validation targets.
 PLOT_TOOL_SRCS := experiment/tool/plot_latency.py \
+                  experiment/tool/compute_latency_metrics.py \
                   experiment/tool/plot_loss.py \
+                  experiment/tool/compute_loss_metrics.py \
                   experiment/tool/plot_overhead.py \
+                  experiment/tool/compute_overhead_metrics.py \
                   experiment/tool/compute_overhead_ymax.py \
                   experiment/tool/plot_throughput.py \
+                  experiment/tool/compute_throughput_metrics.py \
                   experiment/tool/summarize_nlsr_sensitivity.py \
                   experiment/tool/plot_nlsr_disruption_comparison.py \
-                  experiment/tool/plot_nlsr_network_cost_comparison.py \
-                  experiment/tool/plot_result_metrics.py \
-                  experiment/tool/plot_main_results.py
+                  experiment/tool/plot_nlsr_network_cost_comparison.py
 TEST_SRCS := test/Makefile test/Vagrantfile test/exp_test.py test/validate.py \
              experiment/app/producer.cpp experiment/app/consumer.cpp \
              experiment/app/trust-schema.conf experiment/tool/ndn.lua
 
--include Makefile.baseline
+include Makefile.baseline
 include Makefile.solution
 
 # Main target (set DISABLE_TEST=1 to skip tests)
@@ -224,26 +226,26 @@ experiment/tool/.venv: experiment/tool/requirements.txt
 	touch experiment/tool/.venv
 
 # Plot baseline(default) and solution full metric sets with shared overhead axes
-$(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/disruption_times.pdf: experiment/tool/plot_latency.py $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/consumer_capture.csv
+$(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/disruption_times.pdf: experiment/tool/plot_latency.py $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/disruption_metrics.txt
 	python3 $^ $@
 
-$(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/disruption_metrics.txt: experiment/tool/plot_latency.py $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/consumer_capture.csv
+$(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/disruption_metrics.txt: experiment/tool/compute_latency_metrics.py $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/consumer_capture.csv
 	python3 $^ $@
 
-$(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/loss_comparison.pdf: experiment/tool/plot_loss.py $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/consumer_capture.csv
+$(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/loss_comparison.pdf: experiment/tool/plot_loss.py $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/loss_ratio.txt
 	python3 $^ $@
 
-$(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/loss_ratio.txt: experiment/tool/plot_loss.py $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/consumer_capture.csv
+$(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/loss_ratio.txt: experiment/tool/compute_loss_metrics.py $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/consumer_capture.csv
 	python3 $^ $@
 
 $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/throughput_timeseries.pdf: experiment/tool/plot_throughput.py $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/consumer_capture.csv
 	python3 $^ $@
 
-$(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/throughput_metrics.txt: experiment/tool/plot_throughput.py $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/consumer_capture.csv
+$(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/throughput_metrics.txt: experiment/tool/compute_throughput_metrics.py $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/consumer_capture.csv
 	python3 $^ $@
 
-results/main_overhead_limits.txt: experiment/tool/compute_overhead_ymax.py experiment/tool/plot_overhead.py $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/network_overhead.csv results/solution/network_overhead.csv | results
-	python3 experiment/tool/compute_overhead_ymax.py $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/network_overhead.csv results/solution/network_overhead.csv $@
+results/main_overhead_limits.txt: experiment/tool/compute_overhead_ymax.py $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/network_overhead.csv results/solution/network_overhead.csv | experiment/tool/plot_overhead.py results
+	python3 $^ $@
 
 $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/overhead_timeseries.pdf: experiment/tool/plot_overhead.py $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/network_overhead.csv results/main_overhead_limits.txt
 	python3 $^ $@
@@ -251,7 +253,7 @@ $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/overhead_timeseries.pdf: exp
 $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/overhead_summary.pdf: experiment/tool/plot_overhead.py $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/network_overhead.csv results/main_overhead_limits.txt
 	python3 $^ $@
 
-$(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/overhead_total.txt: experiment/tool/plot_overhead.py $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/network_overhead.csv
+$(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/overhead_total.txt: experiment/tool/compute_overhead_metrics.py $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/network_overhead.csv | experiment/tool/plot_overhead.py
 	python3 $^ $@
 
 # --- Copy Results to Paper Directory ---

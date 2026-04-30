@@ -95,10 +95,10 @@ def emit_compare_rules(profile: str, assignments: dict[str, str]) -> list[str]:
     """Emit host-side comparison-only plotting rules for one non-default profile."""
     profile_dir = assignments[f"BASELINE_PROFILE_DIR_{profile}"]
     return [
-        f"{profile_dir}/disruption_times.pdf: experiment/tool/plot_latency.py {profile_dir}/consumer_capture.csv",
+        f"{profile_dir}/disruption_times.pdf: experiment/tool/plot_latency.py {profile_dir}/disruption_metrics.txt",
         "\tpython3 $^ $@",
         "",
-        f"{profile_dir}/disruption_metrics.txt: experiment/tool/plot_latency.py {profile_dir}/consumer_capture.csv",
+        f"{profile_dir}/disruption_metrics.txt: experiment/tool/compute_latency_metrics.py {profile_dir}/consumer_capture.csv",
         "\tpython3 $^ $@",
         "",
         f"{profile_dir}/overhead_timeseries.pdf: experiment/tool/plot_overhead.py {profile_dir}/network_overhead.csv",
@@ -107,7 +107,7 @@ def emit_compare_rules(profile: str, assignments: dict[str, str]) -> list[str]:
         f"{profile_dir}/overhead_summary.pdf: experiment/tool/plot_overhead.py {profile_dir}/network_overhead.csv",
         "\tpython3 $^ $@",
         "",
-        f"{profile_dir}/overhead_total.txt: experiment/tool/plot_overhead.py {profile_dir}/network_overhead.csv",
+        f"{profile_dir}/overhead_total.txt: experiment/tool/compute_overhead_metrics.py {profile_dir}/network_overhead.csv | experiment/tool/plot_overhead.py",
         "\tpython3 $^ $@",
         "",
     ]

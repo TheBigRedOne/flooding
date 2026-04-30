@@ -765,14 +765,9 @@ def _write_summary_plot(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Analyze and plot network forwarding overhead from unified multi-node NDN CSV."
+        description="Plot network forwarding overhead from unified multi-node NDN CSV."
     )
-    parser.add_argument('paths', nargs='*', help='Optional positional input CSV, optional limits file, and output path.')
-    parser.add_argument('--input', type=str, help='Input CSV file extracted from node pcaps.')
-    parser.add_argument('--output-dir', type=str, help='Legacy directory used to derive default output files.')
-    parser.add_argument('--timeseries-output', type=str, help='Path to the overhead time-series PDF output.')
-    parser.add_argument('--summary-output', type=str, help='Path to the overhead summary PDF output.')
-    parser.add_argument('--metrics-output', type=str, help='Path to the overhead metrics text output.')
+    parser.add_argument('paths', nargs='+', help='Input CSV, optional limits file, and output PDF path.')
     parser.add_argument('--handoff-times', type=str, default='120, 240', help='Comma-separated list of handoff event times in seconds.')
     parser.add_argument('--window', type=float, default=10.0, help='Time window in seconds after a handoff for summary metrics.')
     parser.add_argument('--prefix', type=str, default='/example/LiveStream', help='Application prefix to include.')
@@ -788,29 +783,18 @@ def main():
                         help='Path to a text file containing shared time-series and summary y-axis limits.')
     args = parser.parse_args()
 
-    input_path = args.input
-    if args.paths:
-        if len(args.paths) not in (2, 3):
-            raise ValueError("positional mode requires input CSV, optional limits file, and output path")
-        input_path = args.paths[0]
-        output_path = args.paths[-1]
-        if len(args.paths) == 3:
-            args.limits_file = args.paths[1]
-        if output_path.endswith('.txt'):
-            args.metrics_output = output_path
-        elif output_path.endswith('overhead_summary.pdf'):
-            args.summary_output = output_path
-        else:
-            args.timeseries_output = output_path
-    if input_path is None:
-        raise ValueError("input CSV is required")
+    if len(args.paths) not in (2, 3):
+        raise ValueError("positional mode requires input CSV, optional limits file, and output PDF path")
+    input_path = args.paths[0]
+    output_path = args.paths[-1]
+    if len(args.paths) == 3:
+        args.limits_file = args.paths[1]
 
-    timeseries_output, summary_output, metrics_output = _resolve_output_paths(
-        args.output_dir,
-        args.timeseries_output,
-        args.summary_output,
-        args.metrics_output,
-    )
+    timeseries_output = output_path if output_path.endswith('overhead_timeseries.pdf') else None
+    summary_output = output_path if output_path.endswith('overhead_summary.pdf') else None
+    if timeseries_output is None and summary_output is None:
+        raise ValueError("output path must end with overhead_timeseries.pdf or overhead_summary.pdf")
+
     _configure_paper_style()
 
     if args.limits_file:
@@ -827,7 +811,7 @@ def main():
         )
     except ValueError as exc:
         print(f"Warning: {exc} Cannot generate overhead plot.")
-        _write_empty_outputs(timeseries_output, summary_output, metrics_output)
+        _write_empty_outputs(timeseries_output, summary_output, None)
         return
 
     _write_timeseries_plot(
@@ -842,18 +826,7 @@ def main():
         analysis,
         args.summary_y_max,
     )
-    if metrics_output is not None:
-        _ensure_parent_dir(metrics_output)
-        _write_summary_file(
-            metrics_output,
-            analysis.relay_nodes,
-            args.consumer_node,
-            args.window,
-            analysis.handoff_summaries,
-            analysis.full_run_summary,
-        )
-
-    print("Generated overhead outputs")
+    print("Generated overhead plot")
 
 
 if __name__ == '__main__':

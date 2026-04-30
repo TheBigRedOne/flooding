@@ -272,58 +272,36 @@ def _write_plot(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Plot throughput from tshark CSV.")
-    parser.add_argument("paths", nargs="*", help="Optional positional input CSV followed by output path.")
-    parser.add_argument("--input", help="Path to tshark CSV.")
-    parser.add_argument("--output-dir", help="Legacy directory used to derive default output files.")
-    parser.add_argument("--plot-output", help="Path to the throughput PDF output.")
-    parser.add_argument("--metrics-output", help="Path to the throughput metrics text output.")
+    parser.add_argument("input_csv", help="Path to tshark CSV.")
+    parser.add_argument("plot_output", help="Path to the throughput PDF output.")
     parser.add_argument("--handoff-times", default="120, 240", help="Comma-separated handoff times in seconds (relative).")
     parser.add_argument("--window", type=int, default=10, help="Shaded window length after each handoff (seconds).")
     args = parser.parse_args()
 
-    input_path = args.input
-    if args.paths:
-        if len(args.paths) != 2:
-            raise ValueError("positional mode requires input CSV and output path")
-        input_path = args.paths[0]
-        if args.paths[1].endswith(".pdf"):
-            args.plot_output = args.paths[1]
-        else:
-            args.metrics_output = args.paths[1]
-    if input_path is None:
-        raise ValueError("input CSV is required")
-
-    plot_output, metrics_output = _resolve_output_paths(
-        args.output_dir,
-        args.plot_output,
-        args.metrics_output,
-    )
-
-    if not os.path.exists(input_path):
-        _safe_empty_outputs(plot_output, metrics_output)
+    if not os.path.exists(args.input_csv):
+        _safe_empty_outputs(args.plot_output, None)
         return
 
     try:
-        packets = _load_packets(input_path)
+        packets = _load_packets(args.input_csv)
     except Exception:
-        _safe_empty_outputs(plot_output, metrics_output)
+        _safe_empty_outputs(args.plot_output, None)
         return
 
     per_second = _aggregate_per_second(packets)
     if not per_second:
-        _safe_empty_outputs(plot_output, metrics_output)
+        _safe_empty_outputs(args.plot_output, None)
         return
 
     full_seconds, values = _fill_missing_seconds(per_second)
     if not full_seconds:
-        _safe_empty_outputs(plot_output, metrics_output)
+        _safe_empty_outputs(args.plot_output, None)
         return
 
     start_second = full_seconds[0]
     rel_times = [sec - start_second for sec in full_seconds]
 
-    _write_metrics(metrics_output, values, full_seconds)
-    _write_plot(plot_output, rel_times, values, args.handoff_times, args.window)
+    _write_plot(args.plot_output, rel_times, values, args.handoff_times, args.window)
 
 
 if __name__ == "__main__":
