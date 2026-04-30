@@ -103,7 +103,7 @@ PLOT_TOOL_SRCS := experiment/tool/plot_latency.py \
                   experiment/tool/compute_overhead_ymax.py \
                   experiment/tool/plot_throughput.py \
                   experiment/tool/compute_throughput_metrics.py \
-                  experiment/tool/summarize_nlsr_sensitivity.py \
+                  experiment/tool/summarise_nlsr_sensitivity.py \
                   experiment/tool/plot_nlsr_disruption_comparison.py \
                   experiment/tool/plot_nlsr_network_cost_comparison.py
 TEST_SRCS := test/Makefile test/Vagrantfile test/exp_test.py test/validate.py \
@@ -213,8 +213,8 @@ Makefile.baseline: scripts/makefile-baseline.py experiment/tool/baseline_profile
 Makefile.solution: scripts/makefile-solution.py
 	python3 scripts/makefile-solution.py > "$@"
 
-results/baseline/summary.csv: $(BASELINE_PROFILE_SUMMARY_INPUTS) experiment/tool/summarize_nlsr_sensitivity.py experiment/tool/baseline_profiles.mk | results/baseline
-	python3 experiment/tool/summarize_nlsr_sensitivity.py --root-dir results/baseline --profiles "$(foreach profile,$(BASELINE_PROFILE_IDS),$(notdir $(BASELINE_PROFILE_DIR_$(profile))))" --default-profile "$(notdir $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE)))" --output "$@"
+results/baseline/summary.csv: $(BASELINE_PROFILE_SUMMARY_INPUTS) experiment/tool/summarise_nlsr_sensitivity.py experiment/tool/baseline_profiles.mk | results/baseline
+	python3 experiment/tool/summarise_nlsr_sensitivity.py --root-dir results/baseline --profiles "$(foreach profile,$(BASELINE_PROFILE_IDS),$(notdir $(BASELINE_PROFILE_DIR_$(profile))))" --default-profile "$(notdir $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE)))" --output "$@"
 
 results/baseline/disruption_comparison.pdf: results/baseline/summary.csv experiment/tool/plot_nlsr_disruption_comparison.py | results/baseline
 	python3 experiment/tool/plot_nlsr_disruption_comparison.py --input results/baseline/summary.csv --output "$@"
