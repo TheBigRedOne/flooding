@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import csv
 import os
+import re
 from typing import Dict, List, Optional
 
 
@@ -88,7 +89,7 @@ def _extract_numeric_prefix(raw: str) -> str:
 
 def main() -> int:
     args = parse_args()
-    profiles = [profile.strip() for profile in args.profiles.split(",") if profile.strip()]
+    profiles = [profile.strip() for profile in re.split(r"[,\s]+", args.profiles) if profile.strip()]
 
     os.makedirs(os.path.dirname(args.output), exist_ok=True)
     fieldnames: List[str] = [
