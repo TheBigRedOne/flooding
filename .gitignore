@@ -94,3 +94,7 @@ results
 #Generated makefiles
 Makefile.baseline
 Makefile.solution
+
+#Generated figures
+/paper/figures/baseline_*.pdf
+/paper/figures/solution_*.pdf

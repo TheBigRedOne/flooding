@@ -68,6 +68,8 @@ MAIN_RESULT_OUTPUTS := $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/disru
 # These variables link the experiment outputs to the figures in the paper.
 BASELINE_PAPER_FIGURES := paper/figures/baseline_disruption.pdf \
                           paper/figures/baseline_loss.pdf \
+                          paper/figures/baseline_nlsr_disruption_comparison.pdf \
+                          paper/figures/baseline_nlsr_network_cost_comparison.pdf \
                           paper/figures/baseline_overhead_timeseries.pdf \
                           paper/figures/baseline_overhead_summary.pdf \
                           paper/figures/baseline_throughput.pdf
@@ -267,6 +269,12 @@ paper/figures/baseline_disruption.pdf: $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT
 
 paper/figures/baseline_loss.pdf: $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/loss_comparison.pdf | paper/figures
 	cp "$(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/loss_comparison.pdf" "$@"
+
+paper/figures/baseline_nlsr_disruption_comparison.pdf: results/baseline/disruption_comparison.pdf | paper/figures
+	cp "results/baseline/disruption_comparison.pdf" "$@"
+
+paper/figures/baseline_nlsr_network_cost_comparison.pdf: results/baseline/network_cost_comparison.pdf | paper/figures
+	cp "results/baseline/network_cost_comparison.pdf" "$@"
 
 paper/figures/baseline_overhead_timeseries.pdf: $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/overhead_timeseries.pdf | paper/figures
 	cp "$(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/overhead_timeseries.pdf" "$@"
