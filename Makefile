@@ -41,7 +41,10 @@ BASELINE_PROFILE_SUMMARY_INPUTS := \
 # Baseline parameter-set comparison outputs
 BASELINE_PROFILE_COMPARE_OUTPUTS := results/baseline/summary.csv \
                                    results/baseline/disruption_comparison.pdf \
-                                   results/baseline/network_cost_comparison.pdf
+                                   results/baseline/network_cost_comparison.pdf \
+                                   $(foreach profile,$(filter-out $(BASELINE_DEFAULT_PROFILE),$(BASELINE_PROFILE_IDS)),$(BASELINE_PROFILE_DIR_$(profile))/disruption_times.pdf) \
+                                   $(foreach profile,$(filter-out $(BASELINE_DEFAULT_PROFILE),$(BASELINE_PROFILE_IDS)),$(BASELINE_PROFILE_DIR_$(profile))/overhead_timeseries.pdf) \
+                                   $(foreach profile,$(filter-out $(BASELINE_DEFAULT_PROFILE),$(BASELINE_PROFILE_IDS)),$(BASELINE_PROFILE_DIR_$(profile))/overhead_summary.pdf)
 MAIN_RESULT_OUTPUTS := $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/disruption_times.pdf \
                        $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/disruption_metrics.txt \
                        $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/loss_comparison.pdf \
@@ -130,8 +133,8 @@ experiment-nlsr-tuning: $(BASELINE_PROFILE_RAW_OUTPUTS) results/baseline/summary
 # Run both experiments
 experiment: experiment-baseline experiment-solution
 
-# Assemble result figures for the paper (copy from results/ to paper/figures)
-result: $(BASELINE_PAPER_FIGURES) $(SOLUTION_PAPER_FIGURES)
+# Assemble result figures and baseline profile comparisons.
+result: $(BASELINE_PAPER_FIGURES) $(SOLUTION_PAPER_FIGURES) $(BASELINE_PROFILE_COMPARE_OUTPUTS)
 
 # Run the test experiment
 test: test/.validate_ok
@@ -244,6 +247,7 @@ $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/throughput_timeseries.pdf: e
 $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/throughput_metrics.txt: experiment/tool/compute_throughput_metrics.py $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/consumer_capture.csv
 	python3 $^ $@
 
+# Shared overhead y-axis limits for baseline(default) and solution main-result plots.
 results/main_overhead_limits.txt: experiment/tool/compute_overhead_ymax.py $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/network_overhead.csv results/solution/network_overhead.csv | experiment/tool/plot_overhead.py results
 	python3 $^ $@
 
