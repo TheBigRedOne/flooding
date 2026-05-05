@@ -99,7 +99,7 @@ def main() -> int:
     ax_fcr.grid(True, axis="y", linestyle="--", alpha=0.7)
 
     ax_control.bar(x, control_values, color="slateblue")
-    ax_control.set_xlabel("Baseline Parameter Set (hello / adj-lsa / route-calc)")
+    ax_control.set_xlabel("Baseline Parameter Group")
     ax_control.set_ylabel("All NLSR Control Bytes")
     ax_control.set_xticks(x)
     ax_control.set_xticklabels(labels)

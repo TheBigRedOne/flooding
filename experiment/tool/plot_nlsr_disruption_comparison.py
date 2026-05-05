@@ -89,7 +89,7 @@ def main() -> int:
     fig, ax = plt.subplots(figsize=_paper_figure_size())
     ax.bar(x - BAR_WIDTH / 2, handoff_1_values, BAR_WIDTH, label="Handoff 1", color="steelblue")
     ax.bar(x + BAR_WIDTH / 2, handoff_2_values, BAR_WIDTH, label="Handoff 2", color="darkorange")
-    ax.set_xlabel("Baseline Parameter Set (hello / adj-lsa / route-calc)")
+    ax.set_xlabel("Baseline Parameter Group")
     ax.set_ylabel("Disruption Time (ms)")
     ax.set_title("Per-Handoff Disruption Across Baseline Parameter Sets")
     ax.set_xticks(x)

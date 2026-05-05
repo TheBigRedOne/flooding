@@ -87,6 +87,11 @@ def _extract_numeric_prefix(raw: str) -> str:
     return "" if token.lower() == "n/a" else token
 
 
+def _profile_prefix(profile: str) -> str:
+    """Return the compact profile prefix used as the plot label."""
+    return profile.split("-", 1)[0].upper()
+
+
 def main() -> int:
     args = parse_args()
     profiles = [profile.strip() for profile in re.split(r"[,\s]+", args.profiles) if profile.strip()]
@@ -117,9 +122,7 @@ def main() -> int:
             hello = params["neighbors.hello-interval"]
             adj = params["neighbors.adj-lsa-build-interval"]
             route = params["fib.routing-calc-interval"]
-            profile_label = f"{hello}/{adj}/{route}"
-            if args.default_profile and profile == args.default_profile:
-                profile_label = f"{profile_label} (default)"
+            profile_label = _profile_prefix(profile)
 
             writer.writerow({
                 "profile": profile,

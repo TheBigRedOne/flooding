@@ -45,19 +45,21 @@ This command automates the entire process. It will:
 - `make plot`
   Runs both plotting pipelines without re-running experiments.
 
-## Baseline Profile Configuration
+## Baseline Parameter Sets
 
-The baseline parameter groups are defined in `experiment/tool/baseline_profiles.mk`.
-To add a new baseline profile, update that file with:
+The baseline parameter groups are declared directly in `Makefile`.
+Each group has an explicit experiment rule and uses the shared
+`results/baseline/%/...` processing rules for host-side analysis.
 
-- the profile identifier in `BASELINE_PROFILE_IDS`
-- the matching `BASELINE_PROFILE_DIR_<id>`
-- the matching `BASELINE_PROFILE_HELLO_<id>`
-- the matching `BASELINE_PROFILE_ADJ_<id>`
-- the matching `BASELINE_PROFILE_ROUTE_<id>`
+To add a new baseline group:
 
-Set `BASELINE_DEFAULT_PROFILE` to the identifier of the default parameter group.
-The default profile directory name intentionally retains the suffix `(default)`.
+- add its result directory to `BASELINE_PROFILE_DIRS`;
+- add one grouped experiment target using `$(BASELINE_EXPERIMENT_OUTPUTS:XXX=<group>)`;
+- set `NLSR_HELLO_INTERVAL`, `NLSR_ADJ_LSA_BUILD_INTERVAL`,
+  `NLSR_ROUTING_CALC_INTERVAL`, and `NLSR_TUNING_PROFILE` in that target.
+
+`BASELINE_DEFAULT_DIR` identifies the baseline group used for the main
+baseline-versus-solution comparison.
 
 ## Cleaning Up
 

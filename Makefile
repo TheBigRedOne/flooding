@@ -26,34 +26,19 @@ BOXES = box/initial/initial.$(PROVIDER).box \
         box/baseline/baseline.$(PROVIDER).box \
         box/solution/solution.$(PROVIDER).box
 
-# Baseline parameter-set configuration
-include experiment/tool/baseline_profiles.mk
-BASELINE_PROFILE_DIRS := $(foreach profile,$(BASELINE_PROFILE_IDS),$(BASELINE_PROFILE_DIR_$(profile)))
-BASELINE_PROFILE_RAW_OUTPUTS := \
-	$(foreach profile,$(BASELINE_PROFILE_IDS),$(BASELINE_PROFILE_DIR_$(profile))/consumer_capture.pcap) \
-	$(foreach profile,$(BASELINE_PROFILE_IDS),$(foreach node,core agg1 agg2 acc1 acc2 acc3 acc4 acc5 acc6 producer consumer,$(BASELINE_PROFILE_DIR_$(profile))/pcap_nodes/$(node).pcap)) \
-	$(foreach profile,$(BASELINE_PROFILE_IDS),$(BASELINE_PROFILE_DIR_$(profile))/params.txt)
-BASELINE_PROFILE_SUMMARY_INPUTS := \
-	$(foreach profile,$(BASELINE_PROFILE_IDS),$(BASELINE_PROFILE_DIR_$(profile))/params.txt) \
-	$(foreach profile,$(BASELINE_PROFILE_IDS),$(BASELINE_PROFILE_DIR_$(profile))/disruption_metrics.txt) \
-	$(foreach profile,$(BASELINE_PROFILE_IDS),$(BASELINE_PROFILE_DIR_$(profile))/overhead_total.txt)
+# Experiment rules and result variables.
+include Makefile.baseline
+include Makefile.solution
 
-# Baseline parameter-set comparison outputs
-BASELINE_PROFILE_COMPARE_OUTPUTS := results/baseline/summary.csv \
-                                   results/baseline/disruption_comparison.pdf \
-                                   results/baseline/network_cost_comparison.pdf \
-                                   $(foreach profile,$(filter-out $(BASELINE_DEFAULT_PROFILE),$(BASELINE_PROFILE_IDS)),$(BASELINE_PROFILE_DIR_$(profile))/disruption_times.pdf) \
-                                   $(foreach profile,$(filter-out $(BASELINE_DEFAULT_PROFILE),$(BASELINE_PROFILE_IDS)),$(BASELINE_PROFILE_DIR_$(profile))/overhead_timeseries.pdf) \
-                                   $(foreach profile,$(filter-out $(BASELINE_DEFAULT_PROFILE),$(BASELINE_PROFILE_IDS)),$(BASELINE_PROFILE_DIR_$(profile))/overhead_summary.pdf)
-MAIN_RESULT_OUTPUTS := $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/disruption_times.pdf \
-                       $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/disruption_metrics.txt \
-                       $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/loss_comparison.pdf \
-                       $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/loss_ratio.txt \
-                       $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/throughput_timeseries.pdf \
-                       $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/throughput_metrics.txt \
-                       $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/overhead_timeseries.pdf \
-                       $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/overhead_summary.pdf \
-                       $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/overhead_total.txt \
+MAIN_RESULT_OUTPUTS := $(BASELINE_DEFAULT_DIR)/disruption_times.pdf \
+                       $(BASELINE_DEFAULT_DIR)/disruption_metrics.txt \
+                       $(BASELINE_DEFAULT_DIR)/loss_comparison.pdf \
+                       $(BASELINE_DEFAULT_DIR)/loss_ratio.txt \
+                       $(BASELINE_DEFAULT_DIR)/throughput_timeseries.pdf \
+                       $(BASELINE_DEFAULT_DIR)/throughput_metrics.txt \
+                       $(BASELINE_DEFAULT_DIR)/overhead_timeseries.pdf \
+                       $(BASELINE_DEFAULT_DIR)/overhead_summary.pdf \
+                       $(BASELINE_DEFAULT_DIR)/overhead_total.txt \
                        results/solution/disruption_times.pdf \
                        results/solution/disruption_metrics.txt \
                        results/solution/loss_comparison.pdf \
@@ -64,12 +49,12 @@ MAIN_RESULT_OUTPUTS := $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/disru
                        results/solution/overhead_summary.pdf \
                        results/solution/overhead_total.txt
 SERVICE_CONTINUITY_COMPARISON_INPUTS := \
-                       $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/consumer_capture.csv \
+                       $(BASELINE_DEFAULT_DIR)/consumer_capture.csv \
                        results/solution/consumer_capture.csv \
-                       $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/disruption_metrics.txt \
+                       $(BASELINE_DEFAULT_DIR)/disruption_metrics.txt \
                        results/solution/disruption_metrics.txt
 UNMET_INTEREST_COMPARISON_INPUTS := \
-                       $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/loss_ratio.txt \
+                       $(BASELINE_DEFAULT_DIR)/loss_ratio.txt \
                        results/solution/loss_ratio.txt
 
 # --- Paper Figure Dependencies ---
@@ -87,17 +72,6 @@ STATIC_FIGURES := paper/figures/NDN_Packets_Processing_Flow.pdf \
                   paper/figures/NDN_Producer_Mobility_Problem_Solution.pdf \
                   paper/figures/Topology.pdf
 ALL_FIGURES := $(STATIC_FIGURES) $(BASELINE_PAPER_FIGURES) $(SOLUTION_PAPER_FIGURES)
-
-# Common application source files
-APP_SRCS := experiment/app/producer.cpp \
-            experiment/app/consumer.cpp \
-            experiment/app/trust-schema.conf
-
-# Experiment-specific source files
-BASELINE_SRCS := experiment/baseline/Vagrantfile \
-                experiment/baseline/Makefile
-SOLUTION_SRCS := experiment/solution/Vagrantfile \
-                experiment/solution/Makefile
 
 # Tool groups used by aggregate validation targets.
 PLOT_TOOL_SRCS := experiment/tool/plot_latency.py \
@@ -118,9 +92,6 @@ TEST_SRCS := test/Makefile test/Vagrantfile test/exp_test.py test/validate.py \
              experiment/app/producer.cpp experiment/app/consumer.cpp \
              experiment/app/trust-schema.conf experiment/tool/ndn.lua
 
-include Makefile.baseline
-include Makefile.solution
-
 # Main target (set DISABLE_TEST=1 to skip tests)
 all: $(BOXES) experiment $(if $(DISABLE_TEST),,test/.validate_ok) result paper
 
@@ -130,13 +101,12 @@ all: $(BOXES) experiment $(if $(DISABLE_TEST),,test/.validate_ok) result paper
 
 
 # Experiments (run inside VMs and pull back CSVs)
-experiment-baseline: $(BASELINE_PROFILE_RAW_OUTPUTS)
+experiment-baseline: $(BASELINE_RAW_OUTPUTS)
 
 experiment-solution: $(SOLUTION_RESULTS)
 
 # Backward-compatible alias for the baseline parameter-set experiment pipeline.
-experiment-nlsr-tuning: $(BASELINE_PROFILE_RAW_OUTPUTS) results/baseline/summary.csv \
-                        results/baseline/disruption_comparison.pdf results/baseline/network_cost_comparison.pdf
+experiment-nlsr-tuning: $(BASELINE_RAW_OUTPUTS) $(BASELINE_PROFILE_COMPARE_OUTPUTS)
 
 # Run both experiments
 experiment: experiment-baseline experiment-solution
@@ -215,57 +185,20 @@ box/solution/solution.$(PROVIDER).box: box/solution/Vagrantfile box/initial/init
 # =============================================================================
 
 
-Makefile.baseline: scripts/makefile-baseline.py experiment/tool/baseline_profiles.mk
-	python3 scripts/makefile-baseline.py > "$@"
-
-Makefile.solution: scripts/makefile-solution.py
-	python3 scripts/makefile-solution.py > "$@"
-
-results/baseline/summary.csv: $(BASELINE_PROFILE_SUMMARY_INPUTS) experiment/tool/summarise_nlsr_sensitivity.py experiment/tool/baseline_profiles.mk | results/baseline
-	python3 experiment/tool/summarise_nlsr_sensitivity.py --root-dir results/baseline --profiles "$(foreach profile,$(BASELINE_PROFILE_IDS),$(notdir $(BASELINE_PROFILE_DIR_$(profile))))" --default-profile "$(notdir $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE)))" --output "$@"
-
-results/baseline/disruption_comparison.pdf: results/baseline/summary.csv experiment/tool/plot_nlsr_disruption_comparison.py | results/baseline
-	python3 experiment/tool/plot_nlsr_disruption_comparison.py --input results/baseline/summary.csv --output "$@"
-
-results/baseline/network_cost_comparison.pdf: results/baseline/summary.csv experiment/tool/plot_nlsr_network_cost_comparison.py | results/baseline
-	python3 experiment/tool/plot_nlsr_network_cost_comparison.py --input results/baseline/summary.csv --output "$@"
-
 # Host-side venv for plotting
 experiment/tool/.venv: experiment/tool/requirements.txt
 	python3 -m venv experiment/tool/.venv
 	experiment/tool/.venv/bin/pip install -r experiment/tool/requirements.txt
 	touch experiment/tool/.venv
 
-# Plot baseline(default) and solution full metric sets with shared overhead axes
-$(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/disruption_times.pdf: experiment/tool/plot_latency.py $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/disruption_metrics.txt
-	python3 $^ $@
-
-$(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/disruption_metrics.txt: experiment/tool/compute_latency_metrics.py $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/consumer_capture.csv
-	python3 $^ $@
-
-$(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/loss_comparison.pdf: experiment/tool/plot_loss.py $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/loss_ratio.txt
-	python3 $^ $@
-
-$(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/loss_ratio.txt: experiment/tool/compute_loss_metrics.py $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/consumer_capture.csv
-	python3 $^ $@
-
-$(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/throughput_timeseries.pdf: experiment/tool/plot_throughput.py $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/consumer_capture.csv
-	python3 $^ $@
-
-$(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/throughput_metrics.txt: experiment/tool/compute_throughput_metrics.py $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/consumer_capture.csv
-	python3 $^ $@
-
 # Shared overhead y-axis limits for baseline(default) and solution main-result plots.
-results/main_overhead_limits.txt: experiment/tool/compute_overhead_ymax.py $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/network_overhead.csv results/solution/network_overhead.csv | experiment/tool/plot_overhead.py results
+results/main_overhead_limits.txt: experiment/tool/compute_overhead_ymax.py $(BASELINE_DEFAULT_DIR)/network_overhead.csv results/solution/network_overhead.csv | experiment/tool/plot_overhead.py results
 	python3 $^ $@
 
-$(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/overhead_timeseries.pdf: experiment/tool/plot_overhead.py $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/network_overhead.csv results/main_overhead_limits.txt
+$(BASELINE_DEFAULT_DIR)/overhead_timeseries.pdf: experiment/tool/plot_overhead.py $(BASELINE_DEFAULT_DIR)/network_overhead.csv results/main_overhead_limits.txt
 	python3 $^ $@
 
-$(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/overhead_summary.pdf: experiment/tool/plot_overhead.py $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/network_overhead.csv results/main_overhead_limits.txt
-	python3 $^ $@
-
-$(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/overhead_total.txt: experiment/tool/compute_overhead_metrics.py $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/network_overhead.csv | experiment/tool/plot_overhead.py
+$(BASELINE_DEFAULT_DIR)/overhead_summary.pdf: experiment/tool/plot_overhead.py $(BASELINE_DEFAULT_DIR)/network_overhead.csv results/main_overhead_limits.txt
 	python3 $^ $@
 
 # --- Copy Results to Paper Directory ---
@@ -276,11 +209,11 @@ paper/figures/service_continuity_comparison.pdf: experiment/tool/plot_service_co
 paper/figures/unmet_interest_comparison.pdf: experiment/tool/plot_unmet_interest_comparison.py $(UNMET_INTEREST_COMPARISON_INPUTS) | paper/figures
 	python3 $^ $@ --log-scale
 
-paper/figures/baseline_disruption.pdf: $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/disruption_times.pdf | paper/figures
-	cp "$(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/disruption_times.pdf" "$@"
+paper/figures/baseline_disruption.pdf: $(BASELINE_DEFAULT_DIR)/disruption_times.pdf | paper/figures
+	cp "$(BASELINE_DEFAULT_DIR)/disruption_times.pdf" "$@"
 
-paper/figures/baseline_loss.pdf: $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/loss_comparison.pdf | paper/figures
-	cp "$(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/loss_comparison.pdf" "$@"
+paper/figures/baseline_loss.pdf: $(BASELINE_DEFAULT_DIR)/loss_comparison.pdf | paper/figures
+	cp "$(BASELINE_DEFAULT_DIR)/loss_comparison.pdf" "$@"
 
 paper/figures/baseline_nlsr_disruption_comparison.pdf: results/baseline/disruption_comparison.pdf | paper/figures
 	cp "results/baseline/disruption_comparison.pdf" "$@"
@@ -288,14 +221,29 @@ paper/figures/baseline_nlsr_disruption_comparison.pdf: results/baseline/disrupti
 paper/figures/baseline_nlsr_network_cost_comparison.pdf: results/baseline/network_cost_comparison.pdf | paper/figures
 	cp "results/baseline/network_cost_comparison.pdf" "$@"
 
-paper/figures/baseline_overhead_timeseries.pdf: $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/overhead_timeseries.pdf | paper/figures
-	cp "$(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/overhead_timeseries.pdf" "$@"
+paper/figures/baseline_overhead_timeseries.pdf: $(BASELINE_DEFAULT_DIR)/overhead_timeseries.pdf | paper/figures
+	cp "$(BASELINE_DEFAULT_DIR)/overhead_timeseries.pdf" "$@"
 
-paper/figures/baseline_overhead_summary.pdf: $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/overhead_summary.pdf | paper/figures
-	cp "$(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/overhead_summary.pdf" "$@"
+paper/figures/baseline_overhead_summary.pdf: $(BASELINE_DEFAULT_DIR)/overhead_summary.pdf | paper/figures
+	cp "$(BASELINE_DEFAULT_DIR)/overhead_summary.pdf" "$@"
 
-paper/figures/baseline_throughput.pdf: $(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/throughput_timeseries.pdf | paper/figures
-	cp "$(BASELINE_PROFILE_DIR_$(BASELINE_DEFAULT_PROFILE))/throughput_timeseries.pdf" "$@"
+paper/figures/baseline_throughput.pdf: $(BASELINE_DEFAULT_DIR)/throughput_timeseries.pdf | paper/figures
+	cp "$(BASELINE_DEFAULT_DIR)/throughput_timeseries.pdf" "$@"
+
+paper/figures/solution_disruption.pdf: results/solution/disruption_times.pdf | paper/figures
+	cp "results/solution/disruption_times.pdf" "$@"
+
+paper/figures/solution_loss.pdf: results/solution/loss_comparison.pdf | paper/figures
+	cp "results/solution/loss_comparison.pdf" "$@"
+
+paper/figures/solution_overhead_timeseries.pdf: results/solution/overhead_timeseries.pdf | paper/figures
+	cp "results/solution/overhead_timeseries.pdf" "$@"
+
+paper/figures/solution_overhead_summary.pdf: results/solution/overhead_summary.pdf | paper/figures
+	cp "results/solution/overhead_summary.pdf" "$@"
+
+paper/figures/solution_throughput.pdf: results/solution/throughput_timeseries.pdf | paper/figures
+	cp "results/solution/throughput_timeseries.pdf" "$@"
 
 # Generate the paper
 paper/OptoFlood.pdf: paper/OptoFlood.tex $(ALL_FIGURES) | paper/bin
