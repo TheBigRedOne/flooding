@@ -59,6 +59,14 @@ def _read_rows(path: str) -> List[dict]:
         return list(csv.DictReader(input_file))
 
 
+def _to_optional_float(raw: str) -> float | None:
+    """Convert a CSV field to float, returning None for unavailable values."""
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
+
+
 def _safe_empty_output(path: str) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     _configure_paper_style()
@@ -80,10 +88,19 @@ def main() -> int:
         _safe_empty_output(args.output)
         return 0
 
-    labels = [row["profile_label"] for row in rows]
-    handoff_1_values = [float(row["handoff_1_disruption_ms"]) for row in rows]
-    handoff_2_values = [float(row["handoff_2_disruption_ms"]) for row in rows]
-    x = np.arange(len(rows))
+    valid_rows = [
+        (row, _to_optional_float(row["handoff_1_disruption_ms"]), _to_optional_float(row["handoff_2_disruption_ms"]))
+        for row in rows
+    ]
+    valid_rows = [(row, h1, h2) for row, h1, h2 in valid_rows if h1 is not None and h2 is not None]
+    if not valid_rows:
+        _safe_empty_output(args.output)
+        return 0
+
+    labels = [row["profile_label"] for row, _, _ in valid_rows]
+    handoff_1_values = [h1 for _, h1, _ in valid_rows]
+    handoff_2_values = [h2 for _, _, h2 in valid_rows]
+    x = np.arange(len(valid_rows))
 
     _configure_paper_style()
     fig, ax = plt.subplots(figsize=_paper_figure_size())

@@ -56,6 +56,14 @@ def _read_rows(path: str) -> List[dict]:
         return list(csv.DictReader(input_file))
 
 
+def _to_optional_float(raw: str) -> float | None:
+    """Convert a CSV field to float, returning None for unavailable values."""
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
+
+
 def _safe_empty_output(path: str) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     _configure_paper_style()
@@ -77,10 +85,19 @@ def main() -> int:
         _safe_empty_output(args.output)
         return 0
 
-    labels = [row["profile_label"] for row in rows]
-    fcr_values = [float(row["full_run_fcr"]) for row in rows]
-    control_values = [float(row["full_run_control_bytes"]) for row in rows]
-    x = np.arange(len(rows))
+    valid_rows = [
+        (row, _to_optional_float(row["full_run_fcr"]), _to_optional_float(row["full_run_control_bytes"]))
+        for row in rows
+    ]
+    valid_rows = [(row, fcr, control) for row, fcr, control in valid_rows if fcr is not None and control is not None]
+    if not valid_rows:
+        _safe_empty_output(args.output)
+        return 0
+
+    labels = [row["profile_label"] for row, _, _ in valid_rows]
+    fcr_values = [fcr for _, fcr, _ in valid_rows]
+    control_values = [control for _, _, control in valid_rows]
+    x = np.arange(len(valid_rows))
 
     _configure_paper_style()
     fig, (ax_fcr, ax_control) = plt.subplots(

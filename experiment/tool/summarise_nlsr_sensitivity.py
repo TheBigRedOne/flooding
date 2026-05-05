@@ -52,13 +52,9 @@ def _parse_disruption_metrics(path: str) -> Dict[str, str]:
     return metrics
 
 
-def _require_metric(metrics: Dict[str, str], key: str, path: str) -> str:
-    if key not in metrics:
-        raise ValueError(
-            f"Missing '{key}' in {path}. Re-run the per-profile plotting step so "
-            "disruption_metrics.txt is regenerated in the current format."
-        )
-    return metrics[key]
+def _get_metric_or_na(metrics: Dict[str, str], key: str) -> str:
+    """Return a metric value when present, otherwise mark it unavailable."""
+    return metrics.get(key, "n/a")
 
 
 def _parse_overhead_metrics(path: str) -> Dict[str, str]:
@@ -131,24 +127,16 @@ def main() -> int:
                 "adj_lsa_build_interval": adj,
                 "routing_calc_interval": route,
                 "handoff_1_disruption_ms": _extract_numeric_prefix(
-                    _require_metric(
-                        disruption,
-                        "Handoff 1 Disruption Time",
-                        os.path.join(profile_dir, "disruption_metrics.txt"),
-                    )
+                    _get_metric_or_na(disruption, "Handoff 1 Disruption Time")
                 ),
                 "handoff_2_disruption_ms": _extract_numeric_prefix(
-                    _require_metric(
-                        disruption,
-                        "Handoff 2 Disruption Time",
-                        os.path.join(profile_dir, "disruption_metrics.txt"),
-                    )
+                    _get_metric_or_na(disruption, "Handoff 2 Disruption Time")
                 ),
                 "full_run_fcr": _extract_numeric_prefix(
-                    overhead["Forwarding Cost Ratio"]
+                    _get_metric_or_na(overhead, "Forwarding Cost Ratio")
                 ),
                 "full_run_control_bytes": _extract_numeric_prefix(
-                    overhead["NLSR Control Bytes"]
+                    _get_metric_or_na(overhead, "NLSR Control Bytes")
                 ),
             })
 
