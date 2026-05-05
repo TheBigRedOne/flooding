@@ -54,7 +54,7 @@ Each group has an explicit experiment rule and uses the shared
 To add a new baseline group:
 
 - add its result directory to `BASELINE_PROFILE_DIRS`;
-- add one grouped experiment target using `$(BASELINE_EXPERIMENT_OUTPUTS:XXX=<group>)`;
+- add one grouped experiment target using `$(subst XXX,<group>,$(BASELINE_EXPERIMENT_OUTPUTS))`;
 - set `NLSR_HELLO_INTERVAL`, `NLSR_ADJ_LSA_BUILD_INTERVAL`,
   `NLSR_ROUTING_CALC_INTERVAL`, and `NLSR_TUNING_PROFILE` in that target.
 
