@@ -42,6 +42,18 @@ def _parse_args() -> argparse.Namespace:
         default="120, 240",
         help="Comma-separated handoff times in seconds.",
     )
+    parser.add_argument(
+        "--search-window",
+        type=float,
+        default=60.0,
+        help="Seconds after each handoff in which to search for the disruption gap.",
+    )
+    parser.add_argument(
+        "--pre-margin",
+        type=float,
+        default=1.0,
+        help="Seconds before each handoff included to account for timestamp alignment.",
+    )
     parser.add_argument("--prefix", default="/example/LiveStream", help="Application prefix to include.")
     return parser.parse_args()
 
@@ -78,16 +90,18 @@ def main() -> int:
     disruption_times: List[float] = []
 
     for handoff_time in handoffs_absolute:
-        data_before_indices = np.where(all_data_times <= handoff_time)[0]
-        if len(data_before_indices) == 0:
-            continue
-        last_data_time_before = all_data_times[data_before_indices[-1]]
+        search_start = handoff_time - args.pre_margin
+        search_end = handoff_time + args.search_window
+        candidate_gaps: List[float] = []
 
-        data_after_indices = np.where(all_data_times > handoff_time)[0]
-        if len(data_after_indices) == 0:
+        for previous_time, next_time in zip(all_data_times, all_data_times[1:]):
+            if previous_time < search_start or previous_time > search_end:
+                continue
+            candidate_gaps.append((next_time - previous_time) * 1000)
+
+        if not candidate_gaps:
             continue
-        first_data_time_after = all_data_times[data_after_indices[0]]
-        disruption_times.append((first_data_time_after - last_data_time_before) * 1000)
+        disruption_times.append(max(candidate_gaps))
 
     if not disruption_times:
         print("Warning: Could not calculate any disruption times.")
