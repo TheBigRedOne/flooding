@@ -48,18 +48,14 @@ MAIN_RESULT_OUTPUTS := $(BASELINE_DEFAULT_DIR)/disruption_times.pdf \
                        results/solution/overhead_timeseries.pdf \
                        results/solution/overhead_summary.pdf \
                        results/solution/overhead_total.txt
-SERVICE_CONTINUITY_COMPARISON_INPUTS := \
-                       $(BASELINE_DEFAULT_DIR)/consumer_capture.csv \
-                       results/solution/consumer_capture.csv \
-                       $(BASELINE_DEFAULT_DIR)/disruption_metrics.txt \
-                       results/solution/disruption_metrics.txt
 UNMET_INTEREST_COMPARISON_INPUTS := \
                        $(BASELINE_DEFAULT_DIR)/loss_ratio.txt \
                        results/solution/loss_ratio.txt
 
 # --- Paper Figure Dependencies ---
 # These variables link the experiment outputs to the figures in the paper.
-BASELINE_PAPER_FIGURES := paper/figures/service_continuity_comparison.pdf \
+BASELINE_PAPER_FIGURES := paper/figures/throughput_comparison.pdf \
+                          paper/figures/service_disruption_comparison.pdf \
                           paper/figures/unmet_interest_comparison.pdf \
                           paper/figures/baseline_nlsr_disruption_comparison.pdf \
                           paper/figures/baseline_nlsr_network_cost_comparison.pdf \
@@ -83,7 +79,8 @@ PLOT_TOOL_SRCS := experiment/tool/plot_latency.py \
                   experiment/tool/compute_overhead_ymax.py \
                   experiment/tool/plot_throughput.py \
                   experiment/tool/compute_throughput_metrics.py \
-                  experiment/tool/plot_service_continuity_comparison.py \
+                  experiment/tool/plot_throughput_comparison.py \
+                  experiment/tool/plot_disruption_comparison.py \
                   experiment/tool/plot_unmet_interest_comparison.py \
                   experiment/tool/summarise_nlsr_sensitivity.py \
                   experiment/tool/plot_nlsr_disruption_comparison.py \
@@ -203,7 +200,10 @@ $(BASELINE_DEFAULT_DIR)/overhead_summary.pdf: experiment/tool/plot_overhead.py $
 
 # --- Copy Results to Paper Directory ---
 
-paper/figures/service_continuity_comparison.pdf: experiment/tool/plot_service_continuity_comparison.py $(SERVICE_CONTINUITY_COMPARISON_INPUTS) | paper/figures
+paper/figures/throughput_comparison.pdf: experiment/tool/plot_throughput_comparison.py $(BASELINE_DEFAULT_DIR)/consumer_capture.csv results/solution/consumer_capture.csv | paper/figures
+	python3 $^ $@
+
+paper/figures/service_disruption_comparison.pdf: experiment/tool/plot_disruption_comparison.py $(BASELINE_DEFAULT_DIR)/disruption_metrics.txt results/solution/disruption_metrics.txt | paper/figures
 	python3 $^ $@
 
 paper/figures/unmet_interest_comparison.pdf: experiment/tool/plot_unmet_interest_comparison.py $(UNMET_INTEREST_COMPARISON_INPUTS) | paper/figures

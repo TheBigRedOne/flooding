@@ -304,16 +304,21 @@ The results show that baseline NDN exhibits long service interruptions after pro
 
 \subsubsection{Service Continuity}
 
-In baseline forwarding, each hand-off is followed by a sharp drop in delivered throughput. The consumer continues to issue Interests, but receives little or no Data during the outage interval. Recovery appears only after routing convergence catches up. With OptoFlood, the stream remains continuous except for a narrow disturbance around each hand-off. Figure~\ref{fig:service_continuity_comparison} compares the throughput traces and the disruption times per-handoff.
+In baseline forwarding, each hand-off is followed by a sharp drop in delivered throughput. The consumer continues to issue Interests, but receives little or no Data during the outage interval. Recovery appears only after routing convergence catches up. With OptoFlood, the stream remains continuous except for a narrow disturbance around each hand-off. Figure~\ref{fig:throughput_comparison} compares the throughput traces, while Figure~\ref{fig:service_disruption_comparison} reports per-handoff disruption time.
 
-\begin{figure*}[t]
+\begin{figure}
     \centering
-    \includegraphics[width=0.92\textwidth]{service_continuity_comparison.pdf}
-    \caption{Service continuity under baseline forwarding and OptoFlood%
-	\ryo{Don't try to do sub figures at the time of generating the plot itself}%
-	}
-    \label{fig:service_continuity_comparison}
-\end{figure*}
+    \includegraphics[width=\columnwidth]{throughput_comparison.pdf}
+    \caption{Consumer throughput under baseline forwarding and OptoFlood}
+    \label{fig:throughput_comparison}
+\end{figure}
+
+\begin{figure}
+    \centering
+    \includegraphics[width=\columnwidth]{service_disruption_comparison.pdf}
+    \caption{Per-handoff service disruption under baseline forwarding and OptoFlood}
+    \label{fig:service_disruption_comparison}
+\end{figure}
 
 
 \subsubsection{Delivery Reliability}

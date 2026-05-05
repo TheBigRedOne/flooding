@@ -22,7 +22,8 @@ BASELINE_SSH_CONFIG=.ssh_config_baseline
 SOLUTION_SSH_CONFIG=.ssh_config_solution
 
 BASELINE_PAPER_FIGURES="
-paper/figures/service_continuity_comparison.pdf
+paper/figures/throughput_comparison.pdf
+paper/figures/service_disruption_comparison.pdf
 paper/figures/unmet_interest_comparison.pdf
 paper/figures/baseline_disruption.pdf
 paper/figures/baseline_loss.pdf
