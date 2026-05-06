@@ -30,6 +30,18 @@ BOXES = box/initial/initial.$(PROVIDER).box \
 include Makefile.baseline
 include Makefile.solution
 
+# Baseline NLSR tuning profile dirs (directory prerequisites only; rules live in Makefile.baseline).
+BASELINE_PROFILE_DIRS = results/baseline/g0-h60-a10-r15 \
+                        results/baseline/g1-h56-a9-r14 \
+                        results/baseline/g2-h52-a9-r13 \
+                        results/baseline/g3-h48-a8-r12 \
+                        results/baseline/g4-h44-a7-r11 \
+                        results/baseline/g5-h40-a7-r10 \
+                        results/baseline/g6-h36-a6-r9 \
+                        results/baseline/g7-h30-a5-r8 \
+                        results/baseline/x1-h24-a4-r6 \
+                        results/baseline/x2-h18-a3-r5
+
 MAIN_RESULT_OUTPUTS := $(BASELINE_DEFAULT_DIR)/disruption_times.pdf \
                        $(BASELINE_DEFAULT_DIR)/disruption_metrics.txt \
                        $(BASELINE_DEFAULT_DIR)/loss_comparison.pdf \
@@ -48,27 +60,24 @@ MAIN_RESULT_OUTPUTS := $(BASELINE_DEFAULT_DIR)/disruption_times.pdf \
                        results/solution/overhead_timeseries.pdf \
                        results/solution/overhead_summary.pdf \
                        results/solution/overhead_total.txt
-UNMET_INTEREST_COMPARISON_INPUTS := \
-                       $(BASELINE_DEFAULT_DIR)/loss_ratio.txt \
-                       results/solution/loss_ratio.txt
 
-# PDF inputs for the paper.
+UNMET_INTEREST_COMPARISON_INPUTS := $(filter $(BASELINE_DEFAULT_DIR)/loss_ratio.txt results/solution/loss_ratio.txt,$(MAIN_RESULT_OUTPUTS))
+
+# PDF inputs for the paper (subset of MAIN_RESULT_OUTPUTS plus comparison plots and NLSR tuning figures).
 GENERATED_FIGURES := results/throughput_comparison.pdf \
                      results/service_disruption_comparison.pdf \
                      results/unmet_interest_comparison.pdf \
-                     $(BASELINE_DEFAULT_DIR)/overhead_timeseries.pdf \
-                     $(BASELINE_DEFAULT_DIR)/overhead_summary.pdf \
-                     results/solution/overhead_timeseries.pdf \
-                     results/solution/overhead_summary.pdf \
+                     $(filter $(BASELINE_DEFAULT_DIR)/overhead_timeseries.pdf $(BASELINE_DEFAULT_DIR)/overhead_summary.pdf results/solution/overhead_timeseries.pdf results/solution/overhead_summary.pdf,$(MAIN_RESULT_OUTPUTS)) \
                      results/baseline/disruption_comparison.pdf \
                      results/baseline/network_cost_comparison.pdf
-STATIC_FIGURES := paper/figures/NDN_Packets_Processing_Flow.pdf \
-                  paper/figures/NDN_Producer_Mobility_Problem.pdf \
-                  paper/figures/NDN_Producer_Mobility_Problem_Solution.pdf \
-                  paper/figures/Topology.pdf
-ALL_FIGURES := $(STATIC_FIGURES) $(GENERATED_FIGURES)
 
-# Tool groups used by aggregate validation targets.
+ALL_FIGURES := paper/figures/NDN_Packets_Processing_Flow.pdf \
+               paper/figures/NDN_Producer_Mobility_Problem.pdf \
+               paper/figures/NDN_Producer_Mobility_Problem_Solution.pdf \
+               paper/figures/Topology.pdf \
+               $(GENERATED_FIGURES)
+
+# Sources checked by phony target `mypy`.
 PLOT_TOOL_SRCS := experiment/tool/plot_latency.py \
                   experiment/tool/compute_latency_metrics.py \
                   experiment/tool/plot_loss.py \
@@ -84,9 +93,6 @@ PLOT_TOOL_SRCS := experiment/tool/plot_latency.py \
                   experiment/tool/summarise_nlsr_sensitivity.py \
                   experiment/tool/plot_nlsr_disruption_comparison.py \
                   experiment/tool/plot_nlsr_network_cost_comparison.py
-TEST_SRCS := test/Makefile test/Vagrantfile test/exp_test.py test/validate.py \
-             experiment/app/producer.cpp experiment/app/consumer.cpp \
-             experiment/app/trust-schema.conf experiment/tool/ndn.lua
 
 # Main target (set DISABLE_TEST=1 to skip tests)
 all: $(BOXES) experiment $(if $(DISABLE_TEST),,test/.validate_ok) result paper
@@ -113,7 +119,10 @@ result: $(GENERATED_FIGURES) $(MAIN_RESULT_OUTPUTS) $(BASELINE_PROFILE_COMPARE_O
 # Run the test experiment
 test: test/.validate_ok
 
-test/.validate_ok: $(TEST_SRCS) box/solution/solution.$(PROVIDER).box
+test/.validate_ok: test/Makefile test/Vagrantfile test/exp_test.py test/validate.py \
+             experiment/app/producer.cpp experiment/app/consumer.cpp \
+             experiment/app/trust-schema.conf experiment/tool/ndn.lua \
+             box/solution/solution.$(PROVIDER).box
 	$(MAKE) -C test PROVIDER=$(PROVIDER) test-all
 
 # Plot only (reuse existing CSVs; no VM run)

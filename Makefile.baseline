@@ -2,17 +2,6 @@
 
 BASELINE_DEFAULT_DIR = results/baseline/g0-h60-a10-r15
 
-BASELINE_PROFILE_DIRS = results/baseline/g0-h60-a10-r15 \
-                        results/baseline/g1-h56-a9-r14 \
-                        results/baseline/g2-h52-a9-r13 \
-                        results/baseline/g3-h48-a8-r12 \
-                        results/baseline/g4-h44-a7-r11 \
-                        results/baseline/g5-h40-a7-r10 \
-                        results/baseline/g6-h36-a6-r9 \
-                        results/baseline/g7-h30-a5-r8 \
-                        results/baseline/x1-h24-a4-r6 \
-                        results/baseline/x2-h18-a3-r5
-
 BASELINE_PROFILE_NAMES = g0-h60-a10-r15,g1-h56-a9-r14,g2-h52-a9-r13,g3-h48-a8-r12,g4-h44-a7-r11,g5-h40-a7-r10,g6-h36-a6-r9,g7-h30-a5-r8,x1-h24-a4-r6,x2-h18-a3-r5
 BASELINE_DEFAULT_PROFILE = g0-h60-a10-r15
 
