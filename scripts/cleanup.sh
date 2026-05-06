@@ -22,23 +22,14 @@ BASELINE_SSH_CONFIG=.ssh_config_baseline
 SOLUTION_SSH_CONFIG=.ssh_config_solution
 
 BASELINE_PAPER_FIGURES="
-paper/figures/throughput_comparison.pdf
-paper/figures/service_disruption_comparison.pdf
-paper/figures/unmet_interest_comparison.pdf
 paper/figures/baseline_disruption.pdf
 paper/figures/baseline_loss.pdf
-paper/figures/baseline_nlsr_disruption_comparison.pdf
-paper/figures/baseline_nlsr_network_cost_comparison.pdf
-paper/figures/baseline_overhead_timeseries.pdf
-paper/figures/baseline_overhead_summary.pdf
 paper/figures/baseline_throughput.pdf
 "
 
 SOLUTION_PAPER_FIGURES="
 paper/figures/solution_disruption.pdf
 paper/figures/solution_loss.pdf
-paper/figures/solution_overhead_timeseries.pdf
-paper/figures/solution_overhead_summary.pdf
 paper/figures/solution_throughput.pdf
 "
 

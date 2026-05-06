@@ -86,6 +86,9 @@ README_OptoFlood.md
 # Python bytecode caches
 __pycache__/
 
+# Host-side plotting/mypy virtualenv (see experiment/tool/setup_venv.sh)
+experiment/tool/.venv/
+
 # Experiment artifacts synced back from VMs
 test/results/
 test/minindn/

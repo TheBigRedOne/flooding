@@ -13,7 +13,10 @@
 \newcommand{\csp}[1]{\textbf{\textcolor{purple}{CSP: #1}}}
 \newcommand{\ryo}[1]{\textbf{\textcolor{teal}{RY: #1}}}
 
-\graphicspath{{paper/figures/}}
+% Static diagrams live under paper/figures/; generated evaluation and comparison PDFs
+% use results/ (see GENERATED_FIGURES in Makefile and BASELINE_DEFAULT_DIR in Makefile.baseline).
+\graphicspath{{paper/figures/}{results/}}
+\newcommand{\ResBaselineDir}{results/baseline/g0-h60-a10-r15}
 
 \makeatletter
 \newcommand{\linebreakand}{%
@@ -139,14 +142,14 @@ To test whether NLSR parameter tuning alone can address this limitation, we meas
 
 \begin{figure}
     \centering
-    \includegraphics[width=\columnwidth]{baseline_nlsr_disruption_comparison.pdf}
+    \includegraphics[width=\columnwidth]{results/baseline/disruption_comparison.pdf}
     \caption{Service disruption under baseline NDN forwarding}
     \label{fig:baseline_nlsr_disruption_comparison}
 \end{figure}
 
 \begin{figure}
     \centering
-    \includegraphics[width=\columnwidth]{baseline_nlsr_network_cost_comparison.pdf}
+    \includegraphics[width=\columnwidth]{results/baseline/network_cost_comparison.pdf}
     \caption{Forwarding and NLSR control cost}
     \label{fig:baseline_nlsr_network_cost_comparison}
 \end{figure}
@@ -308,16 +311,9 @@ In baseline forwarding, each hand-off is followed by a sharp drop in delivered t
 
 \begin{figure}
     \centering
-    \includegraphics[width=\columnwidth]{throughput_comparison.pdf}
-    \caption{Consumer throughput under baseline forwarding and OptoFlood}
-    \label{fig:throughput_comparison}
-\end{figure}
-
-\begin{figure}
-    \centering
-    \includegraphics[width=\columnwidth]{service_disruption_comparison.pdf}
-    \caption{Per-handoff service disruption under baseline forwarding and OptoFlood}
-    \label{fig:service_disruption_comparison}
+    \subfloat[Consumer throughput under baseline forwarding and OptoFlood]{\includegraphics[width=\columnwidth]{throughput_comparison.pdf}\label{fig:throughput_comparison}}\\
+    \subfloat[Per-handoff service disruption under baseline forwarding and OptoFlood]{\includegraphics[width=\columnwidth]{service_disruption_comparison.pdf}\label{fig:service_disruption_comparison}}
+    \caption{Consumer throughput and per-handoff service disruption under baseline forwarding and OptoFlood}
 \end{figure}
 
 
@@ -345,23 +341,24 @@ Together, the overhead results are consistent with the design target. OptoFlood 
 \begin{figure}
     \centering
     \subfloat[Time-series decomposition by packet type.\label{fig:baseline_overhead_timeseries}]{
-        \includegraphics[width=\columnwidth]{baseline_overhead_timeseries.pdf}
+        \includegraphics[width=\columnwidth]{\ResBaselineDir/overhead_timeseries.pdf}
     }
 
     \subfloat[Window summaries by packet type.\label{fig:baseline_overhead_summary}]{
-        \includegraphics[width=\columnwidth]{baseline_overhead_summary.pdf}
+        \includegraphics[width=\columnwidth]{\ResBaselineDir/overhead_summary.pdf}
     }
     \caption{Forwarding and control load under baseline forwarding.}
     \label{fig:baseline_overhead}
 \end{figure}
+
 \begin{figure}
     \centering
     \subfloat[Time-series decomposition by packet type.\label{fig:solution_overhead_timeseries}]{
-        \includegraphics[width=\columnwidth]{solution_overhead_timeseries.pdf}
+        \includegraphics[width=\columnwidth]{results/solution/overhead_timeseries.pdf}
     }
 
     \subfloat[Window summaries by packet type.\label{fig:solution_overhead_summary}]{
-        \includegraphics[width=\columnwidth]{solution_overhead_summary.pdf}
+        \includegraphics[width=\columnwidth]{results/solution/overhead_summary.pdf}
     }
     \caption{Forwarding and control load with OptoFlood.}
     \label{fig:solution_overhead}
