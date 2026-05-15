@@ -7,7 +7,7 @@ import argparse
 import csv
 import os
 from collections import defaultdict
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator, ScalarFormatter
@@ -81,13 +81,55 @@ def _aggregate_per_second(packets: Iterable[Tuple[float, int]]) -> Tuple[List[in
     return [second - start for second in seconds], [per_second.get(second, 0) for second in seconds]
 
 
+def _load_handoff_times_from_file(path: str) -> List[float]:
+    """Read relative handoff times (seconds) from a handoffs.txt file."""
+    handoff_times: List[float] = []
+    with open(path, "r", encoding="utf-8") as input_file:
+        for raw_line in input_file:
+            line = raw_line.strip()
+            if not line or line.startswith("#") or line.lower().startswith("index"):
+                continue
+            tokens = line.split()
+            if len(tokens) < 3:
+                continue
+            try:
+                handoff_times.append(float(tokens[2]))
+            except ValueError:
+                continue
+    return handoff_times
+
+
+def _resolve_handoff_times(
+    handoff_file: Optional[str],
+    handoff_times_raw: str,
+) -> List[float]:
+    """Resolve a handoff time list, preferring the on-disk file when available."""
+    if handoff_file and os.path.exists(handoff_file):
+        return _load_handoff_times_from_file(handoff_file)
+    return [float(token.strip()) for token in handoff_times_raw.split(",") if token.strip()]
+
+
 def _parse_args() -> argparse.Namespace:
     """Parse throughput comparison inputs and output path."""
     parser = argparse.ArgumentParser(description="Plot consumer-throughput comparison.")
     parser.add_argument("baseline_csv", help="Baseline consumer CSV.")
     parser.add_argument("solution_csv", help="OptoFlood consumer CSV.")
     parser.add_argument("output_pdf", help="Output throughput comparison PDF.")
-    parser.add_argument("--handoff-times", default="120, 240", help="Comma-separated handoff times.")
+    parser.add_argument(
+        "--handoff-times",
+        default="120, 240",
+        help="Comma-separated handoff times (fallback when no --*-handoff-file is provided).",
+    )
+    parser.add_argument(
+        "--baseline-handoff-file",
+        default=None,
+        help="Path to the baseline handoffs.txt; its rel_time column shades baseline handoff windows.",
+    )
+    parser.add_argument(
+        "--solution-handoff-file",
+        default=None,
+        help="Path to the solution handoffs.txt; its rel_time column shades solution handoff windows.",
+    )
     parser.add_argument("--window", type=float, default=10.0, help="Handoff shading window in seconds.")
     return parser.parse_args()
 
@@ -118,7 +160,10 @@ def main() -> int:
         linestyle="--",
         label="OptoFlood",
     )
-    for index, handoff in enumerate(float(t.strip()) for t in args.handoff_times.split(",") if t.strip()):
+    baseline_handoffs = _resolve_handoff_times(args.baseline_handoff_file, args.handoff_times)
+    solution_handoffs = _resolve_handoff_times(args.solution_handoff_file, args.handoff_times)
+    union_handoffs = sorted(set(baseline_handoffs) | set(solution_handoffs))
+    for index, handoff in enumerate(union_handoffs):
         ax.axvspan(
             handoff,
             handoff + args.window,

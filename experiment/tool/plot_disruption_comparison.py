@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Plot per-handoff service-disruption comparison for baseline and OptoFlood."""
+"""Plot aggregated service-disruption comparison for baseline and OptoFlood."""
 
 from __future__ import annotations
 
 import argparse
 import os
-from typing import List
+from typing import List, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -19,8 +19,13 @@ AXIS_LABEL_SIZE = 8
 AXIS_TITLE_SIZE = 8
 TICK_LABEL_SIZE = 7
 LEGEND_SIZE = 7
-BASELINE_COLOR = "#0072B2"
-SOLUTION_COLOR = "#D55E00"
+BASELINE_FILL = "#9ec8e6"
+BASELINE_EDGE = "#0072B2"
+SOLUTION_FILL = "#f1b27e"
+SOLUTION_EDGE = "#D55E00"
+MEAN_COLOR = "#1a1a1a"
+MEAN_LINE_WIDTH = 1.4
+RANGE_BAR_WIDTH = 0.5
 
 
 def _configure_style() -> None:
@@ -47,33 +52,60 @@ def _ensure_parent_dir(path: str) -> None:
         os.makedirs(parent, exist_ok=True)
 
 
-def _load_disruption_metrics(metrics_path: str) -> List[float]:
-    """Read per-handoff disruption values in milliseconds."""
+def _load_disruption_values(metrics_path: str) -> List[float]:
+    """Read all per-handoff disruption values from a metrics text file."""
     values: List[float] = []
+    if not os.path.exists(metrics_path):
+        return values
     with open(metrics_path, "r", encoding="utf-8") as metrics_file:
         for line in metrics_file:
             if "Disruption Time:" not in line:
                 continue
-            values.append(float(line.split("Disruption Time:", 1)[1].strip().split()[0]))
-    if not values:
-        raise ValueError(f"No disruption metrics found in {metrics_path}")
+            token = line.split("Disruption Time:", 1)[1].strip().split()
+            if not token:
+                continue
+            try:
+                values.append(float(token[0]))
+            except ValueError:
+                continue
     return values
 
 
-def _annotate_bars(ax, bars) -> None:
-    """Annotate grouped bars with compact duration labels."""
-    for bar in bars:
-        value = bar.get_height()
-        label = f"{value / 1000:.1f}s" if value >= 1000 else f"{value:.0f}ms"
-        ax.text(
-            bar.get_x() + bar.get_width() / 2,
-            value * 1.12,
-            label,
-            ha="center",
-            va="bottom",
-            fontsize=6,
-            rotation=0,
-        )
+def _summarise(values: List[float]) -> Tuple[float, float, float]:
+    """Return (min, max, mean) of a non-empty value list."""
+    return min(values), max(values), sum(values) / len(values)
+
+
+def _draw_range_bar(
+    ax,
+    x_position: float,
+    values: List[float],
+    fill_color: str,
+    edge_color: str,
+    label: str,
+) -> None:
+    """Draw one min-max range bar with a horizontal mean indicator."""
+    if not values:
+        return
+    lo, hi, mean_value = _summarise(values)
+    ax.bar(
+        [x_position],
+        [hi - lo],
+        width=RANGE_BAR_WIDTH,
+        bottom=[lo],
+        color=fill_color,
+        edgecolor=edge_color,
+        linewidth=0.9,
+        label=label,
+    )
+    half = RANGE_BAR_WIDTH / 2.0
+    ax.hlines(
+        [mean_value],
+        [x_position - half],
+        [x_position + half],
+        color=MEAN_COLOR,
+        linewidth=MEAN_LINE_WIDTH,
+    )
 
 
 def _parse_args() -> argparse.Namespace:
@@ -86,41 +118,37 @@ def _parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
-    """Generate the service-disruption comparison figure."""
+    """Generate the aggregated service-disruption comparison figure."""
     args = _parse_args()
     _configure_style()
     _ensure_parent_dir(args.output_pdf)
 
-    baseline_disruption = _load_disruption_metrics(args.baseline_disruption)
-    solution_disruption = _load_disruption_metrics(args.solution_disruption)
+    baseline_values = _load_disruption_values(args.baseline_disruption)
+    solution_values = _load_disruption_values(args.solution_disruption)
+    if not baseline_values and not solution_values:
+        fig, _ = plt.subplots(figsize=(FIGURE_WIDTH_CM * CM_TO_INCH, FIGURE_HEIGHT_CM * CM_TO_INCH))
+        fig.savefig(args.output_pdf)
+        plt.close(fig)
+        return 0
 
     fig, ax = plt.subplots(figsize=(FIGURE_WIDTH_CM * CM_TO_INCH, FIGURE_HEIGHT_CM * CM_TO_INCH))
-    count = min(len(baseline_disruption), len(solution_disruption))
-    x = np.arange(count)
-    width = 0.34
-    baseline_bars = ax.bar(
-        x - width / 2,
-        baseline_disruption[:count],
-        width,
-        color=BASELINE_COLOR,
-        label="Baseline",
-    )
-    solution_bars = ax.bar(
-        x + width / 2,
-        solution_disruption[:count],
-        width,
-        color=SOLUTION_COLOR,
-        label="OptoFlood",
-    )
+    positions = np.array([0.0, 1.0])
+    labels = ["Baseline", "OptoFlood"]
+
+    _draw_range_bar(ax, positions[0], baseline_values, BASELINE_FILL, BASELINE_EDGE, "Baseline range")
+    _draw_range_bar(ax, positions[1], solution_values, SOLUTION_FILL, SOLUTION_EDGE, "OptoFlood range")
+
+    handles = ax.get_legend_handles_labels()[0]
+    mean_handle = plt.Line2D([0], [0], color=MEAN_COLOR, linewidth=MEAN_LINE_WIDTH, label="Mean")
+    if handles:
+        ax.legend(handles=[*handles, mean_handle], loc="upper right", frameon=False)
+
     ax.set_yscale("log")
-    ax.set_xlabel("Handoff")
+    bottom_values = [value for value in (baseline_values + solution_values) if value > 0]
+    ax.set_ylim(bottom=max(1.0, min(bottom_values) * 0.45) if bottom_values else 1.0)
+    ax.set_xticks(positions)
+    ax.set_xticklabels(labels)
     ax.set_ylabel("Disruption time (ms)")
-    ax.set_xticks(x)
-    ax.set_xticklabels([str(i + 1) for i in range(count)])
-    ax.set_ylim(bottom=max(1.0, min(solution_disruption[:count]) * 0.45))
-    _annotate_bars(ax, baseline_bars)
-    _annotate_bars(ax, solution_bars)
-    ax.legend(loc="upper center", bbox_to_anchor=(0.5, 1.18), ncol=2, frameon=False)
     ax.grid(True, axis="y", which="both", linestyle="--", alpha=0.6)
     fig.tight_layout()
     fig.savefig(args.output_pdf, bbox_inches="tight")

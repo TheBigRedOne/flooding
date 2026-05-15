@@ -8,6 +8,10 @@ SOLUTION_INPUTS = box/solution/solution.$(PROVIDER).box \
                   experiment/solution/Makefile \
                   experiment/tool/exp.py
 
+# Same K=16 handoff sequence as baseline for an apples-to-apples comparison.
+SOLUTION_HANDOFF_SEQUENCE = acc2,acc3,acc4,acc5,acc6,acc5,acc4,acc3,acc2,acc3,acc4,acc5,acc6,acc5,acc4,acc3,acc2
+SOLUTION_HANDOFF_ENV = NLSR_HANDOFF_COUNT='16' NLSR_HANDOFF_INTERVAL_BASE='90' NLSR_HANDOFF_INTERVAL_JITTER='60' NLSR_HANDOFF_SEQUENCE='$(SOLUTION_HANDOFF_SEQUENCE)'
+
 SOLUTION_RESULTS = results/solution/consumer_capture.pcap \
                    results/solution/pcap_nodes/core.pcap \
                    results/solution/pcap_nodes/agg1.pcap \
@@ -19,10 +23,11 @@ SOLUTION_RESULTS = results/solution/consumer_capture.pcap \
                    results/solution/pcap_nodes/acc5.pcap \
                    results/solution/pcap_nodes/acc6.pcap \
                    results/solution/pcap_nodes/producer.pcap \
-                   results/solution/pcap_nodes/consumer.pcap
+                   results/solution/pcap_nodes/consumer.pcap \
+                   results/solution/handoffs.txt
 
 $(SOLUTION_RESULTS) &: scripts/run-in-vm.sh $(SOLUTION_INPUTS)
-	sh $^ $@
+	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="$(SOLUTION_HANDOFF_ENV) make all" sh $^ $@
 
 
 # Rules to process outputs from the OptoFlood experiment.
@@ -47,26 +52,26 @@ results/solution/network_overhead.csv: experiment/tool/extract_overhead_csv.py \
 results/solution/disruption_times.pdf: experiment/tool/plot_latency.py results/solution/disruption_metrics.txt
 	python3 $^ $@
 
-results/solution/disruption_metrics.txt: experiment/tool/compute_latency_metrics.py results/solution/consumer_capture.csv
-	python3 $^ $@
+results/solution/disruption_metrics.txt: experiment/tool/compute_latency_metrics.py results/solution/consumer_capture.csv results/solution/handoffs.txt
+	python3 experiment/tool/compute_latency_metrics.py results/solution/consumer_capture.csv $@ --handoff-file results/solution/handoffs.txt
 
 results/solution/loss_comparison.pdf: experiment/tool/plot_loss.py results/solution/loss_ratio.txt
 	python3 $^ $@
 
-results/solution/loss_ratio.txt: experiment/tool/compute_loss_metrics.py results/solution/consumer_capture.csv
-	python3 $^ $@
+results/solution/loss_ratio.txt: experiment/tool/compute_loss_metrics.py results/solution/consumer_capture.csv results/solution/handoffs.txt
+	python3 experiment/tool/compute_loss_metrics.py results/solution/consumer_capture.csv $@ --handoff-file results/solution/handoffs.txt
 
-results/solution/throughput_timeseries.pdf: experiment/tool/plot_throughput.py results/solution/consumer_capture.csv
-	python3 $^ $@
+results/solution/throughput_timeseries.pdf: experiment/tool/plot_throughput.py results/solution/consumer_capture.csv results/solution/handoffs.txt
+	python3 experiment/tool/plot_throughput.py results/solution/consumer_capture.csv $@ --handoff-file results/solution/handoffs.txt
 
 results/solution/throughput_metrics.txt: experiment/tool/compute_throughput_metrics.py results/solution/consumer_capture.csv
 	python3 $^ $@
 
-results/solution/overhead_timeseries.pdf: experiment/tool/plot_overhead.py results/solution/network_overhead.csv results/main_overhead_limits.txt
-	python3 $^ $@
+results/solution/overhead_timeseries.pdf: experiment/tool/plot_overhead.py results/solution/network_overhead.csv results/solution/handoffs.txt results/main_overhead_limits.txt
+	python3 experiment/tool/plot_overhead.py results/solution/network_overhead.csv results/main_overhead_limits.txt $@ --handoff-file results/solution/handoffs.txt
 
-results/solution/overhead_summary.pdf: experiment/tool/plot_overhead.py results/solution/network_overhead.csv results/main_overhead_limits.txt
-	python3 $^ $@
+results/solution/overhead_summary.pdf: experiment/tool/plot_overhead.py results/solution/network_overhead.csv results/solution/handoffs.txt results/main_overhead_limits.txt
+	python3 experiment/tool/plot_overhead.py results/solution/network_overhead.csv results/main_overhead_limits.txt $@ --handoff-file results/solution/handoffs.txt
 
-results/solution/overhead_total.txt: experiment/tool/compute_overhead_metrics.py results/solution/network_overhead.csv | experiment/tool/plot_overhead.py
-	python3 $^ $@
+results/solution/overhead_total.txt: experiment/tool/compute_overhead_metrics.py results/solution/network_overhead.csv results/solution/handoffs.txt | experiment/tool/plot_overhead.py
+	python3 experiment/tool/compute_overhead_metrics.py results/solution/network_overhead.csv $@ --handoff-file results/solution/handoffs.txt

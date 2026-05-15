@@ -13,7 +13,8 @@ EXPERIMENT_RESULTS = results/consumer_capture.pcap \
                      results/pcap_nodes/acc6.pcap \
                      results/pcap_nodes/producer.pcap \
                      results/pcap_nodes/consumer.pcap \
-                     results/params.txt
+                     results/params.txt \
+                     results/handoffs.txt
 
 # --- Targets ---
 

@@ -303,6 +303,38 @@ def _parse_handoff_times(raw: Optional[str]) -> List[float]:
     return [float(token.strip()) for token in raw.split(',') if token.strip()]
 
 
+def load_handoff_times_from_file(path: str) -> List[float]:
+    """Read relative handoff times (seconds) from a handoffs.txt file.
+
+    The file is the tab-separated artifact written by exp.py. Only the third
+    column (rel_time) is consumed; the header row is skipped.
+    """
+    handoff_times: List[float] = []
+    with open(path, 'r', encoding='utf-8') as input_file:
+        for raw_line in input_file:
+            line = raw_line.strip()
+            if not line or line.startswith('#') or line.lower().startswith('index'):
+                continue
+            tokens = line.split()
+            if len(tokens) < 3:
+                continue
+            try:
+                handoff_times.append(float(tokens[2]))
+            except ValueError:
+                continue
+    return handoff_times
+
+
+def resolve_handoff_times(
+    handoff_file: Optional[str],
+    handoff_times_raw: Optional[str],
+) -> List[float]:
+    """Return the effective handoff time list, preferring the on-disk file."""
+    if handoff_file and os.path.exists(handoff_file):
+        return load_handoff_times_from_file(handoff_file)
+    return _parse_handoff_times(handoff_times_raw)
+
+
 def _series_has_text(series: pd.Series) -> pd.Series:
     return series.fillna('').astype(str).str.strip() != ''
 
@@ -410,7 +442,7 @@ def _load_analysis(
     prefix: str,
     relay_nodes_arg: str,
     consumer_node: str,
-    handoff_times_arg: Optional[str],
+    handoff_times: List[float],
     window: float,
 ) -> OverheadAnalysis:
     """Load the input CSV and derive reusable overhead analysis series and summaries."""
@@ -509,7 +541,6 @@ def _load_analysis(
     relay_data_other_series = (relay_data_series - relay_data_flood_series).clip(lower=0)
     time_axis = list(range(max_second + 1))
 
-    handoff_times = _parse_handoff_times(handoff_times_arg)
     handoff_summaries = [
         _summarize_window(
             f'Handoff {index + 1}',
@@ -595,7 +626,7 @@ def _write_summary_file(
 def _write_timeseries_plot(
     output_path: str | None,
     analysis: OverheadAnalysis,
-    handoff_times_arg: str | None,
+    handoff_times: List[float],
     window: float,
     explicit_max: Optional[float],
 ) -> None:
@@ -648,7 +679,7 @@ def _write_timeseries_plot(
             linestyle=':',
         )
 
-    for index, handoff_time in enumerate(_parse_handoff_times(handoff_times_arg)):
+    for index, handoff_time in enumerate(handoff_times):
         label = 'Handoff Window' if index == 0 else None
         ax_timeseries.axvspan(
             handoff_time,
@@ -768,7 +799,10 @@ def main():
         description="Plot network forwarding overhead from unified multi-node NDN CSV."
     )
     parser.add_argument('paths', nargs='+', help='Input CSV, optional limits file, and output PDF path.')
-    parser.add_argument('--handoff-times', type=str, default='120, 240', help='Comma-separated list of handoff event times in seconds.')
+    parser.add_argument('--handoff-times', type=str, default='120, 240',
+                        help='Comma-separated list of handoff event times in seconds (fallback when --handoff-file is absent).')
+    parser.add_argument('--handoff-file', type=str, default=None,
+                        help='Path to handoffs.txt; when present, its rel_time column overrides --handoff-times.')
     parser.add_argument('--window', type=float, default=10.0, help='Time window in seconds after a handoff for summary metrics.')
     parser.add_argument('--prefix', type=str, default='/example/LiveStream', help='Application prefix to include.')
     parser.add_argument('--relay-nodes', type=str, default=','.join(DEFAULT_RELAY_NODES),
@@ -800,13 +834,15 @@ def main():
     if args.limits_file:
         args.timeseries_y_max, args.summary_y_max = _load_limits_file(args.limits_file)
 
+    handoff_times = resolve_handoff_times(args.handoff_file, args.handoff_times)
+
     try:
         analysis = _load_analysis(
             input_path,
             args.prefix,
             args.relay_nodes,
             args.consumer_node,
-            args.handoff_times,
+            handoff_times,
             args.window,
         )
     except ValueError as exc:
@@ -817,7 +853,7 @@ def main():
     _write_timeseries_plot(
         timeseries_output,
         analysis,
-        args.handoff_times,
+        handoff_times,
         args.window,
         args.timeseries_y_max,
     )

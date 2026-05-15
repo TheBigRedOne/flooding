@@ -32,15 +32,10 @@ include Makefile.solution
 
 # Baseline NLSR tuning profile dirs (directory prerequisites only; rules live in Makefile.baseline).
 BASELINE_PROFILE_DIRS = results/baseline/g0-h60-a10-r15 \
-                        results/baseline/g1-h56-a9-r14 \
-                        results/baseline/g2-h52-a9-r13 \
-                        results/baseline/g3-h48-a8-r12 \
-                        results/baseline/g4-h44-a7-r11 \
-                        results/baseline/g5-h40-a7-r10 \
-                        results/baseline/g6-h36-a6-r9 \
-                        results/baseline/g7-h30-a5-r8 \
-                        results/baseline/x1-h24-a4-r6 \
-                        results/baseline/x2-h18-a3-r5
+                        results/baseline/g1-h54-a9-r14 \
+                        results/baseline/g2-h48-a8-r12 \
+                        results/baseline/g3-h42-a7-r10 \
+                        results/baseline/g4-h36-a6-r9
 
 MAIN_RESULT_OUTPUTS := $(BASELINE_DEFAULT_DIR)/disruption_times.pdf \
                        $(BASELINE_DEFAULT_DIR)/disruption_metrics.txt \
@@ -157,13 +152,11 @@ $(addsuffix /pcap_nodes,$(BASELINE_PROFILE_DIRS)) results/solution/pcap_nodes:
 paper/figures:
 	mkdir $@
 
-# Static typing (mypy). Optional venv: sh experiment/tool/setup_venv.sh - otherwise uses python3 on PATH.
+# Static typing (mypy). Callers are responsible for resolving `python3` to an
+# interpreter that has mypy and the host-side runtime dependencies installed;
+# see the "Static Typing" section in README.md for the supported workflow.
 mypy:
-	@if test -x experiment/tool/.venv/bin/python3; then \
-	  experiment/tool/.venv/bin/python3 -m mypy --config-file mypy.ini test/validate.py $(PLOT_TOOL_SRCS); \
-	else \
-	  python3 -m mypy --config-file mypy.ini test/validate.py $(PLOT_TOOL_SRCS); \
-	fi
+	python3 -m mypy --config-file mypy.ini test/validate.py $(PLOT_TOOL_SRCS)
 
 
 # =============================================================================
@@ -194,18 +187,26 @@ box/solution/solution.$(PROVIDER).box: box/solution/Vagrantfile box/initial/init
 # =============================================================================
 
 # Shared overhead y-axis limits for baseline(default) and solution main-result plots.
-results/main_overhead_limits.txt: experiment/tool/compute_overhead_ymax.py $(BASELINE_DEFAULT_DIR)/network_overhead.csv results/solution/network_overhead.csv | experiment/tool/plot_overhead.py results
-	python3 $^ $@
+results/main_overhead_limits.txt: experiment/tool/compute_overhead_ymax.py \
+                                  $(BASELINE_DEFAULT_DIR)/network_overhead.csv \
+                                  $(BASELINE_DEFAULT_DIR)/handoffs.txt \
+                                  results/solution/network_overhead.csv \
+                                  results/solution/handoffs.txt \
+                                  | experiment/tool/plot_overhead.py results
+	python3 experiment/tool/compute_overhead_ymax.py \
+	    --inputs $(BASELINE_DEFAULT_DIR)/network_overhead.csv results/solution/network_overhead.csv \
+	    --handoff-files $(BASELINE_DEFAULT_DIR)/handoffs.txt results/solution/handoffs.txt \
+	    --output $@
 
-$(BASELINE_DEFAULT_DIR)/overhead_timeseries.pdf: experiment/tool/plot_overhead.py $(BASELINE_DEFAULT_DIR)/network_overhead.csv results/main_overhead_limits.txt
-	python3 $^ $@
+$(BASELINE_DEFAULT_DIR)/overhead_timeseries.pdf: experiment/tool/plot_overhead.py $(BASELINE_DEFAULT_DIR)/network_overhead.csv $(BASELINE_DEFAULT_DIR)/handoffs.txt results/main_overhead_limits.txt
+	python3 experiment/tool/plot_overhead.py $(BASELINE_DEFAULT_DIR)/network_overhead.csv results/main_overhead_limits.txt $@ --handoff-file $(BASELINE_DEFAULT_DIR)/handoffs.txt
 
-$(BASELINE_DEFAULT_DIR)/overhead_summary.pdf: experiment/tool/plot_overhead.py $(BASELINE_DEFAULT_DIR)/network_overhead.csv results/main_overhead_limits.txt
-	python3 $^ $@
+$(BASELINE_DEFAULT_DIR)/overhead_summary.pdf: experiment/tool/plot_overhead.py $(BASELINE_DEFAULT_DIR)/network_overhead.csv $(BASELINE_DEFAULT_DIR)/handoffs.txt results/main_overhead_limits.txt
+	python3 experiment/tool/plot_overhead.py $(BASELINE_DEFAULT_DIR)/network_overhead.csv results/main_overhead_limits.txt $@ --handoff-file $(BASELINE_DEFAULT_DIR)/handoffs.txt
 
 # Comparison plots written to repository results/ for inclusion in the paper.
-results/throughput_comparison.pdf: experiment/tool/plot_throughput_comparison.py $(BASELINE_DEFAULT_DIR)/consumer_capture.csv results/solution/consumer_capture.csv | results
-	python3 $^ $@
+results/throughput_comparison.pdf: experiment/tool/plot_throughput_comparison.py $(BASELINE_DEFAULT_DIR)/consumer_capture.csv results/solution/consumer_capture.csv $(BASELINE_DEFAULT_DIR)/handoffs.txt results/solution/handoffs.txt | results
+	python3 experiment/tool/plot_throughput_comparison.py $(BASELINE_DEFAULT_DIR)/consumer_capture.csv results/solution/consumer_capture.csv $@ --baseline-handoff-file $(BASELINE_DEFAULT_DIR)/handoffs.txt --solution-handoff-file results/solution/handoffs.txt
 
 results/service_disruption_comparison.pdf: experiment/tool/plot_disruption_comparison.py $(BASELINE_DEFAULT_DIR)/disruption_metrics.txt results/solution/disruption_metrics.txt | results
 	python3 $^ $@

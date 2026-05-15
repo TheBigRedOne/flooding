@@ -61,12 +61,50 @@ def _calculate_unmet_ratio(requests_df: pd.DataFrame) -> float:
     return unmet / total
 
 
+def _load_handoff_times_from_file(path: str) -> list[float]:
+    """Read relative handoff times (seconds) from a handoffs.txt file.
+
+    The file is the tab-separated artifact written by exp.py. Only the third
+    column (rel_time) is consumed; the header row is skipped.
+    """
+    handoff_times: list[float] = []
+    with open(path, "r", encoding="utf-8") as input_file:
+        for raw_line in input_file:
+            line = raw_line.strip()
+            if not line or line.startswith("#") or line.lower().startswith("index"):
+                continue
+            tokens = line.split()
+            if len(tokens) < 3:
+                continue
+            try:
+                handoff_times.append(float(tokens[2]))
+            except ValueError:
+                continue
+    return handoff_times
+
+
+def _resolve_handoff_times(args: argparse.Namespace) -> list[float]:
+    """Resolve the handoff time list from either --handoff-file or --handoff-times."""
+    if args.handoff_file and os.path.exists(args.handoff_file):
+        return _load_handoff_times_from_file(args.handoff_file)
+    return [float(token.strip()) for token in args.handoff_times.split(",") if token.strip()]
+
+
 def _parse_args() -> argparse.Namespace:
     """Parse the input CSV and output metrics path."""
     parser = argparse.ArgumentParser(description="Compute unmet-Interest metrics from NDN CSV.")
     parser.add_argument("input_csv", help="Input CSV file from tshark.")
     parser.add_argument("metrics_output", help="Output unmet-Interest metrics text file.")
-    parser.add_argument("--handoff-times", default="120, 240", help="Comma-separated handoff times.")
+    parser.add_argument(
+        "--handoff-times",
+        default="120, 240",
+        help="Comma-separated handoff times (fallback when --handoff-file is absent).",
+    )
+    parser.add_argument(
+        "--handoff-file",
+        default=None,
+        help="Path to handoffs.txt; when present, its rel_time column overrides --handoff-times.",
+    )
     parser.add_argument("--window", type=float, default=10.0, help="Window length after each handoff.")
     parser.add_argument("--prefix", default="/example/LiveStream", help="Application prefix to include.")
     parser.add_argument(
@@ -112,7 +150,7 @@ def main() -> int:
     df["base_name"] = df["name"].apply(_normalize_name)
 
     start_time = df["time"].min()
-    handoffs = [float(t.strip()) for t in args.handoff_times.split(",")]
+    handoffs = _resolve_handoff_times(args)
     interests = df[df["type"] == "interest"][["time", "base_name"]].sort_values("time")
     data = df[df["type"] == "data"][["time", "base_name"]].sort_values("time")
     if interests.empty:

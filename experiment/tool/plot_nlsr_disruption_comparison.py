@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Plot per-handoff disruption comparison across baseline parameter sets.
+Plot disruption-time min/max/mean comparison across baseline parameter sets.
 """
 
 from __future__ import annotations
@@ -8,7 +8,7 @@ from __future__ import annotations
 import argparse
 import csv
 import os
-from typing import List
+from typing import List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -23,12 +23,17 @@ AXIS_TITLE_SIZE = 8
 TICK_LABEL_SIZE = 8
 LEGEND_SIZE = 8
 FIGURE_TITLE_SIZE = 8
-BAR_WIDTH = 0.35
+RANGE_BAR_WIDTH = 0.55
+RANGE_BAR_COLOR = "#7fb8e0"
+RANGE_BAR_EDGECOLOR = "#0072B2"
+MEAN_LINE_COLOR = "#0b3d66"
+MEAN_LINE_WIDTH = 1.4
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse the summary CSV input and the output PDF path."""
     parser = argparse.ArgumentParser(
-        description="Plot per-handoff disruption comparison across baseline parameter sets."
+        description="Plot min/max/mean disruption across baseline parameter sets."
     )
     parser.add_argument("--input", required=True, help="Input summary CSV.")
     parser.add_argument("--output", required=True, help="Output PDF path.")
@@ -36,10 +41,12 @@ def parse_args() -> argparse.Namespace:
 
 
 def _paper_figure_size():
+    """Return the figure size in inches for a single-column paper figure."""
     return PAPER_FIGURE_WIDTH_CM * CM_TO_INCH, PAPER_FIGURE_HEIGHT_CM * CM_TO_INCH
 
 
 def _configure_paper_style():
+    """Configure paper figure style consistent with other plots."""
     plt.style.use("seaborn-v0_8-whitegrid")
     plt.rcParams.update({
         "font.size": FONT_SIZE,
@@ -55,19 +62,26 @@ def _configure_paper_style():
 
 
 def _read_rows(path: str) -> List[dict]:
+    """Read the summary CSV into a list of row dictionaries."""
     with open(path, "r", encoding="utf-8", newline="") as input_file:
         return list(csv.DictReader(input_file))
 
 
-def _to_optional_float(raw: str) -> float | None:
-    """Convert a CSV field to float, returning None for unavailable values."""
+def _to_optional_float(raw: str) -> Optional[float]:
+    """Convert a CSV field to float, returning None for 'n/a'/empty."""
+    if raw is None:
+        return None
+    text = raw.strip()
+    if not text or text.lower() == "n/a":
+        return None
     try:
-        return float(raw)
-    except (TypeError, ValueError):
+        return float(text)
+    except ValueError:
         return None
 
 
 def _safe_empty_output(path: str) -> None:
+    """Write a valid empty PDF placeholder when input data is unusable."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     _configure_paper_style()
     fig, _ = plt.subplots(figsize=_paper_figure_size())
@@ -75,7 +89,22 @@ def _safe_empty_output(path: str) -> None:
     plt.close(fig)
 
 
+def _collect_valid_rows(rows: List[dict]) -> List[Tuple[str, float, float, float]]:
+    """Return rows where min/max/mean are all numeric, preserving CSV order."""
+    valid: List[Tuple[str, float, float, float]] = []
+    for row in rows:
+        label = row.get("profile_label", "").strip() or row.get("profile", "").strip()
+        dis_min = _to_optional_float(row.get("disruption_min_ms", ""))
+        dis_max = _to_optional_float(row.get("disruption_max_ms", ""))
+        dis_mean = _to_optional_float(row.get("disruption_mean_ms", ""))
+        if dis_min is None or dis_max is None or dis_mean is None:
+            continue
+        valid.append((label, dis_min, dis_max, dis_mean))
+    return valid
+
+
 def main() -> int:
+    """Render the disruption-range comparison figure."""
     args = parse_args()
     os.makedirs(os.path.dirname(args.output), exist_ok=True)
 
@@ -84,35 +113,49 @@ def main() -> int:
         return 0
 
     rows = _read_rows(args.input)
-    if not rows:
-        _safe_empty_output(args.output)
-        return 0
-
-    valid_rows = [
-        (row, _to_optional_float(row["handoff_1_disruption_ms"]), _to_optional_float(row["handoff_2_disruption_ms"]))
-        for row in rows
-    ]
-    valid_rows = [(row, h1, h2) for row, h1, h2 in valid_rows if h1 is not None and h2 is not None]
+    valid_rows = _collect_valid_rows(rows)
     if not valid_rows:
         _safe_empty_output(args.output)
         return 0
 
-    labels = [row["profile_label"] for row, _, _ in valid_rows]
-    handoff_1_values = [h1 for _, h1, _ in valid_rows]
-    handoff_2_values = [h2 for _, _, h2 in valid_rows]
+    labels = [item[0] for item in valid_rows]
+    mins = [item[1] for item in valid_rows]
+    maxs = [item[2] for item in valid_rows]
+    means = [item[3] for item in valid_rows]
     x = np.arange(len(valid_rows))
 
     _configure_paper_style()
     fig, ax = plt.subplots(figsize=_paper_figure_size())
-    ax.bar(x - BAR_WIDTH / 2, handoff_1_values, BAR_WIDTH, label="Handoff 1", color="steelblue")
-    ax.bar(x + BAR_WIDTH / 2, handoff_2_values, BAR_WIDTH, label="Handoff 2", color="darkorange")
+
+    heights = [hi - lo for lo, hi in zip(mins, maxs)]
+    ax.bar(
+        x,
+        heights,
+        width=RANGE_BAR_WIDTH,
+        bottom=mins,
+        color=RANGE_BAR_COLOR,
+        edgecolor=RANGE_BAR_EDGECOLOR,
+        linewidth=0.8,
+        label="Min-max range",
+    )
+
+    half_width = RANGE_BAR_WIDTH / 2.0
+    ax.hlines(
+        means,
+        x - half_width,
+        x + half_width,
+        color=MEAN_LINE_COLOR,
+        linewidth=MEAN_LINE_WIDTH,
+        label="Mean",
+    )
+
     ax.set_xlabel("Baseline Parameter Group")
     ax.set_ylabel("Disruption Time (ms)")
-    ax.set_title("Per-Handoff Disruption Across Baseline Parameter Sets")
+    ax.set_title("Per-Group Disruption Range and Mean")
     ax.set_xticks(x)
     ax.set_xticklabels(labels)
     ax.set_ylim(bottom=0)
-    ax.legend()
+    ax.legend(loc="upper right", frameon=False)
     ax.grid(True, axis="y", linestyle="--", alpha=0.7)
     fig.tight_layout()
     plt.savefig(args.output)

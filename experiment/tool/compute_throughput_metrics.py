@@ -67,14 +67,20 @@ def _percentile(values: List[int], percentile: float) -> float:
 
 def _write_metrics(metrics_output: str, values: List[int], seconds: List[int]) -> None:
     """Write throughput metrics to the requested text output."""
+    avg: float
+    peak: float
+    p95: float
+    total_bytes: int
+    duration: int
     if not values or not seconds:
-        avg = peak = p95 = total_bytes = 0
+        avg = peak = p95 = 0.0
+        total_bytes = 0
         duration = 0
     else:
         total_bytes = sum(values)
         duration = max(seconds[-1] - seconds[0] + 1, 1)
         avg = total_bytes / duration
-        peak = max(values)
+        peak = float(max(values))
         p95 = _percentile(values, 95)
 
     _ensure_parent_dir(metrics_output)

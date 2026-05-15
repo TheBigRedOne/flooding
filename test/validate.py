@@ -15,7 +15,7 @@ import subprocess
 import sys
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 RESULTS_DIR = os.path.join(TEST_DIR, 'results')
@@ -577,8 +577,8 @@ def validate_s4() -> None:
         return False
 
     # Build first in/out per nonce per node
-    first_in = {node: {} for node in nodes}
-    first_out = {node: {} for node in nodes}
+    first_in: Dict[str, Dict[int, Tuple[int, int]]] = {node: {} for node in nodes}
+    first_out: Dict[str, Dict[int, Tuple[int, int]]] = {node: {} for node in nodes}
     for node in nodes:
         for frame_no, direction, hop, nonce, name in records_by_node[node]:
             if direction == 'in' and nonce not in first_in[node]:
@@ -587,7 +587,7 @@ def validate_s4() -> None:
                 first_out[node][nonce] = (frame_no, hop)
 
     # Candidate nonces (mode A): seen inbound on >=3 nodes, else >=2
-    nonce_in_nodes = {}
+    nonce_in_nodes: Dict[int, Set[str]] = {}
     for node in nodes:
         for nonce in first_in[node]:
             nonce_in_nodes.setdefault(nonce, set()).add(node)
@@ -598,7 +598,7 @@ def validate_s4() -> None:
 
     # Candidate nonces (mode B fallback): r2 outbound present AND at least one downstream inbound
     r2_out_nonces = set(first_out['r2'].keys())
-    downstream_in_nonces = set()
+    downstream_in_nonces: Set[int] = set()
     for node in ['r3', 'r4', 'r5']:
         downstream_in_nonces.update(first_in[node].keys())
     candidates_fallback = [n for n in r2_out_nonces if n in downstream_in_nonces]

@@ -61,6 +61,25 @@ To add a new baseline group:
 `BASELINE_DEFAULT_DIR` identifies the baseline group used for the main
 baseline-versus-solution comparison.
 
+## Static Typing (optional)
+
+`make mypy` runs static typing against the host-side plotting and validation
+scripts. The Makefile invokes whichever `python3` is on `PATH`; install mypy
+and the runtime dependencies into the environment of your choice before running
+the target.
+
+A convenience helper is provided for a venv-based setup:
+
+```bash
+sh experiment/tool/setup_venv.sh
+. experiment/tool/.venv/bin/activate                   # Linux/macOS
+# .\experiment\tool\.venv\Scripts\Activate.ps1         # Windows PowerShell
+make mypy
+```
+
+Any other environment (conda, system pip, pipx, ...) works equally well as
+long as `python3 -m mypy` is functional once activated.
+
 ## Cleaning Up
 
 - To remove all experiment results, generated figures, and the paper PDF:

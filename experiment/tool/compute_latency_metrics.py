@@ -32,6 +32,36 @@ def _write_metrics(metrics_output: str, disruption_times: List[float]) -> None:
             metrics_file.write(f"Handoff {index} Disruption Time: {disruption:.2f} ms\n")
 
 
+def _load_handoff_times_from_file(path: str) -> List[float]:
+    """Read relative handoff times (seconds) from a handoffs.txt file.
+
+    The file is the tab-separated artifact written by exp.py. The first row is
+    a header; each subsequent row carries `index abs_time rel_time from_node
+    to_node interval_s`. Only the rel_time column is consumed here.
+    """
+    handoff_times: List[float] = []
+    with open(path, "r", encoding="utf-8") as input_file:
+        for raw_line in input_file:
+            line = raw_line.strip()
+            if not line or line.startswith("#") or line.lower().startswith("index"):
+                continue
+            tokens = line.split()
+            if len(tokens) < 3:
+                continue
+            try:
+                handoff_times.append(float(tokens[2]))
+            except ValueError:
+                continue
+    return handoff_times
+
+
+def _resolve_handoff_times(args: argparse.Namespace) -> List[float]:
+    """Resolve the handoff time list from either --handoff-file or --handoff-times."""
+    if args.handoff_file and os.path.exists(args.handoff_file):
+        return _load_handoff_times_from_file(args.handoff_file)
+    return [float(token.strip()) for token in args.handoff_times.split(",") if token.strip()]
+
+
 def _parse_args() -> argparse.Namespace:
     """Parse the input CSV and output metrics path."""
     parser = argparse.ArgumentParser(description="Compute service-disruption metrics from NDN CSV.")
@@ -40,7 +70,12 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--handoff-times",
         default="120, 240",
-        help="Comma-separated handoff times in seconds.",
+        help="Comma-separated handoff times in seconds (fallback when --handoff-file is absent).",
+    )
+    parser.add_argument(
+        "--handoff-file",
+        default=None,
+        help="Path to handoffs.txt; when present, its rel_time column overrides --handoff-times.",
     )
     parser.add_argument(
         "--search-window",
@@ -84,7 +119,12 @@ def main() -> int:
 
     df["type"] = df["type"].str.lower()
     start_time = df["time"].min()
-    handoffs_absolute = [start_time + float(t.strip()) for t in args.handoff_times.split(",")]
+    handoff_relatives = _resolve_handoff_times(args)
+    if not handoff_relatives:
+        print("Warning: No handoff times available. Skipping analysis.")
+        _write_empty_output(args.metrics_output)
+        return 0
+    handoffs_absolute = [start_time + value for value in handoff_relatives]
 
     all_data_times = np.sort(df[df["type"] == "data"]["time"].unique())
     disruption_times: List[float] = []

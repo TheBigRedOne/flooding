@@ -194,14 +194,20 @@ def _write_metrics(metrics_output: str | None, values: List[int], seconds: List[
     """Write throughput metrics to the requested text output."""
     if metrics_output is None:
         return
+    avg: float
+    peak: float
+    p95: float
+    total_bytes: int
+    duration: int
     if not values or not seconds:
-        avg = peak = p95 = total_bytes = 0
+        avg = peak = p95 = 0.0
+        total_bytes = 0
         duration = 0
     else:
         total_bytes = sum(values)
         duration = max(seconds[-1] - seconds[0] + 1, 1)
         avg = total_bytes / duration
-        peak = max(values)
+        peak = float(max(values))
         p95 = _percentile(values, 95)
 
     _ensure_parent_dir(metrics_output)
@@ -224,11 +230,41 @@ def _safe_empty_outputs(plot_output: str | None, metrics_output: str | None) -> 
         plt.close(fig)
 
 
+def _load_handoff_times_from_file(path: str) -> List[float]:
+    """Read relative handoff times (seconds) from a handoffs.txt file."""
+    handoff_times: List[float] = []
+    with open(path, "r", encoding="utf-8") as input_file:
+        for raw_line in input_file:
+            line = raw_line.strip()
+            if not line or line.startswith("#") or line.lower().startswith("index"):
+                continue
+            tokens = line.split()
+            if len(tokens) < 3:
+                continue
+            try:
+                handoff_times.append(float(tokens[2]))
+            except ValueError:
+                continue
+    return handoff_times
+
+
+def _resolve_handoff_times(
+    handoff_file: str | None,
+    handoff_times_raw: str | None,
+) -> List[float]:
+    """Resolve handoff times preferring the on-disk file when available."""
+    if handoff_file and os.path.exists(handoff_file):
+        return _load_handoff_times_from_file(handoff_file)
+    if not handoff_times_raw:
+        return []
+    return [float(token.strip()) for token in handoff_times_raw.split(",") if token.strip()]
+
+
 def _write_plot(
     plot_output: str | None,
     rel_times: List[int],
     values: List[int],
-    handoff_times: str | None,
+    handoff_times: List[float],
     window: int,
 ) -> None:
     """Write the throughput time-series figure to the requested PDF output."""
@@ -245,13 +281,11 @@ def _write_plot(
         linewidth=THROUGHPUT_LINE_WIDTH,
     )
 
-    if handoff_times:
-        handoffs = [float(t.strip()) for t in handoff_times.split(",") if t.strip()]
-        for idx, handoff in enumerate(handoffs):
-            start = handoff
-            end = handoff + window
-            label = "Handoff Window" if idx == 0 else None
-            ax.axvspan(start, end, color="orange", alpha=HANDOFF_SHADE_ALPHA, label=label)
+    for idx, handoff in enumerate(handoff_times):
+        start = handoff
+        end = handoff + window
+        label = "Handoff Window" if idx == 0 else None
+        ax.axvspan(start, end, color="orange", alpha=HANDOFF_SHADE_ALPHA, label=label)
 
     ax.set_xlabel("Time (seconds)")
     ax.set_ylabel("Throughput (bytes/s)")
@@ -263,7 +297,9 @@ def _write_plot(
     _set_nonnegative_ylim_with_headroom(ax, values)
     ax.yaxis.set_major_locator(MaxNLocator(nbins=Y_TICK_BINS))
     ax.xaxis.set_major_locator(MaxNLocator(nbins=X_TICK_BINS, integer=True))
-    ax.get_xaxis().get_major_formatter().set_useOffset(False)
+    x_formatter = ax.get_xaxis().get_major_formatter()
+    if isinstance(x_formatter, ScalarFormatter):
+        x_formatter.set_useOffset(False)
 
     fig.tight_layout()
     fig.savefig(plot_output, bbox_inches="tight")
@@ -274,7 +310,16 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Plot throughput from tshark CSV.")
     parser.add_argument("input_csv", help="Path to tshark CSV.")
     parser.add_argument("plot_output", help="Path to the throughput PDF output.")
-    parser.add_argument("--handoff-times", default="120, 240", help="Comma-separated handoff times in seconds (relative).")
+    parser.add_argument(
+        "--handoff-times",
+        default="120, 240",
+        help="Comma-separated handoff times (fallback when --handoff-file is absent).",
+    )
+    parser.add_argument(
+        "--handoff-file",
+        default=None,
+        help="Path to handoffs.txt; when present, its rel_time column overrides --handoff-times.",
+    )
     parser.add_argument("--window", type=int, default=10, help="Shaded window length after each handoff (seconds).")
     args = parser.parse_args()
 
@@ -301,7 +346,8 @@ def main() -> None:
     start_second = full_seconds[0]
     rel_times = [sec - start_second for sec in full_seconds]
 
-    _write_plot(args.plot_output, rel_times, values, args.handoff_times, args.window)
+    handoff_times = _resolve_handoff_times(args.handoff_file, args.handoff_times)
+    _write_plot(args.plot_output, rel_times, values, handoff_times, args.window)
 
 
 if __name__ == "__main__":

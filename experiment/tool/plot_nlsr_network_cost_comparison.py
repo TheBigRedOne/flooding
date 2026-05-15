@@ -56,10 +56,15 @@ def _read_rows(path: str) -> List[dict]:
         return list(csv.DictReader(input_file))
 
 
-def _to_optional_float(raw: str) -> float | None:
-    """Convert a CSV field to float, returning None for unavailable values."""
+def _to_optional_float(raw: str | None) -> float | None:
+    """Convert a CSV field to float, returning None for 'n/a' or empty values."""
+    if raw is None:
+        return None
+    text = raw.strip()
+    if not text or text.lower() == "n/a":
+        return None
     try:
-        return float(raw)
+        return float(text)
     except (TypeError, ValueError):
         return None
 
@@ -86,7 +91,11 @@ def main() -> int:
         return 0
 
     valid_rows = [
-        (row, _to_optional_float(row["full_run_fcr"]), _to_optional_float(row["full_run_control_bytes"]))
+        (
+            row,
+            _to_optional_float(row.get("full_run_fcr")),
+            _to_optional_float(row.get("full_run_control_bytes")),
+        )
         for row in rows
     ]
     valid_rows = [(row, fcr, control) for row, fcr, control in valid_rows if fcr is not None and control is not None]

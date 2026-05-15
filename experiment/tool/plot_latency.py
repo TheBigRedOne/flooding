@@ -71,10 +71,15 @@ def _write_plot(plot_output: str | None, disruption_times: List[float]) -> None:
         return
     _ensure_parent_dir(plot_output)
     fig, ax = plt.subplots(figsize=_paper_figure_size())
-    handoff_labels = [f'Handoff {i+1}' for i in range(len(disruption_times))]
+    handoff_labels = [str(i + 1) for i in range(len(disruption_times))]
     ax.bar(handoff_labels, disruption_times, color=BAR_COLOR)
+    if disruption_times:
+        mean_value = sum(disruption_times) / len(disruption_times)
+        ax.axhline(mean_value, color='gray', linestyle='--', linewidth=1.0, label=f'mean={mean_value:.0f} ms')
+        ax.legend(loc='upper right', frameon=False)
+    ax.set_xlabel('Handoff index')
     ax.set_ylabel('Service Disruption Time (ms)')
-    ax.set_title('Per-Handoff Service Disruption Time')
+    ax.set_title('Per-Handoff Service Disruption')
     ax.set_ylim(bottom=0)
     ax.grid(axis='y', linestyle='--', alpha=0.7)
     fig.tight_layout()

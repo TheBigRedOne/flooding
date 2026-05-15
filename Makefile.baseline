@@ -2,8 +2,13 @@
 
 BASELINE_DEFAULT_DIR = results/baseline/g0-h60-a10-r15
 
-BASELINE_PROFILE_NAMES = g0-h60-a10-r15,g1-h56-a9-r14,g2-h52-a9-r13,g3-h48-a8-r12,g4-h44-a7-r11,g5-h40-a7-r10,g6-h36-a6-r9,g7-h30-a5-r8,x1-h24-a4-r6,x2-h18-a3-r5
+BASELINE_PROFILE_NAMES = g0-h60-a10-r15,g1-h54-a9-r14,g2-h48-a8-r12,g3-h42-a7-r10,g4-h36-a6-r9
 BASELINE_DEFAULT_PROFILE = g0-h60-a10-r15
+
+# Shared handoff loop configuration: K=16 toggles along a double round trip
+# acc2 -> acc3 -> acc4 -> acc5 -> acc6 -> acc5 -> acc4 -> acc3 -> acc2 (x2).
+BASELINE_HANDOFF_SEQUENCE = acc2,acc3,acc4,acc5,acc6,acc5,acc4,acc3,acc2,acc3,acc4,acc5,acc6,acc5,acc4,acc3,acc2
+BASELINE_HANDOFF_ENV = NLSR_HANDOFF_COUNT='16' NLSR_HANDOFF_INTERVAL_BASE='90' NLSR_HANDOFF_INTERVAL_JITTER='60' NLSR_HANDOFF_SEQUENCE='$(BASELINE_HANDOFF_SEQUENCE)'
 
 BASELINE_EXPERIMENT_INPUTS = box/baseline/baseline.$(PROVIDER).box \
                              experiment/app/producer.cpp \
@@ -25,83 +30,49 @@ BASELINE_EXPERIMENT_OUTPUTS = results/baseline/XXX/consumer_capture.pcap \
                               results/baseline/XXX/pcap_nodes/acc6.pcap \
                               results/baseline/XXX/pcap_nodes/producer.pcap \
                               results/baseline/XXX/pcap_nodes/consumer.pcap \
-                              results/baseline/XXX/params.txt
+                              results/baseline/XXX/params.txt \
+                              results/baseline/XXX/handoffs.txt
 
 BASELINE_RAW_OUTPUTS = $(subst XXX,g0-h60-a10-r15,$(BASELINE_EXPERIMENT_OUTPUTS)) \
-                       $(subst XXX,g1-h56-a9-r14,$(BASELINE_EXPERIMENT_OUTPUTS)) \
-                       $(subst XXX,g2-h52-a9-r13,$(BASELINE_EXPERIMENT_OUTPUTS)) \
-                       $(subst XXX,g3-h48-a8-r12,$(BASELINE_EXPERIMENT_OUTPUTS)) \
-                       $(subst XXX,g4-h44-a7-r11,$(BASELINE_EXPERIMENT_OUTPUTS)) \
-                       $(subst XXX,g5-h40-a7-r10,$(BASELINE_EXPERIMENT_OUTPUTS)) \
-                       $(subst XXX,g6-h36-a6-r9,$(BASELINE_EXPERIMENT_OUTPUTS)) \
-                       $(subst XXX,g7-h30-a5-r8,$(BASELINE_EXPERIMENT_OUTPUTS)) \
-                       $(subst XXX,x1-h24-a4-r6,$(BASELINE_EXPERIMENT_OUTPUTS)) \
-                       $(subst XXX,x2-h18-a3-r5,$(BASELINE_EXPERIMENT_OUTPUTS))
+                       $(subst XXX,g1-h54-a9-r14,$(BASELINE_EXPERIMENT_OUTPUTS)) \
+                       $(subst XXX,g2-h48-a8-r12,$(BASELINE_EXPERIMENT_OUTPUTS)) \
+                       $(subst XXX,g3-h42-a7-r10,$(BASELINE_EXPERIMENT_OUTPUTS)) \
+                       $(subst XXX,g4-h36-a6-r9,$(BASELINE_EXPERIMENT_OUTPUTS))
 
 BASELINE_PROFILE_SUMMARY_INPUTS = results/baseline/g0-h60-a10-r15/params.txt \
                                   results/baseline/g0-h60-a10-r15/disruption_metrics.txt \
                                   results/baseline/g0-h60-a10-r15/overhead_total.txt \
-                                  results/baseline/g1-h56-a9-r14/params.txt \
-                                  results/baseline/g1-h56-a9-r14/disruption_metrics.txt \
-                                  results/baseline/g1-h56-a9-r14/overhead_total.txt \
-                                  results/baseline/g2-h52-a9-r13/params.txt \
-                                  results/baseline/g2-h52-a9-r13/disruption_metrics.txt \
-                                  results/baseline/g2-h52-a9-r13/overhead_total.txt \
-                                  results/baseline/g3-h48-a8-r12/params.txt \
-                                  results/baseline/g3-h48-a8-r12/disruption_metrics.txt \
-                                  results/baseline/g3-h48-a8-r12/overhead_total.txt \
-                                  results/baseline/g4-h44-a7-r11/params.txt \
-                                  results/baseline/g4-h44-a7-r11/disruption_metrics.txt \
-                                  results/baseline/g4-h44-a7-r11/overhead_total.txt \
-                                  results/baseline/g5-h40-a7-r10/params.txt \
-                                  results/baseline/g5-h40-a7-r10/disruption_metrics.txt \
-                                  results/baseline/g5-h40-a7-r10/overhead_total.txt \
-                                  results/baseline/g6-h36-a6-r9/params.txt \
-                                  results/baseline/g6-h36-a6-r9/disruption_metrics.txt \
-                                  results/baseline/g6-h36-a6-r9/overhead_total.txt \
-                                  results/baseline/g7-h30-a5-r8/params.txt \
-                                  results/baseline/g7-h30-a5-r8/disruption_metrics.txt \
-                                  results/baseline/g7-h30-a5-r8/overhead_total.txt \
-                                  results/baseline/x1-h24-a4-r6/params.txt \
-                                  results/baseline/x1-h24-a4-r6/disruption_metrics.txt \
-                                  results/baseline/x1-h24-a4-r6/overhead_total.txt \
-                                  results/baseline/x2-h18-a3-r5/params.txt \
-                                  results/baseline/x2-h18-a3-r5/disruption_metrics.txt \
-                                  results/baseline/x2-h18-a3-r5/overhead_total.txt
+                                  results/baseline/g1-h54-a9-r14/params.txt \
+                                  results/baseline/g1-h54-a9-r14/disruption_metrics.txt \
+                                  results/baseline/g1-h54-a9-r14/overhead_total.txt \
+                                  results/baseline/g2-h48-a8-r12/params.txt \
+                                  results/baseline/g2-h48-a8-r12/disruption_metrics.txt \
+                                  results/baseline/g2-h48-a8-r12/overhead_total.txt \
+                                  results/baseline/g3-h42-a7-r10/params.txt \
+                                  results/baseline/g3-h42-a7-r10/disruption_metrics.txt \
+                                  results/baseline/g3-h42-a7-r10/overhead_total.txt \
+                                  results/baseline/g4-h36-a6-r9/params.txt \
+                                  results/baseline/g4-h36-a6-r9/disruption_metrics.txt \
+                                  results/baseline/g4-h36-a6-r9/overhead_total.txt
 
 BASELINE_PROFILE_COMPARE_OUTPUTS = results/baseline/summary.csv \
                                    results/baseline/disruption_comparison.pdf \
                                    results/baseline/network_cost_comparison.pdf
 
 $(subst XXX,g0-h60-a10-r15,$(BASELINE_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(BASELINE_EXPERIMENT_INPUTS)
-	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="NLSR_HELLO_INTERVAL='60' NLSR_ADJ_LSA_BUILD_INTERVAL='10' NLSR_ROUTING_CALC_INTERVAL='15' NLSR_TUNING_PROFILE='g0-h60-a10-r15' make all" sh $^ $@
+	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="NLSR_HELLO_INTERVAL='60' NLSR_ADJ_LSA_BUILD_INTERVAL='10' NLSR_ROUTING_CALC_INTERVAL='15' NLSR_TUNING_PROFILE='g0-h60-a10-r15' $(BASELINE_HANDOFF_ENV) make all" sh $^ $@
 
-$(subst XXX,g1-h56-a9-r14,$(BASELINE_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(BASELINE_EXPERIMENT_INPUTS)
-	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="NLSR_HELLO_INTERVAL='56' NLSR_ADJ_LSA_BUILD_INTERVAL='9' NLSR_ROUTING_CALC_INTERVAL='14' NLSR_TUNING_PROFILE='g1-h56-a9-r14' make all" sh $^ $@
+$(subst XXX,g1-h54-a9-r14,$(BASELINE_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(BASELINE_EXPERIMENT_INPUTS)
+	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="NLSR_HELLO_INTERVAL='54' NLSR_ADJ_LSA_BUILD_INTERVAL='9' NLSR_ROUTING_CALC_INTERVAL='14' NLSR_TUNING_PROFILE='g1-h54-a9-r14' $(BASELINE_HANDOFF_ENV) make all" sh $^ $@
 
-$(subst XXX,g2-h52-a9-r13,$(BASELINE_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(BASELINE_EXPERIMENT_INPUTS)
-	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="NLSR_HELLO_INTERVAL='52' NLSR_ADJ_LSA_BUILD_INTERVAL='9' NLSR_ROUTING_CALC_INTERVAL='13' NLSR_TUNING_PROFILE='g2-h52-a9-r13' make all" sh $^ $@
+$(subst XXX,g2-h48-a8-r12,$(BASELINE_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(BASELINE_EXPERIMENT_INPUTS)
+	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="NLSR_HELLO_INTERVAL='48' NLSR_ADJ_LSA_BUILD_INTERVAL='8' NLSR_ROUTING_CALC_INTERVAL='12' NLSR_TUNING_PROFILE='g2-h48-a8-r12' $(BASELINE_HANDOFF_ENV) make all" sh $^ $@
 
-$(subst XXX,g3-h48-a8-r12,$(BASELINE_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(BASELINE_EXPERIMENT_INPUTS)
-	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="NLSR_HELLO_INTERVAL='48' NLSR_ADJ_LSA_BUILD_INTERVAL='8' NLSR_ROUTING_CALC_INTERVAL='12' NLSR_TUNING_PROFILE='g3-h48-a8-r12' make all" sh $^ $@
+$(subst XXX,g3-h42-a7-r10,$(BASELINE_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(BASELINE_EXPERIMENT_INPUTS)
+	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="NLSR_HELLO_INTERVAL='42' NLSR_ADJ_LSA_BUILD_INTERVAL='7' NLSR_ROUTING_CALC_INTERVAL='10' NLSR_TUNING_PROFILE='g3-h42-a7-r10' $(BASELINE_HANDOFF_ENV) make all" sh $^ $@
 
-$(subst XXX,g4-h44-a7-r11,$(BASELINE_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(BASELINE_EXPERIMENT_INPUTS)
-	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="NLSR_HELLO_INTERVAL='44' NLSR_ADJ_LSA_BUILD_INTERVAL='7' NLSR_ROUTING_CALC_INTERVAL='11' NLSR_TUNING_PROFILE='g4-h44-a7-r11' make all" sh $^ $@
-
-$(subst XXX,g5-h40-a7-r10,$(BASELINE_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(BASELINE_EXPERIMENT_INPUTS)
-	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="NLSR_HELLO_INTERVAL='40' NLSR_ADJ_LSA_BUILD_INTERVAL='7' NLSR_ROUTING_CALC_INTERVAL='10' NLSR_TUNING_PROFILE='g5-h40-a7-r10' make all" sh $^ $@
-
-$(subst XXX,g6-h36-a6-r9,$(BASELINE_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(BASELINE_EXPERIMENT_INPUTS)
-	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="NLSR_HELLO_INTERVAL='36' NLSR_ADJ_LSA_BUILD_INTERVAL='6' NLSR_ROUTING_CALC_INTERVAL='9' NLSR_TUNING_PROFILE='g6-h36-a6-r9' make all" sh $^ $@
-
-$(subst XXX,g7-h30-a5-r8,$(BASELINE_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(BASELINE_EXPERIMENT_INPUTS)
-	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="NLSR_HELLO_INTERVAL='30' NLSR_ADJ_LSA_BUILD_INTERVAL='5' NLSR_ROUTING_CALC_INTERVAL='8' NLSR_TUNING_PROFILE='g7-h30-a5-r8' make all" sh $^ $@
-
-$(subst XXX,x1-h24-a4-r6,$(BASELINE_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(BASELINE_EXPERIMENT_INPUTS)
-	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="NLSR_HELLO_INTERVAL='24' NLSR_ADJ_LSA_BUILD_INTERVAL='4' NLSR_ROUTING_CALC_INTERVAL='6' NLSR_TUNING_PROFILE='x1-h24-a4-r6' make all" sh $^ $@
-
-$(subst XXX,x2-h18-a3-r5,$(BASELINE_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(BASELINE_EXPERIMENT_INPUTS)
-	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="NLSR_HELLO_INTERVAL='18' NLSR_ADJ_LSA_BUILD_INTERVAL='3' NLSR_ROUTING_CALC_INTERVAL='5' NLSR_TUNING_PROFILE='x2-h18-a3-r5' make all" sh $^ $@
+$(subst XXX,g4-h36-a6-r9,$(BASELINE_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(BASELINE_EXPERIMENT_INPUTS)
+	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="NLSR_HELLO_INTERVAL='36' NLSR_ADJ_LSA_BUILD_INTERVAL='6' NLSR_ROUTING_CALC_INTERVAL='9' NLSR_TUNING_PROFILE='g4-h36-a6-r9' $(BASELINE_HANDOFF_ENV) make all" sh $^ $@
 
 
 # Rules to process outputs from baseline experiments.
@@ -126,29 +97,29 @@ results/baseline/%/network_overhead.csv: experiment/tool/extract_overhead_csv.py
 results/baseline/%/disruption_times.pdf: experiment/tool/plot_latency.py results/baseline/%/disruption_metrics.txt
 	python3 $^ $@
 
-results/baseline/%/disruption_metrics.txt: experiment/tool/compute_latency_metrics.py results/baseline/%/consumer_capture.csv
-	python3 $^ $@
+results/baseline/%/disruption_metrics.txt: experiment/tool/compute_latency_metrics.py results/baseline/%/consumer_capture.csv results/baseline/%/handoffs.txt
+	python3 experiment/tool/compute_latency_metrics.py results/baseline/$*/consumer_capture.csv $@ --handoff-file results/baseline/$*/handoffs.txt
 
 results/baseline/%/loss_comparison.pdf: experiment/tool/plot_loss.py results/baseline/%/loss_ratio.txt
 	python3 $^ $@
 
-results/baseline/%/loss_ratio.txt: experiment/tool/compute_loss_metrics.py results/baseline/%/consumer_capture.csv
-	python3 $^ $@
+results/baseline/%/loss_ratio.txt: experiment/tool/compute_loss_metrics.py results/baseline/%/consumer_capture.csv results/baseline/%/handoffs.txt
+	python3 experiment/tool/compute_loss_metrics.py results/baseline/$*/consumer_capture.csv $@ --handoff-file results/baseline/$*/handoffs.txt
 
-results/baseline/%/throughput_timeseries.pdf: experiment/tool/plot_throughput.py results/baseline/%/consumer_capture.csv
-	python3 $^ $@
+results/baseline/%/throughput_timeseries.pdf: experiment/tool/plot_throughput.py results/baseline/%/consumer_capture.csv results/baseline/%/handoffs.txt
+	python3 experiment/tool/plot_throughput.py results/baseline/$*/consumer_capture.csv $@ --handoff-file results/baseline/$*/handoffs.txt
 
 results/baseline/%/throughput_metrics.txt: experiment/tool/compute_throughput_metrics.py results/baseline/%/consumer_capture.csv
 	python3 $^ $@
 
-results/baseline/%/overhead_timeseries.pdf: experiment/tool/plot_overhead.py results/baseline/%/network_overhead.csv
-	python3 $^ $@
+results/baseline/%/overhead_timeseries.pdf: experiment/tool/plot_overhead.py results/baseline/%/network_overhead.csv results/baseline/%/handoffs.txt
+	python3 experiment/tool/plot_overhead.py results/baseline/$*/network_overhead.csv $@ --handoff-file results/baseline/$*/handoffs.txt
 
-results/baseline/%/overhead_summary.pdf: experiment/tool/plot_overhead.py results/baseline/%/network_overhead.csv
-	python3 $^ $@
+results/baseline/%/overhead_summary.pdf: experiment/tool/plot_overhead.py results/baseline/%/network_overhead.csv results/baseline/%/handoffs.txt
+	python3 experiment/tool/plot_overhead.py results/baseline/$*/network_overhead.csv $@ --handoff-file results/baseline/$*/handoffs.txt
 
-results/baseline/%/overhead_total.txt: experiment/tool/compute_overhead_metrics.py results/baseline/%/network_overhead.csv | experiment/tool/plot_overhead.py
-	python3 $^ $@
+results/baseline/%/overhead_total.txt: experiment/tool/compute_overhead_metrics.py results/baseline/%/network_overhead.csv results/baseline/%/handoffs.txt | experiment/tool/plot_overhead.py
+	python3 experiment/tool/compute_overhead_metrics.py results/baseline/$*/network_overhead.csv $@ --handoff-file results/baseline/$*/handoffs.txt
 
 results/baseline/summary.csv: $(BASELINE_PROFILE_SUMMARY_INPUTS) experiment/tool/summarise_nlsr_sensitivity.py | results/baseline
 	python3 experiment/tool/summarise_nlsr_sensitivity.py --root-dir results/baseline --profiles "$(BASELINE_PROFILE_NAMES)" --default-profile "$(BASELINE_DEFAULT_PROFILE)" --output "$@"
