@@ -249,8 +249,7 @@ We implement a typical NDN video producer with our mobility extensions.
 Generated video Data packets have a freshness period of 10 seconds, permitting caching but preventing stale data from clogging the network, and carry a payload of synthetic data matching the size and timing of video content. The packets are digitally signed to ensure integrity and security.
 Content prefixes are advertised via NLSR in the usual manner, with the extensions discussed in Section \ref{sec:solution}.
 
-\csp{In the following paragraph, ``marks the Data packets associated with the mobility event'' is imprecise. Should it be something like ``identifies Data packets that will be sent after the change in attachment point but in response to an Interest received before the change''? Also need to cross-reference the earlier section with details of the mechanism.}
-Upon detecting changes in its network attachment point, the producer marks the Data packets associated with the mobility event to enable OptoFlood to control the flooding and acceleration of convergence. In our deployment, immutable identifiers used for flooding (e.g., Flood-ID and a sequence number for forwarding hints) are carried in signed Data MetaInfo extension TLVs, while hop-by-hop controls (e.g., mobility indication and scoped hop limits) are carried in the LP header and may be updated by intermediate forwarders.
+Upon detecting a change in its network attachment point, the producer flags the Data packets generated in response to Interests received before the move. The flagged packets carry the markers that drive controlled flooding and convergence acceleration as described in Section~\ref{sec:solution:data-flooding}. Immutable identifiers (Flood-ID and the new-face sequence number used for forwarding hints) are placed in signed Data MetaInfo extension TLVs; hop-by-hop controls (mobility indication and scoped hop limits) ride in the LP header and may be rewritten by intermediate forwarders.
 
 % - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 \subsubsection{Consumer Application}
@@ -268,6 +267,8 @@ The links are configured as follows:
     \item \textbf{Consumer/producer to access:} 100~Mbps, 5~ms.
 \end{itemize}
 
+The core, aggregation, and access nodes form the in-network forwarding fabric and are referred to throughout the evaluation as \textbf{relay nodes}; each one runs NFD and NLSR, forwards application Interests toward the producer through FIB lookups, and returns Data along the reverse PIT path to the consumer.
+
 \begin{figure}
     \centering
     \includegraphics[width=1\linewidth]{Topology.pdf}
@@ -284,16 +285,15 @@ The experiments are run in Mini-NDN 0.7.0 \cite{lantz:2010:mininet} with identic
 
 We record packet traces (\texttt{ndndump}) in three places: the consumer, the access switch adjacent to the old PoA, and the access switch adjacent to the new PoA for each hand-off.
  In addition, we retain packet traces on all relay and endpoint nodes for analysis.
-\csp{What is a relay node? This term has not been defined.}
 The simulation runs as containers on a single AMD EPYC server with 64 cores, 128 threads, 512GB memory, running Debian 12 ``bookworm''.
 Where cross-node timing is required, we compute relative times from the consumer's point of view.
 
 We report four complementary views of performance:
 \begin{itemize}
     \item \textbf{Throughput continuity:} delivered consumer throughput over time.
-    \item \textbf{Service disruption time:} for each hand-off, the time between the last Data packet observed before the move and the first Data packet observed after service resumes. \csp{Observed where?}
-    \item \textbf{Unmet-interest ratio:} an Interest is counted as unmet if the first request for a content name is not satisfied by Data within the application deadline; we evaluate this in the 10s interval immediately after each hand-off and compare it with the steady-state remainder of the run. \csp{A ratio compares two quantities: what are the unmet Interests compared with?}
-    \item \textbf{Forwarding overhead:} application relay load across the relay nodes, normalised by delivered Data bytes, together with a decomposition into explicit flooding traffic and NLSR control traffic. \csp{What is a relay node? This term has not been defined.}
+    \item \textbf{Service disruption time:} for each hand-off, the elapsed time at the consumer between the last Data reception before the move and the first Data reception after service resumes.
+    \item \textbf{Unmet-interest ratio:} the number of first-time Interest names whose Data fails to arrive at the consumer within the 6~s application deadline, divided by the number of first-time Interest names issued in the same interval. We report this ratio inside the post-handoff windows (the union of 10~s intervals immediately following each move) and for the steady-state remainder of the run.
+    \item \textbf{Forwarding overhead:} application relay load across the relay nodes, normalised by delivered Data bytes, together with a decomposition into explicit flooding traffic and NLSR control traffic.
 \end{itemize}
 
 % ------------------------------------------------------------------------------
