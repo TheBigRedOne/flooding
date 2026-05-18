@@ -115,16 +115,15 @@ Finally, Section \ref{sec:conclusion} concludes the paper and briefly discusses 
 
 NDN shifts from a host-centric model to a data-centric model, where content is identified by names rather than addresses \cite{trossen:2012:icn-internet, xylomenos:2014:icn-survey}. In NDN, communication relies on two core packet types: Interest Packets, sent by consumers to request data by specifying the content name, and Data Packets, returned by producers containing the requested content and related metadata. Both types of packets follow a concise Type-Length-Value (TLV) encoding, allowing efficient processing and extendability \cite{jacobson:2009:named-content, zhang:2014:ndn}.
 
-NDN packet forwarders maintain a Content Store that caches Data packets; a Pending Interest Table (PIT) that records forwarded Interest packets awaiting the corresponding Data packets, ensuring accurate reverse path forwarding; and a Forwarding Information Base (FIB) that guides Interest packet forwarding \cite{yi:2013:stateful-forwarding, zhang:2014:ndn}.
-When an Interest arrives at a forwarder, it checks the Content Store and returns the cached Data, if it is available. Otherwise, the PIT is checked to aggregate Interests, and if the Interest is new, it is forwarded based on the FIB. Figure~\ref{fig:NDN Packets Processing Flow} illustrates packet forwarding.
-
 \begin{figure}[t]
     \centering
     \includegraphics[width=1\linewidth]{NDN_Packets_Processing_Flow.pdf}
-    \caption{NDN Packets Processing Flow}
+    \caption{NDN Packets Processing Flow \csp{text in this figure is too small}}
     \label{fig:NDN Packets Processing Flow}
 \end{figure}
 
+NDN packet forwarders (Figure \ref{fig:NDN Packets Processing Flow}) maintain a Content Store that caches Data packets; a Pending Interest Table (PIT) that records forwarded Interest packets awaiting the corresponding Data packets, ensuring accurate reverse path forwarding; and a Forwarding Information Base (FIB) that guides Interest packet forwarding \cite{yi:2013:stateful-forwarding, zhang:2014:ndn}.
+When an Interest arrives at a forwarder, it checks the Content Store and returns the cached Data, if it is available. Otherwise, the PIT is checked to aggregate Interests, and if the Interest is new, it is forwarded based on the FIB.
 The Named-Data Link State Routing protocol (NLSR) disseminates routing information via Link State Advertisements (LSAs) that carry link status and available data prefix information that are used to populate the FIB. NLSR adapts to network changes, such as node failures, new node attachments, or topology changes through periodic updates \cite{hoque:2013:nlsr, zhu:2013:chronosync}.
 
 Producer mobility in NDN poses significant challenges, especially in dynamic environments. When a producer moves, it must re-register its data prefix so that NLSR can propagate the new route. Convergence is not immediate and is slow relative to mobility. During the convergence period, Interests may continue to follow stale forwarding state towards the producer's previous attachment point, while the producer begins responding at the new location. This mismatch can leave pre-move Interests pending for an extended time, and can also prevent newly generated Data from being returned successfully along the reverse path. Figure~\ref{fig:NDN Producer Mobility Problem} provides an illustrative example of this handover behaviour.
@@ -132,21 +131,22 @@ Producer mobility in NDN poses significant challenges, especially in dynamic env
 \begin{figure}[t]
     \centering
     \includegraphics[width=1\linewidth]{NDN_Producer_Mobility_Problem.pdf}
-	\caption{NDN Producer Mobility Problem \ryo{should this not be side-by-side with the solution Fig.\ref{fig:NDN Producer Mobility Problem Solution}?}}
+	\caption{NDN Producer Mobility Problem \ryo{should this not be side-by-side with the solution Fig.\ref{fig:NDN Producer Mobility Problem Solution}?} \csp{text in this figure is too small}}
     \label{fig:NDN Producer Mobility Problem}
 \end{figure}
 
 This results in the following.
 \begin{itemize}
-\item \textbf{Increased Latency:} When a producer changes its attachment point, its associated data prefixes must be re-advertised, initiating routing updates starting from the directly connected forwarder. These updates must propagate throughout the network before Interest Packets can be delivered to the producer at its new location. During this convergence period, consumers experience significant communication interruptions, often lasting several seconds or longer \cite{abrar:2023:systematic}. In scenarios requiring low latency, such as live video streaming or real-time conferencing, even brief interruptions degrade the user experience and severely limit the practical utility of NDN \cite{abrar:2023:systematic}. Figure~\ref{fig:NDN Producer Mobility Problem} illustrates how the service resumes only after the routing information has propagated sufficiently for Interests to reach the new attachment point.
+\item \textbf{Increased Latency:} When a producer changes its attachment point, its associated data prefixes must be re-advertised. These updates must propagate throughout the network before Interest Packets can be delivered to the producer at its new location. During this convergence period, consumers experience significant communication interruptions, often lasting several seconds or longer \cite{abrar:2023:systematic}. In scenarios requiring low latency, such as live video streaming or real-time conferencing, even brief interruptions degrade the user experience and severely limit the practical utility of NDN \cite{abrar:2023:systematic}. Figure~\ref{fig:NDN Producer Mobility Problem} illustrates how the service resumes only after the routing information has propagated sufficiently for Interests to reach the new attachment point.
 
 \item \textbf{Packet Loss:} During producer relocation and the subsequent routing convergence process, Interest packets following stale forwarding state may be unable to reach the producer's new location, causing these packets to expire and be discarded. Additionally, Data packets generated in response to Interests that were issued shortly before relocation may fail to return successfully if the reverse path state has been invalidated. In particular, Data may encounter forwarders that do not have a matching PIT entry (e.g., because the Interest was forwarded along a different path, or because the PIT state has timed out), leading to dropped Data and further degradation of communication reliability.
 
 \item \textbf{Increased Network Resource Usage:} Inefficiencies introduced by latency and packet loss also result in increased retransmissions of packets of Interest. These retransmissions consume additional bandwidth and processing resources across the network, potentially impacting overall network performance and affecting other communications.
 \end{itemize}
 
-To test whether NLSR parameter tuning alone can address this limitation, we measured baseline forwarding under three NLSR configurations that progressively reduce the hello interval, adjacency-LSA build interval, and routing calculation interval. Figure~\ref{fig:baseline_nlsr_disruption_comparison} shows that the lowest-interval configuration tested (36/6/9~s) reduces the observed interruption relative to the default configuration in some hand-offs, but still leaves service disruption on the order of tens of seconds. Figure~\ref{fig:baseline_nlsr_network_cost_comparison} shows the corresponding forwarding and control-plane cost. Across the tested configurations, the full-run forwarding-cost ratio remains close to 5.1--5.2, while NLSR control traffic increases as intervals are shortened.
+NLSR has a number of tuneable parameters that can reduce convergence times.  We explore the effects of changing these parameters in the following, measuring baseline forwarding under three NLSR configurations that progressively reduce the hello interval, adjacency-LSA build interval, and routing calculation interval. Figure~\ref{fig:baseline_nlsr_disruption_comparison} shows that the lowest-interval configuration tested (36/6/9~s) reduces the observed interruption relative to the default configuration in some hand-offs, but still leaves service disruption on the order of tens of seconds. Figure~\ref{fig:baseline_nlsr_network_cost_comparison} shows the corresponding forwarding and control-plane cost. Across the tested configurations, the full-run forwarding-cost ratio remains close to 5.1--5.2, while NLSR control traffic increases as intervals are shortened.
 \csp{Need to describe G0-G4 in the previous.}
+\csp{Need to describe the topology, perhaps in general terms with a forward reference.}
 
 \begin{figure}
     \centering
@@ -162,7 +162,7 @@ To test whether NLSR parameter tuning alone can address this limitation, we meas
     \label{fig:baseline_nlsr_network_cost_comparison}
 \end{figure}
 
-These problems highlight the limitations of traditional routing-based approaches, such as NLSR, in handling frequent producer mobility. Addressing these issues effectively requires specialised mechanisms that can rapidly establish temporary communication paths without waiting for global routing convergence.
+These issues highlight the limitations of NLSR in handling frequent producer mobility. Addressing these issues effectively requires specialised mechanisms that can rapidly establish temporary communication paths without waiting for global routing convergence.
 
 % ==============================================================================
 
