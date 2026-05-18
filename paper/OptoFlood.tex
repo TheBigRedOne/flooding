@@ -140,6 +140,7 @@ This results in the following.
 \end{itemize}
 
 To test whether NLSR parameter tuning alone can address this limitation, we measured baseline forwarding under three NLSR configurations that progressively reduce the hello interval, adjacency-LSA build interval, and routing calculation interval. Figure~\ref{fig:baseline_nlsr_disruption_comparison} shows that the lowest-interval configuration tested (36/6/9~s) reduces the observed interruption relative to the default configuration in some hand-offs, but still leaves service disruption on the order of tens of seconds. Figure~\ref{fig:baseline_nlsr_network_cost_comparison} shows the corresponding forwarding and control-plane cost. Across the tested configurations, the full-run forwarding-cost ratio remains close to 5.1--5.2, while NLSR control traffic increases as intervals are shortened.
+\csp{Need to describe G0-G4 in the previous.}
 
 \begin{figure}
     \centering
