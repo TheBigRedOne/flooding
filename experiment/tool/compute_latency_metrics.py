@@ -63,19 +63,20 @@ def _resolve_handoff_times(args: argparse.Namespace) -> List[float]:
 
 
 def _parse_args() -> argparse.Namespace:
-    """Parse the input CSV and output metrics path."""
+    """Parse the input CSV, optional handoff file, and output metrics path."""
     parser = argparse.ArgumentParser(description="Compute service-disruption metrics from NDN CSV.")
     parser.add_argument("input_csv", help="Input CSV file from tshark.")
+    parser.add_argument(
+        "handoff_file",
+        nargs="?",
+        default=None,
+        help="Optional handoffs.txt; when present, its rel_time column overrides --handoff-times.",
+    )
     parser.add_argument("metrics_output", help="Output disruption metrics text file.")
     parser.add_argument(
         "--handoff-times",
         default="120, 240",
-        help="Comma-separated handoff times in seconds (fallback when --handoff-file is absent).",
-    )
-    parser.add_argument(
-        "--handoff-file",
-        default=None,
-        help="Path to handoffs.txt; when present, its rel_time column overrides --handoff-times.",
+        help="Comma-separated handoff times in seconds (fallback when no handoff_file is given).",
     )
     parser.add_argument(
         "--search-window",

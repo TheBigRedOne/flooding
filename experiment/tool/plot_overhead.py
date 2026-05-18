@@ -798,11 +798,11 @@ def main():
     parser = argparse.ArgumentParser(
         description="Plot network forwarding overhead from unified multi-node NDN CSV."
     )
-    parser.add_argument('paths', nargs='+', help='Input CSV, optional limits file, and output PDF path.')
+    parser.add_argument('paths', nargs='+',
+                        help='Positional paths classified by suffix: input CSV (.csv), optional handoffs.txt, '
+                             'optional shared limits file (*limits.txt), output PDF (.pdf).')
     parser.add_argument('--handoff-times', type=str, default='120, 240',
-                        help='Comma-separated list of handoff event times in seconds (fallback when --handoff-file is absent).')
-    parser.add_argument('--handoff-file', type=str, default=None,
-                        help='Path to handoffs.txt; when present, its rel_time column overrides --handoff-times.')
+                        help='Comma-separated handoff times (fallback when no handoffs.txt is present in paths).')
     parser.add_argument('--window', type=float, default=10.0, help='Time window in seconds after a handoff for summary metrics.')
     parser.add_argument('--prefix', type=str, default='/example/LiveStream', help='Application prefix to include.')
     parser.add_argument('--relay-nodes', type=str, default=','.join(DEFAULT_RELAY_NODES),
@@ -817,12 +817,24 @@ def main():
                         help='Path to a text file containing shared time-series and summary y-axis limits.')
     args = parser.parse_args()
 
-    if len(args.paths) not in (2, 3):
-        raise ValueError("positional mode requires input CSV, optional limits file, and output PDF path")
-    input_path = args.paths[0]
-    output_path = args.paths[-1]
-    if len(args.paths) == 3:
-        args.limits_file = args.paths[1]
+    input_path: Optional[str] = None
+    output_path: Optional[str] = None
+    handoff_path: Optional[str] = None
+    for path in args.paths:
+        if path.endswith('.csv'):
+            input_path = path
+        elif path.endswith('handoffs.txt'):
+            handoff_path = path
+        elif path.endswith('limits.txt'):
+            if not args.limits_file:
+                args.limits_file = path
+        elif path.endswith('.pdf'):
+            output_path = path
+
+    if input_path is None or output_path is None:
+        raise ValueError(
+            f"positional paths must include a .csv input and a .pdf output (got: {args.paths})"
+        )
 
     timeseries_output = output_path if output_path.endswith('overhead_timeseries.pdf') else None
     summary_output = output_path if output_path.endswith('overhead_summary.pdf') else None
@@ -834,7 +846,7 @@ def main():
     if args.limits_file:
         args.timeseries_y_max, args.summary_y_max = _load_limits_file(args.limits_file)
 
-    handoff_times = resolve_handoff_times(args.handoff_file, args.handoff_times)
+    handoff_times = resolve_handoff_times(handoff_path, args.handoff_times)
 
     try:
         analysis = _load_analysis(

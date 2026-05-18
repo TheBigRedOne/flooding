@@ -193,20 +193,17 @@ results/main_overhead_limits.txt: experiment/tool/compute_overhead_ymax.py \
                                   results/solution/network_overhead.csv \
                                   results/solution/handoffs.txt \
                                   | experiment/tool/plot_overhead.py results
-	python3 experiment/tool/compute_overhead_ymax.py \
-	    --inputs $(BASELINE_DEFAULT_DIR)/network_overhead.csv results/solution/network_overhead.csv \
-	    --handoff-files $(BASELINE_DEFAULT_DIR)/handoffs.txt results/solution/handoffs.txt \
-	    --output $@
+	python3 $< --inputs $(filter %.csv,$^) --handoff-files $(filter %/handoffs.txt,$^) --output $@
 
 $(BASELINE_DEFAULT_DIR)/overhead_timeseries.pdf: experiment/tool/plot_overhead.py $(BASELINE_DEFAULT_DIR)/network_overhead.csv $(BASELINE_DEFAULT_DIR)/handoffs.txt results/main_overhead_limits.txt
-	python3 experiment/tool/plot_overhead.py $(BASELINE_DEFAULT_DIR)/network_overhead.csv results/main_overhead_limits.txt $@ --handoff-file $(BASELINE_DEFAULT_DIR)/handoffs.txt
+	python3 $^ $@
 
 $(BASELINE_DEFAULT_DIR)/overhead_summary.pdf: experiment/tool/plot_overhead.py $(BASELINE_DEFAULT_DIR)/network_overhead.csv $(BASELINE_DEFAULT_DIR)/handoffs.txt results/main_overhead_limits.txt
-	python3 experiment/tool/plot_overhead.py $(BASELINE_DEFAULT_DIR)/network_overhead.csv results/main_overhead_limits.txt $@ --handoff-file $(BASELINE_DEFAULT_DIR)/handoffs.txt
+	python3 $^ $@
 
 # Comparison plots written to repository results/ for inclusion in the paper.
 results/throughput_comparison.pdf: experiment/tool/plot_throughput_comparison.py $(BASELINE_DEFAULT_DIR)/consumer_capture.csv results/solution/consumer_capture.csv $(BASELINE_DEFAULT_DIR)/handoffs.txt results/solution/handoffs.txt | results
-	python3 experiment/tool/plot_throughput_comparison.py $(BASELINE_DEFAULT_DIR)/consumer_capture.csv results/solution/consumer_capture.csv $@ --baseline-handoff-file $(BASELINE_DEFAULT_DIR)/handoffs.txt --solution-handoff-file results/solution/handoffs.txt
+	python3 $< $(filter %.csv,$^) $@ --baseline-handoff-file $(BASELINE_DEFAULT_DIR)/handoffs.txt --solution-handoff-file results/solution/handoffs.txt
 
 results/service_disruption_comparison.pdf: experiment/tool/plot_disruption_comparison.py $(BASELINE_DEFAULT_DIR)/disruption_metrics.txt results/solution/disruption_metrics.txt | results
 	python3 $^ $@

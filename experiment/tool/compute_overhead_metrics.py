@@ -9,19 +9,20 @@ import plot_overhead
 
 
 def _parse_args() -> argparse.Namespace:
-    """Parse the input CSV and output metrics path."""
+    """Parse the input CSV, optional handoff file, and output metrics path."""
     parser = argparse.ArgumentParser(description="Compute forwarding-overhead metrics.")
     parser.add_argument("input_csv", help="Input network-overhead CSV.")
+    parser.add_argument(
+        "handoff_file",
+        nargs="?",
+        default=None,
+        help="Optional handoffs.txt; when present, its rel_time column overrides --handoff-times.",
+    )
     parser.add_argument("metrics_output", help="Output overhead metrics text file.")
     parser.add_argument(
         "--handoff-times",
         default="120, 240",
-        help="Comma-separated handoff times (fallback when --handoff-file is absent).",
-    )
-    parser.add_argument(
-        "--handoff-file",
-        default=None,
-        help="Path to handoffs.txt; when present, its rel_time column overrides --handoff-times.",
+        help="Comma-separated handoff times (fallback when no handoff_file is given).",
     )
     parser.add_argument("--window", type=float, default=10.0, help="Window length after each handoff.")
     parser.add_argument("--prefix", default="/example/LiveStream", help="Application prefix to include.")

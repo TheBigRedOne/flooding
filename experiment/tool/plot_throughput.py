@@ -309,16 +309,17 @@ def _write_plot(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Plot throughput from tshark CSV.")
     parser.add_argument("input_csv", help="Path to tshark CSV.")
+    parser.add_argument(
+        "handoff_file",
+        nargs="?",
+        default=None,
+        help="Optional handoffs.txt; when present, its rel_time column overrides --handoff-times.",
+    )
     parser.add_argument("plot_output", help="Path to the throughput PDF output.")
     parser.add_argument(
         "--handoff-times",
         default="120, 240",
-        help="Comma-separated handoff times (fallback when --handoff-file is absent).",
-    )
-    parser.add_argument(
-        "--handoff-file",
-        default=None,
-        help="Path to handoffs.txt; when present, its rel_time column overrides --handoff-times.",
+        help="Comma-separated handoff times (fallback when no handoff_file is given).",
     )
     parser.add_argument("--window", type=int, default=10, help="Shaded window length after each handoff (seconds).")
     args = parser.parse_args()

@@ -98,28 +98,28 @@ results/baseline/%/disruption_times.pdf: experiment/tool/plot_latency.py results
 	python3 $^ $@
 
 results/baseline/%/disruption_metrics.txt: experiment/tool/compute_latency_metrics.py results/baseline/%/consumer_capture.csv results/baseline/%/handoffs.txt
-	python3 experiment/tool/compute_latency_metrics.py results/baseline/$*/consumer_capture.csv $@ --handoff-file results/baseline/$*/handoffs.txt
+	python3 $^ $@
 
 results/baseline/%/loss_comparison.pdf: experiment/tool/plot_loss.py results/baseline/%/loss_ratio.txt
 	python3 $^ $@
 
 results/baseline/%/loss_ratio.txt: experiment/tool/compute_loss_metrics.py results/baseline/%/consumer_capture.csv results/baseline/%/handoffs.txt
-	python3 experiment/tool/compute_loss_metrics.py results/baseline/$*/consumer_capture.csv $@ --handoff-file results/baseline/$*/handoffs.txt
+	python3 $^ $@
 
 results/baseline/%/throughput_timeseries.pdf: experiment/tool/plot_throughput.py results/baseline/%/consumer_capture.csv results/baseline/%/handoffs.txt
-	python3 experiment/tool/plot_throughput.py results/baseline/$*/consumer_capture.csv $@ --handoff-file results/baseline/$*/handoffs.txt
+	python3 $^ $@
 
 results/baseline/%/throughput_metrics.txt: experiment/tool/compute_throughput_metrics.py results/baseline/%/consumer_capture.csv
 	python3 $^ $@
 
 results/baseline/%/overhead_timeseries.pdf: experiment/tool/plot_overhead.py results/baseline/%/network_overhead.csv results/baseline/%/handoffs.txt
-	python3 experiment/tool/plot_overhead.py results/baseline/$*/network_overhead.csv $@ --handoff-file results/baseline/$*/handoffs.txt
+	python3 $^ $@
 
 results/baseline/%/overhead_summary.pdf: experiment/tool/plot_overhead.py results/baseline/%/network_overhead.csv results/baseline/%/handoffs.txt
-	python3 experiment/tool/plot_overhead.py results/baseline/$*/network_overhead.csv $@ --handoff-file results/baseline/$*/handoffs.txt
+	python3 $^ $@
 
 results/baseline/%/overhead_total.txt: experiment/tool/compute_overhead_metrics.py results/baseline/%/network_overhead.csv results/baseline/%/handoffs.txt | experiment/tool/plot_overhead.py
-	python3 experiment/tool/compute_overhead_metrics.py results/baseline/$*/network_overhead.csv $@ --handoff-file results/baseline/$*/handoffs.txt
+	python3 $^ $@
 
 results/baseline/summary.csv: $(BASELINE_PROFILE_SUMMARY_INPUTS) experiment/tool/summarise_nlsr_sensitivity.py | results/baseline
 	python3 experiment/tool/summarise_nlsr_sensitivity.py --root-dir results/baseline --profiles "$(BASELINE_PROFILE_NAMES)" --default-profile "$(BASELINE_DEFAULT_PROFILE)" --output "$@"
