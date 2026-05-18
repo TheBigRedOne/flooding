@@ -86,13 +86,19 @@ However, a limitation of current NDN protocols is that they do not effectively s
 
 % Paragraph 3: Contributions.
 In this paper, we introduce OptoFlood, a novel controlled flooding scheme that can establish temporary bidirectional communication paths to accelerate network convergence after producer mobility events. OptoFlood proactively manages controlled local flooding of both \emph{Data} and \emph{Interest} packets, enabling rapid recovery from disruptions caused by producer movements. 
+OptoFlood comprises four complementary parts:
+\begin{enumerate}
+\item \emph{Data packet flooding}, for Data packets packets marked as being sent after the producer moves, in response to pending Interest packets received before the move.
+This flooding is explicitly hop-limited and rate controlled, and is intended to quickly ``push'' Data across nearby nodes so that Interests that would otherwise stall can be satisfied without waiting for global routing convergence.
 
-Specifically, OptoFlood includes two complementary components.
+\item A \emph{temporary forwarding table (TFIB)}, based on newly observed forwarding opportunities, opportunistically created to help suppress repeated Data packet flooding and restore unicast forwarding quickly.
 
-First, after a producer movement event, the producer performs \emph{Data packet flooding} for mobility-marked Data corresponding to pending Interests. This flooding is explicitly bounded (e.g., hop-limited) and rate controlled, and is intended to quickly ``push'' Data across nearby nodes so that Interests that would otherwise stall can be satisfied without waiting for global routing convergence.
-Second, when forwarding fails because both the FIB and a temporary forwarding table (TFIB) provide no usable next hop, forwarders trigger a hop-limited \emph{Interest packet flooding} procedure to promptly rediscover viable paths toward the producer's new attachment point. Intermediate nodes opportunistically create short-lived TFIB hints based on newly observed forwarding opportunities, which helps suppress repeated flooding and restore unicast forwarding quickly.
+\item Hop-limited \emph{Interest packet flooding}, when forwarding fails because both the standard FIB and the TFIB provide no usable next hop, triggered to promptly rediscover viable paths toward the producer's new attachment point.
 
-OptoFlood also integrates with Named-data Link State Routing (NLSR) by generating short-lived routing updates based on newly established temporary paths (Fast-LSA), which accelerates global routing convergence. Collectively, these mechanisms reduce latency and packet loss while maintaining reasonable overhead in network resource usage.
+\item \emph{Fast-LSA}, short-lived routing updates based on newly established temporary paths, that accelerate convergence. 
+
+\end{enumerate}
+Collectively, these mechanisms reduce latency and packet loss while maintaining reasonable network resource usage.
 
 % Paragraph 4: Comparison to related work.
 Compared to previous NDN mobility protocols, such as routing-based updates \cite{meddeb:2018:afirm}, Interest-based notification solutions \cite{auge:2016:map-me} or anchor-based tracing mechanisms \cite{zhang:2018:kite}, OptoFlood provides a more integrated and lightweight solution that leverages flooding as its primary mechanism for rapid path recovery and convergence. Unlike existing flooding solutions \csp{add citations}, our approach uses explicit controls, including hop limits, deduplication within a short time window, and producer-side flood rate limits, to restrict the scope and duration of flooding, minimising unnecessary overhead. Additionally, by leveraging temporary bidirectional paths established via controlled flooding and propagating them through short-lived routing updates, OptoFlood accelerates global routing convergence without relying on centralised anchor nodes.
