@@ -165,11 +165,12 @@ NLSR has a number of tuneable parameters that can reduce convergence times.  We 
 These issues highlight the limitations of NLSR in handling frequent producer mobility. Addressing these issues effectively requires specialised mechanisms that can rapidly establish temporary communication paths without waiting for global routing convergence.
 
 % ==============================================================================
-
 \section{Controllable Flooding for NDN Mobility} 
 \label{sec:solution}
 
-To address the challenges of producer mobility in NDN, particularly in latency-sensitive applications such as video conferencing or live streaming, we propose \textit{OptoFlood}, a novel controllable flooding mechanism. OptoFlood rapidly establishes temporary bidirectional communication paths following producer movements and leverages these paths to accelerate routing convergence.
+\csp{Need to ensure the terminology, and the description of the protocol, in this section aligns with that in the Introduction.}
+
+OptoFlood is a novel controllable flooding mechanism that rapidly establishes temporary bidirectional communication paths following producer movements and leverages these paths to accelerate routing convergence.
 
 \begin{figure}
     \centering
@@ -178,7 +179,7 @@ To address the challenges of producer mobility in NDN, particularly in latency-s
     \label{fig:NDN Producer Mobility Problem Solution}
 \end{figure}
 
-\subsection{Producer Mobility Detection and Data Packet Flooding}
+\subsection{Data Packet Flooding}
 \label{sec:solution:data-flooding}
 
 In our implementation, producer mobility is detected at the application layer (e.g., via interface-up events), and the producer marks subsequent Data packets to indicate a mobility event. Flooding is then executed by forwarders when they process such mobility-marked Data, rather than by the producer directly; mobility triggers based on attachment/interface events are commonly used in mobility systems \cite{johnson:2004:mipv6, gundavelli:2008:pmipv6}.
@@ -186,7 +187,7 @@ In our implementation, producer mobility is detected at the application layer (e
 Each mobility-marked Data packet carries the following markings:
 
 \begin{itemize}
-  \item \textbf{LP--MobilityFlag}: a hop-by-hop flag in the LP header used to identify mobility-related Data at forwarders. If a forwarder finds a matching PIT entry, it clears the flag and forwards the Data normally so that the return path proceeds through standard PIT-based forwarding.
+  \item \textbf{LP--MobilityFlag}: a hop-by-hop flag in the NDN Link Protocol (LP) header used to identify mobility-related Data at forwarders. If a forwarder finds a matching PIT entry, it clears the flag and forwards the Data normally so that the return path proceeds through standard PIT-based forwarding.
   \item \textbf{LP--OptoHopLimit}: a hop-by-hop scope control decremented at each hop (default~3) to confine Data flooding to a local region. This field is experimental in our deployment and is distinct from the native Interest HopLimit.
   \item \textbf{Flood-ID}: an immutable identifier used for duplicate suppression in floods. In our implementation, FloodId is encoded as a Data MetaInfo extension TLV so that it is part of the signed portion of the Data and cannot be forged or altered by intermediate nodes.
   \item \textbf{NewFaceSeq}: an immutable sequence number used by forwarders to create or update a Temporary FIB (TFIB) entry upon receiving mobility-marked Data. NewFaceSeq is also carried in the signed portion of the Data (MetaInfo extension TLV) to ensure integrity.
@@ -196,7 +197,14 @@ At the forwarding plane, a forwarder treats a Data packet as OptoFlood-enabled w
 
 For dissemination, flooded Data packets \emph{first} follow available FIB next hops. If no valid FIB next hop exists, forwarders fall back to \emph{scoped expansion} over data-plane adjacent faces under LP--OptoHopLimit, excluding LOCAL faces and suppressing the incoming face (and any already satisfied faces) to avoid immediate loops. The aim is to reach a node that still holds a valid Pending Interest Table (PIT) entry along (or near) the original path so that the Data can be returned to the consumer without waiting for global routing updates.
 
-\subsection{Forwarder-Triggered Interest Flooding}
+\subsection{Temporary FIB}
+\label{sec:solution:bidir}
+
+A key goal of OptoFlood is to establish a temporary \emph{bidirectional} communication capability quickly after handover. In the downstream direction (consumer $\rightarrow$ producer), Interest flooding can locate a viable path toward the producer's new attachment point when unicast forwarding fails. In the upstream direction (producer $\rightarrow$ consumer), mobility-marked Data flooding increases the likelihood that Data corresponding to Interests issued shortly before handover can reach a forwarder that still maintains the appropriate PIT state.
+
+In addition, forwarders opportunistically create short-lived forwarding hints via a \emph{Temporary FIB (TFIB)}. Upon receiving mobility-marked Data, a forwarder creates or updates a TFIB entry (separate from the standard FIB) mapping the relevant prefix to the incoming face, annotated with NewFaceSeq/FloodId, and with a short TTL (about one second). Subsequent Interests can then switch to unicast via TFIB immediately, reducing the need for repeated Interest flooding while global routing converges \cite{zhang:2018:kite, auge:2018:map-me}.
+
+\subsection{Interest Packet Flooding}
 \label{sec:solution:interest-flooding}
 
 Interest flooding is also performed by the forwarder and is triggered only as a last resort. In our implementation, the flooding procedure is invoked on a Content Store miss when both the FIB and the TFIB provide no usable next hop for the Interest prefix.
@@ -214,14 +222,7 @@ We also retain an explicit triggering path: if an Interest already carries a Hop
     \label{fig:Interest Flooding}
 \end{figure}
 
-\subsection{Temporary Bidirectional Path Establishment}
-\label{sec:solution:bidir}
-
-A key goal of OptoFlood is to establish a temporary \emph{bidirectional} communication capability quickly after handover. In the downstream direction (consumer $\rightarrow$ producer), Interest flooding can locate a viable path toward the producer's new attachment point when unicast forwarding fails. In the upstream direction (producer $\rightarrow$ consumer), mobility-marked Data flooding increases the likelihood that Data corresponding to Interests issued shortly before handover can reach a forwarder that still maintains the appropriate PIT state.
-
-In addition, forwarders opportunistically create short-lived forwarding hints via a \emph{Temporary FIB (TFIB)}. Upon receiving mobility-marked Data, a forwarder creates or updates a TFIB entry (separate from the standard FIB) mapping the relevant prefix to the incoming face, annotated with NewFaceSeq/FloodId, and with a short TTL (about one second). Subsequent Interests can then switch to unicast via TFIB immediately, reducing the need for repeated Interest flooding while global routing converges \cite{zhang:2018:kite, auge:2018:map-me}.
-
-\subsection{Accelerated Network Convergence}
+\subsection{Fast-LSA}
 \label{sec:solution:convergence}
 
 OptoFlood integrates temporary flooding-based paths with faster global convergence via NLSR. When a forwarder successfully establishes or updates a TFIB entry, it triggers an NLSR management command at \texttt{/localhost/nlsr/fast-lsa/trigger}. This command installs a short-lived routing entry (Fast-LSA style) with an expiration period of approximately one second, and employs throttling (500~ms per prefix) and de-duplication (by Prefix+NewFaceSeq) to limit control-plane overhead \cite{hoque:2013:nlsr}.
