@@ -59,19 +59,25 @@ BASELINE_PROFILE_COMPARE_OUTPUTS = results/baseline/summary.csv \
                                    results/baseline/disruption_comparison.pdf \
                                    results/baseline/network_cost_comparison.pdf
 
+# Baseline group experiments are chained via order-only prerequisites so that
+# `make -j N` keeps the VM stage strictly sequential (otherwise concurrent
+# `vagrant up` invocations against the same Vagrantfile race on the lockfile).
+# Order-only prerequisites do not appear in `$^`, so each recipe still receives
+# only the inputs declared on its own line.
+
 $(subst XXX,g0-h60-a10-r15,$(BASELINE_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(BASELINE_EXPERIMENT_INPUTS)
 	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="NLSR_HELLO_INTERVAL='60' NLSR_ADJ_LSA_BUILD_INTERVAL='10' NLSR_ROUTING_CALC_INTERVAL='15' NLSR_TUNING_PROFILE='g0-h60-a10-r15' $(BASELINE_HANDOFF_ENV) make all" sh $^ $@
 
-$(subst XXX,g1-h54-a9-r14,$(BASELINE_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(BASELINE_EXPERIMENT_INPUTS)
+$(subst XXX,g1-h54-a9-r14,$(BASELINE_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(BASELINE_EXPERIMENT_INPUTS) | $(subst XXX,g0-h60-a10-r15,$(BASELINE_EXPERIMENT_OUTPUTS))
 	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="NLSR_HELLO_INTERVAL='54' NLSR_ADJ_LSA_BUILD_INTERVAL='9' NLSR_ROUTING_CALC_INTERVAL='14' NLSR_TUNING_PROFILE='g1-h54-a9-r14' $(BASELINE_HANDOFF_ENV) make all" sh $^ $@
 
-$(subst XXX,g2-h48-a8-r12,$(BASELINE_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(BASELINE_EXPERIMENT_INPUTS)
+$(subst XXX,g2-h48-a8-r12,$(BASELINE_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(BASELINE_EXPERIMENT_INPUTS) | $(subst XXX,g1-h54-a9-r14,$(BASELINE_EXPERIMENT_OUTPUTS))
 	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="NLSR_HELLO_INTERVAL='48' NLSR_ADJ_LSA_BUILD_INTERVAL='8' NLSR_ROUTING_CALC_INTERVAL='12' NLSR_TUNING_PROFILE='g2-h48-a8-r12' $(BASELINE_HANDOFF_ENV) make all" sh $^ $@
 
-$(subst XXX,g3-h42-a7-r10,$(BASELINE_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(BASELINE_EXPERIMENT_INPUTS)
+$(subst XXX,g3-h42-a7-r10,$(BASELINE_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(BASELINE_EXPERIMENT_INPUTS) | $(subst XXX,g2-h48-a8-r12,$(BASELINE_EXPERIMENT_OUTPUTS))
 	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="NLSR_HELLO_INTERVAL='42' NLSR_ADJ_LSA_BUILD_INTERVAL='7' NLSR_ROUTING_CALC_INTERVAL='10' NLSR_TUNING_PROFILE='g3-h42-a7-r10' $(BASELINE_HANDOFF_ENV) make all" sh $^ $@
 
-$(subst XXX,g4-h36-a6-r9,$(BASELINE_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(BASELINE_EXPERIMENT_INPUTS)
+$(subst XXX,g4-h36-a6-r9,$(BASELINE_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(BASELINE_EXPERIMENT_INPUTS) | $(subst XXX,g3-h42-a7-r10,$(BASELINE_EXPERIMENT_OUTPUTS))
 	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="NLSR_HELLO_INTERVAL='36' NLSR_ADJ_LSA_BUILD_INTERVAL='6' NLSR_ROUTING_CALC_INTERVAL='9' NLSR_TUNING_PROFILE='g4-h36-a6-r9' $(BASELINE_HANDOFF_ENV) make all" sh $^ $@
 
 

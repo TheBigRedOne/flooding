@@ -34,6 +34,10 @@ HANDOFF_SHADE_ALPHA = 0.18
 X_TICK_BINS = 5
 SUMMARY_BAR_WIDTH = 0.32
 LEGEND_MAX_COLUMNS = 2
+# When the number of per-handoff summaries exceeds this threshold the summary
+# plot collapses them into a single mean-per-handoff group to keep tick labels
+# readable in the 8 cm paper figure.
+MAX_PER_WINDOW_SUMMARY_BARS = 6
 Y_AXIS_HEADROOM_RATIO = 0.10
 Y_AXIS_HEADROOM_MIN = 1.0
 FIGURE_LEFT_MARGIN = 0.16
@@ -709,6 +713,56 @@ def _write_timeseries_plot(
     plt.close(timeseries_fig)
 
 
+def _aggregate_handoff_summaries(summaries: List[WindowSummary], label: str) -> WindowSummary:
+    """Collapse multiple per-handoff summaries into a single mean WindowSummary.
+
+    Integer attributes are reported as the integer mean across windows; ratio
+    attributes are reported as the mean of per-window ratios when available.
+    """
+    n = max(len(summaries), 1)
+
+    def _avg_int(attr: str) -> int:
+        return int(sum(getattr(item, attr) for item in summaries) // n)
+
+    def _avg_ratio(attr: str) -> Optional[float]:
+        present = [getattr(item, attr) for item in summaries if getattr(item, attr) is not None]
+        return sum(present) / len(present) if present else None
+
+    return WindowSummary(
+        label=label,
+        app_relay_packets=_avg_int('app_relay_packets'),
+        app_relay_bytes=_avg_int('app_relay_bytes'),
+        interest_relay_bytes=_avg_int('interest_relay_bytes'),
+        data_relay_bytes=_avg_int('data_relay_bytes'),
+        flood_packets=_avg_int('flood_packets'),
+        flood_bytes=_avg_int('flood_bytes'),
+        interest_flood_bytes=_avg_int('interest_flood_bytes'),
+        data_flood_bytes=_avg_int('data_flood_bytes'),
+        control_packets=_avg_int('control_packets'),
+        control_bytes=_avg_int('control_bytes'),
+        delivered_packets=_avg_int('delivered_packets'),
+        delivered_bytes=_avg_int('delivered_bytes'),
+        forwarding_cost_ratio=_avg_ratio('forwarding_cost_ratio'),
+        flood_share=_avg_ratio('flood_share'),
+    )
+
+
+def _select_summary_groups(analysis: OverheadAnalysis) -> List[WindowSummary]:
+    """Choose which WindowSummary entries enter the per-window summary plot.
+
+    Returns the per-handoff list directly when small; collapses it into a single
+    averaged group followed by Full Run once more than MAX_PER_WINDOW_SUMMARY_BARS
+    handoff windows are present, so the x-axis stays readable.
+    """
+    if not analysis.handoff_summaries:
+        return [analysis.full_run_summary]
+    if len(analysis.handoff_summaries) <= MAX_PER_WINDOW_SUMMARY_BARS:
+        return analysis.handoff_summaries
+    aggregate_label = f'Avg per handoff (n={len(analysis.handoff_summaries)})'
+    aggregated = _aggregate_handoff_summaries(analysis.handoff_summaries, aggregate_label)
+    return [aggregated, analysis.full_run_summary]
+
+
 def _write_summary_plot(
     output_path: str | None,
     analysis: OverheadAnalysis,
@@ -718,7 +772,7 @@ def _write_summary_plot(
     if output_path is None:
         return
     _ensure_parent_dir(output_path)
-    summary_items = analysis.handoff_summaries if analysis.handoff_summaries else [analysis.full_run_summary]
+    summary_items = _select_summary_groups(analysis)
     interest_other = [item.interest_relay_bytes - item.interest_flood_bytes for item in summary_items]
     interest_flood = [item.interest_flood_bytes for item in summary_items]
     data_other = [item.data_relay_bytes - item.data_flood_bytes for item in summary_items]

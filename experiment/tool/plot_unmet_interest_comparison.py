@@ -49,10 +49,12 @@ def _ensure_parent_dir(path: str) -> None:
 
 
 def _load_metrics(path: str) -> Dict[str, float]:
-    """Read unmet-Interest ratios from a metrics text file."""
-    values = {
+    """Read unmet-Interest ratios and request counts from a metrics text file."""
+    values: Dict[str, float] = {
         "Handoff Window Ratio": 1.0,
         "Steady State Ratio": 1.0,
+        "Handoff Requests": 0.0,
+        "Steady Requests": 0.0,
     }
     with open(path, "r", encoding="utf-8") as metrics_file:
         for line in metrics_file:
@@ -101,7 +103,7 @@ def main() -> int:
 
     baseline = _load_metrics(args.baseline_metrics)
     solution = _load_metrics(args.solution_metrics)
-    categories = ["Handoff\nwindow", "Steady\nstate"]
+    categories = ["Inside\nhandoff windows", "Outside\nhandoff windows"]
     baseline_values = [baseline["Handoff Window Ratio"], baseline["Steady State Ratio"]]
     solution_values = [solution["Handoff Window Ratio"], solution["Steady State Ratio"]]
 

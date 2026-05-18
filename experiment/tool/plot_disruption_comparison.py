@@ -133,22 +133,32 @@ def main() -> int:
 
     fig, ax = plt.subplots(figsize=(FIGURE_WIDTH_CM * CM_TO_INCH, FIGURE_HEIGHT_CM * CM_TO_INCH))
     positions = np.array([0.0, 1.0])
-    labels = ["Baseline", "OptoFlood"]
+    baseline_label = f"Baseline (n={len(baseline_values)})"
+    solution_label = f"OptoFlood (n={len(solution_values)})"
 
-    _draw_range_bar(ax, positions[0], baseline_values, BASELINE_FILL, BASELINE_EDGE, "Baseline range")
-    _draw_range_bar(ax, positions[1], solution_values, SOLUTION_FILL, SOLUTION_EDGE, "OptoFlood range")
+    _draw_range_bar(ax, positions[0], baseline_values, BASELINE_FILL, BASELINE_EDGE, "Min–max range")
+    _draw_range_bar(ax, positions[1], solution_values, SOLUTION_FILL, SOLUTION_EDGE, "Min–max range")
 
-    handles = ax.get_legend_handles_labels()[0]
+    handles, plot_labels = ax.get_legend_handles_labels()
+    # Deduplicate the shared "Min-max range" entry while preserving the mean indicator.
+    seen: set[str] = set()
+    unique_handles = []
+    for handle, plot_label in zip(handles, plot_labels):
+        if plot_label in seen:
+            continue
+        seen.add(plot_label)
+        unique_handles.append(handle)
     mean_handle = plt.Line2D([0], [0], color=MEAN_COLOR, linewidth=MEAN_LINE_WIDTH, label="Mean")
-    if handles:
-        ax.legend(handles=[*handles, mean_handle], loc="upper right", frameon=False)
+    if unique_handles:
+        ax.legend(handles=[*unique_handles, mean_handle], loc="upper right", frameon=False)
 
     ax.set_yscale("log")
     bottom_values = [value for value in (baseline_values + solution_values) if value > 0]
     ax.set_ylim(bottom=max(1.0, min(bottom_values) * 0.45) if bottom_values else 1.0)
     ax.set_xticks(positions)
-    ax.set_xticklabels(labels)
-    ax.set_ylabel("Disruption time (ms)")
+    ax.set_xticklabels([baseline_label, solution_label])
+    ax.set_ylabel("Disruption time per handoff (ms)")
+    ax.set_title("Aggregated per-handoff service disruption")
     ax.grid(True, axis="y", which="both", linestyle="--", alpha=0.6)
     fig.tight_layout()
     fig.savefig(args.output_pdf, bbox_inches="tight")

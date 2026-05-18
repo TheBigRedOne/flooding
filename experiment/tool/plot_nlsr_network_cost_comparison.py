@@ -105,7 +105,9 @@ def main() -> int:
 
     labels = [row["profile_label"] for row, _, _ in valid_rows]
     fcr_values = [fcr for _, fcr, _ in valid_rows]
-    control_values = [control for _, _, control in valid_rows]
+    # Display control bytes in MB to suppress matplotlib's 1e6 offset annotation
+    # and to keep tick labels readable.
+    control_values_mb = [control / 1_000_000.0 for _, _, control in valid_rows]
     x = np.arange(len(valid_rows))
 
     _configure_paper_style()
@@ -124,13 +126,14 @@ def main() -> int:
     ax_fcr.set_ylim(bottom=0)
     ax_fcr.grid(True, axis="y", linestyle="--", alpha=0.7)
 
-    ax_control.bar(x, control_values, color="slateblue")
+    ax_control.bar(x, control_values_mb, color="slateblue")
     ax_control.set_xlabel("Baseline Parameter Group")
-    ax_control.set_ylabel("All NLSR Control Bytes")
+    ax_control.set_ylabel("NLSR Control Bytes (MB)")
     ax_control.set_xticks(x)
     ax_control.set_xticklabels(labels)
     ax_control.set_ylim(bottom=0)
     ax_control.grid(True, axis="y", linestyle="--", alpha=0.7)
+    ax_control.ticklabel_format(style="plain", axis="y", useOffset=False)
 
     fig.tight_layout()
     plt.savefig(args.output)

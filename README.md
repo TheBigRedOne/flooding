@@ -20,6 +20,26 @@ make all
 make PROVIDER=libvirt all
 ```
 
+### Parallel execution
+
+The post-experiment host-side pipeline (pcap-to-CSV decoding, metric
+computation, plotting) is CPU-bound on `tshark` and dominates wall-clock time
+once the VMs have produced the raw artifacts. Add `-j N` to use `N` host cores
+for those steps:
+
+```bash
+# Use 8 cores for host-side analysis.
+make -j 8 PROVIDER=libvirt all
+
+# Use all available cores.
+make -j $(nproc) PROVIDER=libvirt all
+```
+
+The Makefile chains the VM-stage rules through order-only prerequisites so
+they remain serial under `make -j N` (concurrent `vagrant up` invocations
+against the same Vagrantfile would otherwise collide on the lockfile). Only
+the host-side analysis and plotting recipes are parallelised.
+
 This command automates the entire process. It will:
 1.  Build the necessary Vagrant base images (`.box` files) if they don't exist.
 2.  Provision temporary VMs for the baseline parameter set and the `solution` experiment.
