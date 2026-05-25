@@ -52,6 +52,13 @@ echo "*** Running experiment VM workflow: $remote_subdir ($provider, dir=$vagran
 
 env "$box_env_name=$box_path" VAGRANT_DEFAULT_PROVIDER="$provider" VAGRANT_CWD="$vagrant_dir" vagrant up --provision
 VAGRANT_DEFAULT_PROVIDER="$provider" VAGRANT_CWD="$vagrant_dir" vagrant ssh-config --host "$host_alias" > "$ssh_config"
+
+# Inject SSH keepalive so long, output-quiet remote runs survive NAT/conntrack idle drops and remote sshd ClientAlive timeouts.
+{
+  echo "    ServerAliveInterval 30"
+  echo "    ServerAliveCountMax 120"
+  echo "    TCPKeepAlive yes"
+} >> "$ssh_config"
 rsync -avH -e "ssh -F $ssh_config" --exclude .git --exclude .vagrant --exclude results --exclude paper/bin ./ "$host_alias:$remote_dir/"
 
 mkdir -p "$result_dir"
@@ -59,7 +66,9 @@ if [ "${RUN_IN_VM_CLEAR_LOCAL:-}" = "1" ]; then
   rm -rf "$result_dir"/*
 fi
 
-VAGRANT_DEFAULT_PROVIDER="$provider" VAGRANT_CWD="$vagrant_dir" vagrant ssh -c "set -e; cd $remote_dir/$remote_subdir && make clean && $remote_make; mkdir -p results/minindn-logs; if [ -d /tmp/minindn ]; then for name in $mobility_log_nodes; do node=/tmp/minindn/\$name; if [ -d \"\$node/log\" ]; then mkdir -p \"results/minindn-logs/\$name\"; cp -f \"\$node/log/nfd.log\" \"results/minindn-logs/\$name/\" 2>/dev/null || true; cp -f \"\$node/log/nlsr.log\" \"results/minindn-logs/\$name/\" 2>/dev/null || true; fi; done; fi"
+# Use ssh -F directly so the keepalive options appended to $ssh_config above take effect on the long-running command.
+ssh -F "$ssh_config" "$host_alias" "set -e; cd $remote_dir/$remote_subdir && make clean && $remote_make; mkdir -p results/minindn-logs; if [ -d /tmp/minindn ]; then for name in $mobility_log_nodes; do node=/tmp/minindn/\$name; if [ -d \"\$node/log\" ]; then mkdir -p \"results/minindn-logs/\$name\"; cp -f \"\$node/log/nfd.log\" \"results/minindn-logs/\$name/\" 2>/dev/null || true; cp -f \"\$node/log/nlsr.log\" \"results/minindn-logs/\$name/\" 2>/dev/null || true; fi; done; fi"
+
 rsync -avH -e "ssh -F $ssh_config" "$host_alias:$remote_dir/$remote_subdir/results/." "$result_dir/"
 VAGRANT_DEFAULT_PROVIDER="$provider" VAGRANT_CWD="$vagrant_dir" vagrant halt -f || true
 
