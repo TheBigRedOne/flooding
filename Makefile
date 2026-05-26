@@ -117,7 +117,8 @@ test: test/.validate_ok
 test/.validate_ok: test/Makefile test/Vagrantfile test/exp_test.py test/validate.py \
              experiment/app/producer.cpp experiment/app/consumer.cpp \
              experiment/app/trust-schema.conf experiment/tool/ndn.lua \
-             box/solution/solution.$(PROVIDER).box
+             box/solution/solution.$(PROVIDER).box \
+             | $(SOLUTION_RESULTS)
 	$(MAKE) -C test PROVIDER=$(PROVIDER) test-all
 
 # Plot only (reuse existing CSVs; no VM run)
