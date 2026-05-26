@@ -35,10 +35,14 @@ make -j 8 PROVIDER=libvirt all
 make -j $(nproc) PROVIDER=libvirt all
 ```
 
-The Makefile chains the VM-stage rules through order-only prerequisites so
-they remain serial under `make -j N` (concurrent `vagrant up` invocations
-against the same Vagrantfile would otherwise collide on the lockfile). Only
-the host-side analysis and plotting recipes are parallelised.
+The Makefile chains every VM-launching rule through order-only prerequisites
+so that all VM stages remain strictly serial under `make -j N`, regardless of
+how many cores are available:
+
+```
+box/initial -> box/baseline   -> g0 -> g1 -> g2 -> g3 -> g4 -> solution -> test
+            -> box/solution
+```
 
 This command automates the entire process. It will:
 1.  Build the necessary Vagrant base images (`.box` files) if they don't exist.

@@ -26,7 +26,8 @@ SOLUTION_RESULTS = results/solution/consumer_capture.pcap \
                    results/solution/pcap_nodes/consumer.pcap \
                    results/solution/handoffs.txt
 
-$(SOLUTION_RESULTS) &: scripts/run-in-vm.sh $(SOLUTION_INPUTS)
+# Order-only prerequisite: the solution VM runs only after the last baseline
+$(SOLUTION_RESULTS) &: scripts/run-in-vm.sh $(SOLUTION_INPUTS) | $(subst XXX,g4-h36-a6-r9,$(BASELINE_EXPERIMENT_OUTPUTS))
 	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="$(SOLUTION_HANDOFF_ENV) make all" sh $^ $@
 
 
