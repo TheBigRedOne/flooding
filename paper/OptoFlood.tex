@@ -174,12 +174,10 @@ These results show that NLSR cannot simply be tuned to reduce convergence times 
 Addressing these issues effectively requires specialised mechanisms that can rapidly establish temporary communication paths without waiting for global routing convergence.
 
 % ==============================================================================
-\section{Controllable Flooding for NDN Mobility} 
+\section{Controlled Flooding for NDN Mobility} 
 \label{sec:solution}
 
-\csp{Need to ensure the terminology, and the description of the protocol, in this section aligns with that in the Introduction.}
-
-OptoFlood is a novel controllable flooding mechanism that rapidly establishes temporary bidirectional communication paths following producer movements and leverages these paths to accelerate routing convergence.
+To reduce disruption after producer mobility, we extend NDN forwarding with controllable flooding that can rapidly establish temporary bidirectional communication paths, and that leverages these paths to accelerate routing convergence.
 
 \begin{figure}
     \centering
@@ -188,16 +186,16 @@ OptoFlood is a novel controllable flooding mechanism that rapidly establishes te
     \label{fig:NDN Producer Mobility Problem Solution}
 \end{figure}
 
+\csp{Need to ensure the terminology, and the description of the protocol, in this section aligns with that in the Introduction.}
+
 \subsection{Data Packet Flooding}
 \label{sec:solution:data-flooding}
 
-In our implementation, producer mobility is detected at the application layer (e.g., via interface-up events), and the producer marks subsequent Data packets to indicate a mobility event. Flooding is then executed by forwarders when they process such mobility-marked Data, rather than by the producer directly; mobility triggers based on attachment/interface events are commonly used in mobility systems \cite{johnson:2004:mipv6, gundavelli:2008:pmipv6}.
-
+Producer mobility in OptoFlood is detected by applications (e.g., via interface-up events). The producer marks subsequent Data packets to indicate a mobility event. Forwarders flood such mobility-marked Data. Mobility triggers based on attachment/interface events are commonly used in mobility systems \cite{johnson:2004:mipv6,gundavelli:2008:pmipv6}.
 Each mobility-marked Data packet carries the following markings:
-
 \begin{itemize}
   \item \textbf{LP--MobilityFlag}: a hop-by-hop flag in the NDN Link Protocol (LP) header used to identify mobility-related Data at forwarders. If a forwarder finds a matching PIT entry, it clears the flag and forwards the Data normally so that the return path proceeds through standard PIT-based forwarding.
-  \item \textbf{LP--OptoHopLimit}: a hop-by-hop scope control decremented at each hop (default~3) to confine Data flooding to a local region. This field is experimental in our deployment and is distinct from the native Interest HopLimit.
+  \item \textbf{LP--OptoHopLimit}: a hop-by-hop scope control that is decremented at each hop (default~3) to confine Data flooding to a local region. This field is experimental in our deployment and is distinct from the native Interest HopLimit.
   \item \textbf{Flood-ID}: an immutable identifier used for duplicate suppression in floods. In our implementation, FloodId is encoded as a Data MetaInfo extension TLV so that it is part of the signed portion of the Data and cannot be forged or altered by intermediate nodes.
   \item \textbf{NewFaceSeq}: an immutable sequence number used by forwarders to create or update a Temporary FIB (TFIB) entry upon receiving mobility-marked Data. NewFaceSeq is also carried in the signed portion of the Data (MetaInfo extension TLV) to ensure integrity.
 \end{itemize}
@@ -209,14 +207,14 @@ For dissemination, flooded Data packets \emph{first} follow available FIB next h
 \subsection{Temporary FIB}
 \label{sec:solution:bidir}
 
-A key goal of OptoFlood is to establish a temporary \emph{bidirectional} communication capability quickly after handover. In the downstream direction (consumer $\rightarrow$ producer), Interest flooding can locate a viable path toward the producer's new attachment point when unicast forwarding fails. In the upstream direction (producer $\rightarrow$ consumer), mobility-marked Data flooding increases the likelihood that Data corresponding to Interests issued shortly before handover can reach a forwarder that still maintains the appropriate PIT state.
+A key goal of OptoFlood is to establish a temporary \emph{bidirectional} communication capability quickly after handover. In the downstream direction (consumer$\rightarrow$producer), Interest flooding can locate a viable path toward the producer's new attachment point when unicast forwarding fails. In upstream flows (producer$\rightarrow$consumer), mobility-marked Data flooding increases the likelihood that Data corresponding to Interests issued shortly before handover can reach a forwarder that still maintains the appropriate PIT state.
 
-In addition, forwarders opportunistically create short-lived forwarding hints via a \emph{Temporary FIB (TFIB)}. Upon receiving mobility-marked Data, a forwarder creates or updates a TFIB entry (separate from the standard FIB) mapping the relevant prefix to the incoming face, annotated with NewFaceSeq/FloodId, and with a short TTL (about one second). Subsequent Interests can then switch to unicast via TFIB immediately, reducing the need for repeated Interest flooding while global routing converges \cite{zhang:2018:kite, auge:2018:map-me}.
+Forwarders opportunistically create short-lived forwarding hints via a \emph{Temporary FIB (TFIB)}. Upon receiving mobility-marked Data, a forwarder creates or updates a TFIB entry (separate from the standard FIB) mapping the relevant prefix to the incoming face, annotated with NewFaceSeq/FloodId, and with a short TTL (about one second). Subsequent Interests can then switch to unicast via TFIB immediately, reducing the need for repeated Interest flooding while global routing converges \cite{zhang:2018:kite, auge:2018:map-me}.
 
 \subsection{Interest Packet Flooding}
 \label{sec:solution:interest-flooding}
 
-Interest flooding is also performed by the forwarder and is triggered only as a last resort. In our implementation, the flooding procedure is invoked on a Content Store miss when both the FIB and the TFIB provide no usable next hop for the Interest prefix.
+Interest flooding is performed by the forwarder as a last resort, invoked on a Content Store miss when both the FIB and the TFIB provide no usable next hop for the Interest prefix.
 
 The forwarder sets and enforces the native \emph{HopLimit} (default~3) before flooding (if not already present), decrementing it at each hop. Interest flooding is sent only to non-LOCAL faces.
 
