@@ -274,7 +274,7 @@ The consumer issues Interests every 33~ms (30~fps) with freshness and a 6~s life
 
 % - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 \subsubsection{Network Topology}
-The evaluation topology is a three-layer access network with one core node, two aggregation nodes, and six access nodes. The consumer is attached to one access node, while the producer is initially attached to a neighbouring access node and then moves to two alternative access nodes during the run. This setup creates local hand-offs that remain within a few hops but still require the forwarding plane and routing plane to react.
+The evaluation topology is a three-layer access network with one core node, two aggregation nodes, and six access nodes. The consumer is attached to one access node, while the producer is initially attached to a neighbouring access node and then moves across the access nodes during the run. Each hand-off is a one-hop move within the access network.
 
 The links are configured as follows:
 \begin{itemize}
@@ -297,7 +297,7 @@ The core, aggregation, and access nodes form the in-network forwarding fabric an
 % - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 \subsubsection{Experiment Procedure and Measurement}
 
-The experiments are run in Mini-NDN 0.7.0 \cite{lantz:2010:mininet} with identical topology, applications, and hand-off schedule in two configurations: baseline NDN forwarding and OptoFlood-enabled forwarding. In each run, all nodes start NFD and NLSR and are given time to converge before the applications are launched. The producer then performs two scheduled hand-offs, separated by long enough intervals \csp{How long? Be specific.} to let the transient behaviour around each event be observed clearly.
+The experiments are run in Mini-NDN 0.7.0 \cite{lantz:2010:mininet}. We compare two configurations: baseline NDN forwarding and OptoFlood-enabled forwarding. Both use the same topology, applications, and sequence of attachment points. In each run, all nodes start NFD and NLSR. They are given 30~s to converge before the applications are launched. The producer then performs 16 hand-offs, completing two round trips across the access nodes. Consecutive hand-offs are separated by an interval drawn uniformly at random from 90 to 150~s. This spacing is long enough for each transient to be observed in full.
 
 We record packet traces (\texttt{ndndump}) in three places: the consumer, the access switch adjacent to the old PoA, and the access switch adjacent to the new PoA for each hand-off.
  In addition, we retain packet traces on all relay and endpoint nodes for analysis.
