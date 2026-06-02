@@ -146,10 +146,9 @@ This results in the following.
 \end{itemize}
 
 NLSR has a number of tunable parameters that can reduce convergence times.
-To demonstrate that such tuning is not sufficient to address convergence delays following producer mobility, we explore the effects of changing these parameters, measuring baseline forwarding under five NLSR configurations that progressively reduce the hello interval, adjacency-LSA build interval, and routing calculation interval: G0 with hello interval \csp{FIXME}, adjacency-LSA build interval \csp{FIXME}, and routing calculation interval \csp{FIXME} (the defaults); G1 with \csp{FIXME}, \csp{FIXME}, \csp{FIXME}; G2 with \csp{FIXME}, \csp{FIXME}, \csp{FIXME}; G4 with \csp{FIXME}, \csp{FIXME}, \csp{FIXME}; and G4 with 36s, 6s, and 9s (\csp{the minimum permitted values?}) respectively. 
+To demonstrate that such tuning is not sufficient to address convergence delays following producer mobility, we explore the effects of changing these parameters, measuring baseline forwarding under five NLSR configurations that progressively reduce the hello interval, adjacency-LSA build interval, and routing calculation interval: G0 with hello interval 60s, adjacency-LSA build interval 10s, and routing calculation interval 15s (the defaults); G1 with 54s, 9s, 14s; G2 with 48s, 8s, 12s; G3 with 42s, 7s, 10s; and G4 with 36s, 6s, and 9s, respectively. The G4 intervals are the lowest combination that preserves the ratio of the default intervals while keeping every interval within the valid ranges documented for NLSR. 
 
-\csp{Need to describe G0-G4 in the previous.}
-\csp{Need to describe the topology, perhaps in general terms with a forward reference.}
+These baseline measurements use the three-layer access-network topology shown in Figure~\ref{exp_topo}, in which a fixed consumer retrieves a stream from a producer that performs hand-offs across the access nodes during the run.
 
 Figure~\ref{fig:baseline_nlsr_disruption_comparison} shows that the lowest-interval configuration tested (G4) reduces the observed interruption relative to the default configuration (G0) in some hand-offs, but still leaves service disruption on the order of tens of seconds. Figure~\ref{fig:baseline_nlsr_network_cost_comparison} shows the corresponding forwarding and control-plane cost. Across the tested configurations, the full-run forwarding-cost ratio remains close to 5.1--5.2, while NLSR control traffic increases as intervals are shortened.
 \csp{What is the ``full-run forwarding-cost ratio''? That metric hasn't been defined.}
