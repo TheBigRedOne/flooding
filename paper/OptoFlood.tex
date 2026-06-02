@@ -150,8 +150,9 @@ To demonstrate that such tuning is not sufficient to address convergence delays 
 
 These baseline measurements use the three-layer access-network topology shown in Figure~\ref{exp_topo}, in which a fixed consumer retrieves a stream from a producer that performs hand-offs across the access nodes during the run.
 
-Figure~\ref{fig:baseline_nlsr_disruption_comparison} shows that the lowest-interval configuration tested (G4) reduces the observed interruption relative to the default configuration (G0) in some hand-offs, but still leaves service disruption on the order of tens of seconds. Figure~\ref{fig:baseline_nlsr_network_cost_comparison} shows the corresponding forwarding and control-plane cost. Across the tested configurations, the full-run forwarding-cost ratio remains close to 5.1--5.2, while NLSR control traffic increases as intervals are shortened.
-\csp{What is the ``full-run forwarding-cost ratio''? That metric hasn't been defined.}
+Figure~\ref{fig:baseline_nlsr_disruption_comparison} shows that the lowest-interval configuration tested (G4) reduces the observed interruption relative to the default configuration (G0) in some hand-offs, but still leaves service disruption on the order of tens of seconds.
+
+Figure~\ref{fig:baseline_nlsr_network_cost_comparison} shows the corresponding forwarding and control-plane cost. The full-run forwarding-cost ratio quantifies forwarding overhead. It is the total application bytes forwarded across all relay nodes (the core, aggregation, and access nodes that carry traffic between the consumer and producer) divided by the application Data bytes delivered to the consumer over the whole run. A higher value reflects more network transmission effort per delivered byte. Its absolute value is influenced by the consumer-to-producer path length, and hence by the topology and the producer's sequence of attachment points. We therefore treat it as a forwarding-overhead comparison under the same movement pattern. Across the tested configurations this ratio remains around 6.4, while NLSR control traffic increases as intervals are shortened.
 
 \begin{figure}
     \centering
