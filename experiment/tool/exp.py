@@ -135,6 +135,26 @@ def _load_handoff_config() -> Tuple[int, float, float, List[str]]:
     return count, base_seconds, jitter_seconds, sequence[: count + 1]
 
 
+def _load_request_interval_ms() -> int:
+    """
+    Read the consumer/producer request interval (frame period) in milliseconds.
+
+    The value is supplied by the driver via EXP_REQUEST_INTERVAL_MS. 
+    A 20 ms default keeps direct runs functional. 
+    The consumer request cadence and the producer frame-generation cadence both use this value.
+    """
+    raw_value = (os.getenv('EXP_REQUEST_INTERVAL_MS') or '').strip()
+    if not raw_value:
+        return 20
+    try:
+        value = int(raw_value)
+    except ValueError as exc:
+        raise ValueError(f'Invalid EXP_REQUEST_INTERVAL_MS: {raw_value}') from exc
+    if value <= 0:
+        raise ValueError(f'EXP_REQUEST_INTERVAL_MS must be positive: {value}')
+    return value
+
+
 def _write_nlsr_params_file(
     results_dir: str,
     nlsr_params: Dict[str, str],
@@ -142,6 +162,7 @@ def _write_nlsr_params_file(
     handoff_base: float,
     handoff_jitter: float,
     handoff_sequence: List[str],
+    request_interval_ms: int,
 ) -> None:
     """Persist NLSR tuning parameters and handoff configuration to params.txt."""
     output_path = os.path.join(results_dir, 'params.txt')
@@ -150,6 +171,7 @@ def _write_nlsr_params_file(
     combined['handoff_interval_base_s'] = f'{handoff_base:.3f}'
     combined['handoff_interval_jitter_s'] = f'{handoff_jitter:.3f}'
     combined['handoff_sequence'] = ','.join(handoff_sequence)
+    combined['request_interval_ms'] = str(request_interval_ms)
     with open(output_path, 'w', encoding='utf-8') as output_file:
         for key in sorted(combined):
             output_file.write(f'{key}={combined[key]}\n')
@@ -292,6 +314,12 @@ if __name__ == '__main__':
         print(f"Error: {error}")
         exit(1)
 
+    try:
+        request_interval_ms = _load_request_interval_ms()
+    except ValueError as error:
+        print(f"Error: {error}")
+        exit(1)
+
     _write_nlsr_params_file(
         results_dir,
         nlsr_applied_params,
@@ -299,6 +327,7 @@ if __name__ == '__main__':
         handoff_base,
         handoff_jitter,
         handoff_sequence,
+        request_interval_ms,
     )
     _init_handoffs_file(handoffs_path)
 
@@ -340,8 +369,9 @@ if __name__ == '__main__':
     producer_log = os.path.join(experiment_dir, "results", "producer.log")
     consumer_log = os.path.join(experiment_dir, "results", "consumer.log")
 
-    producer.cmd(f"{producer_exec} &> {producer_log} &")
-    consumer.cmd(f"{consumer_exec} &> {consumer_log} &")
+    app_env = f"EXP_REQUEST_INTERVAL_MS={request_interval_ms}"
+    producer.cmd(f"{app_env} {producer_exec} &> {producer_log} &")
+    consumer.cmd(f"{app_env} {consumer_exec} &> {consumer_log} &")
 
     # The handoff loop runs K randomly-spaced toggles along handoff_sequence.
     # The first interval doubles as application warm-up before handoff #1.

@@ -1,0 +1,107 @@
+# Rules for the extended evaluation.
+#
+# Exp 1 (Request Interval and Video Quality): a solution-only sweep over the
+# consumer/producer request interval. The network delay is held at the
+# main-evaluation value; only EXP_REQUEST_INTERVAL_MS varies. The handoff
+# schedule is the deterministic K=16 double round trip (acc2..acc6..acc2 x2)
+# with zero jitter, so every interval value faces the same mobility timeline
+# and the comparison isolates the request interval.
+
+EXT1_INTERVALS = 5 10 20 50
+EXT1_INTERVALS_CSV = 5,10,20,50
+
+EXT1_HANDOFF_SEQUENCE = acc2,acc3,acc4,acc5,acc6,acc5,acc4,acc3,acc2,acc3,acc4,acc5,acc6,acc5,acc4,acc3,acc2
+EXT1_HANDOFF_ENV = NLSR_HANDOFF_COUNT='16' NLSR_HANDOFF_INTERVAL_BASE='90' NLSR_HANDOFF_INTERVAL_JITTER='0' NLSR_HANDOFF_SEQUENCE='$(EXT1_HANDOFF_SEQUENCE)'
+
+# Raw artifacts produced per interval directory (XXX is the i<interval> token).
+EXT1_EXPERIMENT_OUTPUTS = results/extended/exp1/XXX/consumer_capture.pcap \
+                          results/extended/exp1/XXX/pcap_nodes/core.pcap \
+                          results/extended/exp1/XXX/pcap_nodes/agg1.pcap \
+                          results/extended/exp1/XXX/pcap_nodes/agg2.pcap \
+                          results/extended/exp1/XXX/pcap_nodes/acc1.pcap \
+                          results/extended/exp1/XXX/pcap_nodes/acc2.pcap \
+                          results/extended/exp1/XXX/pcap_nodes/acc3.pcap \
+                          results/extended/exp1/XXX/pcap_nodes/acc4.pcap \
+                          results/extended/exp1/XXX/pcap_nodes/acc5.pcap \
+                          results/extended/exp1/XXX/pcap_nodes/acc6.pcap \
+                          results/extended/exp1/XXX/pcap_nodes/producer.pcap \
+                          results/extended/exp1/XXX/pcap_nodes/consumer.pcap \
+                          results/extended/exp1/XXX/params.txt \
+                          results/extended/exp1/XXX/handoffs.txt
+
+EXT1_RAW_OUTPUTS = $(subst XXX,i5,$(EXT1_EXPERIMENT_OUTPUTS)) \
+                   $(subst XXX,i10,$(EXT1_EXPERIMENT_OUTPUTS)) \
+                   $(subst XXX,i20,$(EXT1_EXPERIMENT_OUTPUTS)) \
+                   $(subst XXX,i50,$(EXT1_EXPERIMENT_OUTPUTS))
+
+# Host-side analysis inputs derived per interval.
+EXT1_ANALYSIS_INPUTS = $(foreach v,$(EXT1_INTERVALS),\
+    results/extended/exp1/i$(v)/consumer_capture.csv \
+    results/extended/exp1/i$(v)/network_overhead.csv \
+    results/extended/exp1/i$(v)/handoffs.txt)
+
+EXT1_SENSITIVITY_OUTPUTS = results/extended/exp1/exp1_disruption.pdf \
+                           results/extended/exp1/exp1_frameloss.pdf \
+                           results/extended/exp1/exp1_flood.pdf
+
+EXT1_TIMELINE_OUTPUT = results/extended/exp1/exp1_delivery_timeline.pdf
+
+# Interval value used for the per-run delivery-timeline illustration.
+EXT1_TIMELINE_DIR = results/extended/exp1/i20
+
+# The deadlines (ms) evaluated for the deadline-missed frame metric; 200 ms is
+# the primary playout budget.
+EXT1_DEADLINES = 100,200,500,1000
+EXT1_PRIMARY_DEADLINE = 200
+
+# --- Experiment runs (solution box/VM; SOLUTION_INPUTS from Makefile.solution) ---
+#
+# Each interval run is chained to the previous one through order-only
+# prerequisites so the solution VM stage stays strictly serial under make -j N
+# (concurrent `vagrant up` against the same Vagrantfile would race).
+
+$(subst XXX,i5,$(EXT1_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(SOLUTION_INPUTS)
+	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="EXP_REQUEST_INTERVAL_MS='5' $(EXT1_HANDOFF_ENV) make all" sh $^ $@
+
+$(subst XXX,i10,$(EXT1_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(SOLUTION_INPUTS) | $(subst XXX,i5,$(EXT1_EXPERIMENT_OUTPUTS))
+	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="EXP_REQUEST_INTERVAL_MS='10' $(EXT1_HANDOFF_ENV) make all" sh $^ $@
+
+$(subst XXX,i20,$(EXT1_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(SOLUTION_INPUTS) | $(subst XXX,i10,$(EXT1_EXPERIMENT_OUTPUTS))
+	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="EXP_REQUEST_INTERVAL_MS='20' $(EXT1_HANDOFF_ENV) make all" sh $^ $@
+
+$(subst XXX,i50,$(EXT1_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(SOLUTION_INPUTS) | $(subst XXX,i20,$(EXT1_EXPERIMENT_OUTPUTS))
+	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="EXP_REQUEST_INTERVAL_MS='50' $(EXT1_HANDOFF_ENV) make all" sh $^ $@
+
+# --- Host-side analysis (reuses the shared decode/extract pipeline) ---
+
+results/extended/exp1/%/consumer_capture.csv: results/extended/exp1/%/consumer_capture.pcap experiment/tool/ndn.lua
+	tshark -X lua_script:experiment/tool/ndn.lua -r "$<" -T fields -e frame.time_epoch -e frame.len -e ndn.type -e ndn.name -E separator=, -E header=y -E quote=d > "$@"
+
+results/extended/exp1/%/network_overhead.csv: experiment/tool/extract_overhead_csv.py \
+                                              results/extended/exp1/%/pcap_nodes/core.pcap \
+                                              results/extended/exp1/%/pcap_nodes/agg1.pcap \
+                                              results/extended/exp1/%/pcap_nodes/agg2.pcap \
+                                              results/extended/exp1/%/pcap_nodes/acc1.pcap \
+                                              results/extended/exp1/%/pcap_nodes/acc2.pcap \
+                                              results/extended/exp1/%/pcap_nodes/acc3.pcap \
+                                              results/extended/exp1/%/pcap_nodes/acc4.pcap \
+                                              results/extended/exp1/%/pcap_nodes/acc5.pcap \
+                                              results/extended/exp1/%/pcap_nodes/acc6.pcap \
+                                              results/extended/exp1/%/pcap_nodes/producer.pcap \
+                                              results/extended/exp1/%/pcap_nodes/consumer.pcap
+	python3 $^ $@
+
+# Three request-interval sensitivity panels produced in one aggregation pass.
+$(EXT1_SENSITIVITY_OUTPUTS) &: experiment/tool/plot_exp1_sensitivity.py $(EXT1_ANALYSIS_INPUTS)
+	python3 experiment/tool/plot_exp1_sensitivity.py \
+	    --root results/extended/exp1 \
+	    --intervals $(EXT1_INTERVALS_CSV) \
+	    --deadlines $(EXT1_DEADLINES) \
+	    --primary-deadline $(EXT1_PRIMARY_DEADLINE) \
+	    --out-dir results/extended/exp1
+
+# Per-run delivery-latency timeline at the primary interval.
+$(EXT1_TIMELINE_OUTPUT): experiment/tool/plot_delivery_timeline.py \
+                         $(EXT1_TIMELINE_DIR)/consumer_capture.csv \
+                         $(EXT1_TIMELINE_DIR)/handoffs.txt
+	python3 $^ $@ --deadline $(EXT1_PRIMARY_DEADLINE)

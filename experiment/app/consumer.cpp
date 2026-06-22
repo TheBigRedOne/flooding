@@ -8,9 +8,9 @@
 
 #include <boost/asio/io_context.hpp>
 #include <iostream>
-#include <queue>
 #include <map>
 #include <chrono>
+#include <cstdlib>
 #include <unistd.h>
 
 namespace ndn {
@@ -24,6 +24,15 @@ public:
     , m_validator(m_face)
     , m_scheduler(m_ioContext)
   {
+    // Request interval (frame period) is supplied by the driver via the
+    // EXP_REQUEST_INTERVAL_MS environment variable; 20 ms is a safety-net
+    // default for direct runs.
+    const char* rawInterval = std::getenv("EXP_REQUEST_INTERVAL_MS");
+    int intervalMs = rawInterval ? std::atoi(rawInterval) : 20;
+    if (intervalMs <= 0) {
+      intervalMs = 20;
+    }
+    m_interval = time::milliseconds(intervalMs);
   }
 
   void
@@ -38,6 +47,9 @@ public:
       return;
     }
 
+    std::cout << "[" << std::chrono::system_clock::now().time_since_epoch().count()
+              << "] STARTUP: request interval " << m_interval.count() << " ms" << std::endl;
+
     // Schedule the first Interest request
     sendInterest();
 
@@ -48,32 +60,18 @@ private:
   void
   sendInterest()
   {
+    // Request the frame for the current sequence number, then advance the
+    // sequence number.
     auto timestamp = std::chrono::system_clock::now().time_since_epoch().count();
-    
-    // Prioritize retransmitting failed requests
-    if (!m_retransmissionQueue.empty()) {
-      auto name = m_retransmissionQueue.front();
-      m_retransmissionQueue.pop();
 
-      std::cout << "[" << timestamp << "] RETRANS: Retransmitting Interest"
-                << " Name: " << name 
-                << " Queue size: " << m_retransmissionQueue.size() << std::endl;
-      expressInterest(name);
-    }
-    
-    // Otherwise, send a new Interest for the next sequence number
-    else {
-      Name interestName("/example/LiveStream");
-      interestName.appendVersion(m_sequenceNo);
+    Name interestName("/example/LiveStream");
+    interestName.appendVersion(m_sequenceNo);
 
-      std::cout << "[" << timestamp << "] INTEREST: Sending new Interest #" << m_sequenceNo << std::endl;
-      expressInterest(interestName);
-      
-      // Increment sequence number for the next new interest
-      m_sequenceNo++;
-    }
+    std::cout << "[" << timestamp << "] INTEREST: Sending Interest #" << m_sequenceNo << std::endl;
+    expressInterest(interestName);
+    m_sequenceNo++;
 
-    m_scheduler.schedule(33_ms, [this] { this->sendInterest(); });
+    m_scheduler.schedule(m_interval, [this] { this->sendInterest(); });
   }
 
   void
@@ -121,9 +119,6 @@ private:
                 << " (RTT unavailable)" << std::endl;
     }
 
-    // Reset consecutive failures on successful data reception
-    m_consecutiveFailures = 0;
-
     m_validator.validate(data,
                        [this, recvTimestamp] (const Data&) {
                          std::cout << "[" << recvTimestamp << "] VALIDATE: Data signature verified" << std::endl;
@@ -138,21 +133,12 @@ private:
   {
     auto timestamp = std::chrono::system_clock::now().time_since_epoch().count();
     m_nacksReceived++;
-    m_consecutiveFailures++;
-    
+
     std::cerr << "[" << timestamp << "] NACK: Received NACK #" << m_nacksReceived
-              << " Name: " << interest.getName() 
-              << " Reason: " << nack.getReason()
-              << " Consecutive failures: " << m_consecutiveFailures
-              << std::endl;
-    
-    // Remove from send time map
+              << " Name: " << interest.getName()
+              << " Reason: " << nack.getReason() << std::endl;
+
     m_sendTimeMap.erase(interest.getName());
-    
-    // Add the failed interest to the retransmission queue
-    m_retransmissionQueue.push(interest.getName());
-    std::cout << "[" << timestamp << "] NACK: Added to retransmission queue"
-              << " Queue size: " << m_retransmissionQueue.size() + 1 << std::endl;
   }
 
   void
@@ -160,21 +146,12 @@ private:
   {
     auto timestamp = std::chrono::system_clock::now().time_since_epoch().count();
     m_timeouts++;
-    m_consecutiveFailures++;
-    
+
     std::cerr << "[" << timestamp << "] TIMEOUT: Interest timeout #" << m_timeouts
-              << " Name: " << interest.getName()
-              << " Consecutive failures: " << m_consecutiveFailures
-              << std::endl;
-    
-    // Remove from send time map
+              << " Name: " << interest.getName() << std::endl;
+
     m_sendTimeMap.erase(interest.getName());
 
-    // Add the failed interest to the retransmission queue
-    m_retransmissionQueue.push(interest.getName());
-    std::cout << "[" << timestamp << "] TIMEOUT: Added to retransmission queue"
-              << " Queue size: " << m_retransmissionQueue.size() + 1 << std::endl;
-    
     // Log statistics periodically
     if (m_timeouts % 10 == 0) {
       std::cout << "[" << timestamp << "] STATS:"
@@ -193,20 +170,18 @@ private:
   ValidatorConfig m_validator;
   Scheduler m_scheduler;
 
+  time::milliseconds m_interval{20};
+
   uint64_t m_sequenceNo = 0;
-  std::queue<Name> m_retransmissionQueue;
-  
+
   // Statistics for experiment analysis
   uint64_t m_interestsSent = 0;
   uint64_t m_dataReceived = 0;
   uint64_t m_nacksReceived = 0;
   uint64_t m_timeouts = 0;
-  
+
   // Map to track RTT for each Interest
   std::map<Name, uint64_t> m_sendTimeMap;
-  
-  // Failure tracking for logging/debug
-  uint32_t m_consecutiveFailures = 0;
 };
 
 } // namespace examples
@@ -219,7 +194,7 @@ main(int argc, char** argv)
   
   std::cout << "[" << startTime << "] STARTUP: Consumer application starting" << std::endl;
   std::cout << "[" << startTime << "] STARTUP: Process ID: " << getpid() << std::endl;
-  std::cout << "[" << startTime << "] STARTUP: Video stream simulation: 30 fps (33ms intervals)" << std::endl;
+  std::cout << "[" << startTime << "] STARTUP: Live stream consumer (pull-based)" << std::endl;
   
   try {
     ndn::examples::Consumer consumer;

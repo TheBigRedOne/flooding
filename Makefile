@@ -29,6 +29,7 @@ BOXES = box/initial/initial.$(PROVIDER).box \
 # Experiment rules and result variables.
 include Makefile.baseline
 include Makefile.solution
+include Makefile.extended
 
 # Baseline NLSR tuning profile dirs (directory prerequisites only; rules live in Makefile.baseline).
 BASELINE_PROFILE_DIRS = results/baseline/g0-h60-a10-r15 \
@@ -87,13 +88,15 @@ PLOT_TOOL_SRCS := experiment/tool/plot_latency.py \
                   experiment/tool/plot_unmet_interest_comparison.py \
                   experiment/tool/summarise_nlsr_sensitivity.py \
                   experiment/tool/plot_nlsr_disruption_comparison.py \
-                  experiment/tool/plot_nlsr_network_cost_comparison.py
+                  experiment/tool/plot_nlsr_network_cost_comparison.py \
+                  experiment/tool/plot_exp1_sensitivity.py \
+                  experiment/tool/plot_delivery_timeline.py
 
 # Main target (set DISABLE_TEST=1 to skip tests)
 all: $(BOXES) experiment $(if $(DISABLE_TEST),,test/.validate_ok) result paper
 
 # High-level orchestration targets (set the provider via `PROVIDER=...` when needed)
-.PHONY: boxes experiment experiment-baseline experiment-solution experiment-nlsr-tuning \
+.PHONY: boxes experiment experiment-baseline experiment-solution experiment-exp1 plot-exp1 exp1 experiment-nlsr-tuning \
         result plot plot-baseline plot-main plot-nlsr-tuning paper test mypy vm-clean
 
 
@@ -101,6 +104,13 @@ all: $(BOXES) experiment $(if $(DISABLE_TEST),,test/.validate_ok) result paper
 experiment-baseline: $(BASELINE_RAW_OUTPUTS)
 
 experiment-solution: $(SOLUTION_RESULTS)
+
+# Extended evaluation, Exp 1 (request-interval sweep, solution only).
+experiment-exp1: $(EXT1_RAW_OUTPUTS)
+
+plot-exp1: $(EXT1_SENSITIVITY_OUTPUTS) $(EXT1_TIMELINE_OUTPUT)
+
+exp1: experiment-exp1 plot-exp1
 
 # Backward-compatible alias for the baseline parameter-set experiment pipeline.
 experiment-nlsr-tuning: $(BASELINE_RAW_OUTPUTS) $(BASELINE_PROFILE_COMPARE_OUTPUTS)
@@ -238,7 +248,7 @@ vm-clean:
 	PROVIDER=$(PROVIDER) LATEXMK=latexmk sh scripts/cleanup.sh vm-clean
 
 
-.PHONY: all build-boxes boxes clean deep-clean clean-ssh-config box box-initial box-baseline box-solution experiment experiment-baseline experiment-solution experiment-nlsr-tuning result plot plot-baseline plot-main plot-nlsr-tuning paper test mypy vm-clean
+.PHONY: all build-boxes boxes clean deep-clean clean-ssh-config box box-initial box-baseline box-solution experiment experiment-baseline experiment-solution experiment-exp1 plot-exp1 exp1 experiment-nlsr-tuning result plot plot-baseline plot-main plot-nlsr-tuning paper test mypy vm-clean
 
 .DELETE_ON_ERROR:
 
