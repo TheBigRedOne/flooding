@@ -23,7 +23,7 @@ BOXES = box/initial/initial.$(PROVIDER).box \
 # Experiment rules and result variables.
 include Makefile.baseline
 include Makefile.solution
-include Makefile.extended
+include Makefile.exp1
 
 # Baseline NLSR tuning profile dirs (directory prerequisites only; rules live in Makefile.baseline).
 BASELINE_PROFILE_DIRS = results/baseline/g0-h60-a10-r15 \

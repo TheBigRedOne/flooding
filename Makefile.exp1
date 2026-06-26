@@ -1,11 +1,10 @@
-# Rules for the extended evaluation.
+# Rules for Exp 1 (Request Interval and Video Quality).
 #
-# Exp 1 (Request Interval and Video Quality): a solution-only sweep over the
-# consumer/producer request interval. The network delay is held at the
-# main-evaluation value; only EXP_REQUEST_INTERVAL_MS varies. The handoff
-# schedule is the deterministic K=16 double round trip (acc2..acc6..acc2 x2)
-# with zero jitter, so every interval value faces the same mobility timeline
-# and the comparison isolates the request interval.
+# A solution-only sweep over the consumer/producer request interval. The network
+# delay is held at the main-evaluation value; only EXP_REQUEST_INTERVAL_MS
+# varies. The handoff schedule is the deterministic K=16 double round trip
+# (acc2..acc6..acc2 x2) with zero jitter, so every interval value faces the same
+# mobility timeline and the comparison isolates the request interval.
 
 EXT1_INTERVALS = 5 10 20 50
 EXT1_INTERVALS_CSV = 5,10,20,50
