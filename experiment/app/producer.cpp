@@ -179,6 +179,14 @@ public:
     , m_scheduler(m_ioContext)
     , m_keyChain()
   {
+    // Frame generation period matches the consumer request interval, supplied
+    // by the driver via EXP_REQUEST_INTERVAL_MS (20 ms safety-net default).
+    const char* rawInterval = std::getenv("EXP_REQUEST_INTERVAL_MS");
+    int intervalMs = rawInterval ? std::atoi(rawInterval) : 20;
+    if (intervalMs <= 0) {
+      intervalMs = 20;
+    }
+    m_interval = time::milliseconds(intervalMs);
     // Default to disabled; enable automatically in solution builds
 #ifdef SOLUTION_ENABLED
     m_enableOptoFlood = true;
@@ -261,12 +269,23 @@ private:
   void
   scheduleDataSend()
   {
-    m_scheduler.schedule(33_ms, [this] { this->sendPendingData(); });
+    m_scheduler.schedule(m_interval, [this] { this->sendPendingData(); });
   }
 
   void
   sendPendingData()
   {
+    // Drop pending Interests whose lifetime has elapsed. After an outage this
+    // prevents the producer from sending Data for requests that have already
+    // expired in the network. The TTL matches the consumer Interest lifetime.
+    const time::seconds pendingTtl(6);
+    auto now = time::steady_clock::now();
+    while (!m_pendingInterests.empty() &&
+           now - m_pendingInterests.front().arrival > pendingTtl) {
+      m_pendingNames.erase(m_pendingInterests.front().name);
+      m_pendingInterests.pop_front();
+    }
+
     if (m_pendingInterests.empty()) {
       scheduleDataSend();
       return;
@@ -328,7 +347,7 @@ private:
       return;
     }
 
-    PendingInterest pending{interestName, false, 0};
+    PendingInterest pending{interestName, false, 0, time::steady_clock::now()};
     m_pendingInterests.push_back(std::move(pending));
     m_pendingNames.insert(interestName);
 
@@ -343,12 +362,15 @@ private:
     Name name;
     bool markMobility = false;
     uint32_t mobilitySeq = 0;
+    time::steady_clock::time_point arrival{};
   };
 
   boost::asio::io_context m_ioContext;
   Face m_face{m_ioContext};
   Scheduler m_scheduler;
   KeyChain m_keyChain;
+
+  time::milliseconds m_interval{20};
 
   std::unique_ptr<NetlinkListener> m_netlinkListener;
   bool m_enableOptoFlood = false;

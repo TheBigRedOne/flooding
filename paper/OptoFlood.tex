@@ -383,6 +383,68 @@ Together, the overhead results are consistent with the design target. OptoFlood 
 
 Overall, the evaluation shows that OptoFlood shortens the producer hand-off disruption from long outages to brief transients. It keeps unmet requests close to the steady-state regime during mobility. The additional forwarding and control traffic remains bounded.
 
+% ------------------------------------------------------------------------------
+\subsection{Extended Evaluation}
+\label{sec:evaluation:extended}
+
+The comparison above contrasts OptoFlood with the baseline under a single consumer, a single producer, and an access-network propagation delay below the consumer request interval. We now characterise OptoFlood beyond this single-flow, low-delay regime. Each study in the following relaxes one of these three conditions and maintains the remaining parameters in the main-evaluation configuration. We report how OptoFlood behaves as that condition varies.
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{Request Interval and Video Quality}
+\label{sec:evaluation:extended:interval}
+
+The request interval sets the rate at which the consumer requests successive frames, which we use as a proxy for stream quality. We hold the network delay at its main-evaluation value and vary the request interval over a representative range of 5 to 50~ms, with the producer generating one frame per request period. For live streaming, a Data packet is useful only before its playout deadline, and a late packet is equivalent to a lost one; the deadline represents the playout buffer. A frame counts as lost when its Data does not arrive within this deadline. The number of Interests in flight at a hand-off grows as the request interval shrinks, so a finer interval leaves more frames exposed to the convergence gap.
+
+Figure~\ref{fig:ext_interval} reports OptoFlood across the request-interval range. Panel~(a) shows that the interruption time per-handover remains approximately flat. The recovery latency is set by the network--flooded Data and Interest propagation, then TFIB installation, and Fast-LSA--and is independent of the request rate. Panel~(b) shows that the deadline-missed frames per hand-off increase as the interval shrinks. A finer interval places more frames in flight during the convergence gap, and each frame past its deadline counts as lost. Panel~(c) reports the flood load per hand-off, separated into flooded Data and flooded Interest. The flood load increases as the interval shrinks, and the hop limit and per-producer rate limit bound it. Data flooding covers only the Interests pending at the producer when it moves, so its volume tracks the in-flight count. Interest flooding is a last resort that a forwarder issues when both the FIB and the TFIB miss, and it stops once the first flooded Data instals a TFIB entry or Fast-LSA restores the route. Sustained Interest flooding therefore arises only when the producer stays unreachable for an extended period. Across the tested range, the flood load remains localised to the recovery window and becomes significant only at the finest intervals.
+
+\begin{figure}
+    \centering
+    \subfloat[Per-hand-off service disruption versus request interval.\label{fig:ext_interval_disruption}]{\includegraphics[width=\columnwidth]{results/extended/exp1/exp1_disruption.pdf}}\\
+    \subfloat[Deadline-missed frames per hand-off versus request interval.\label{fig:ext_interval_loss}]{\includegraphics[width=\columnwidth]{results/extended/exp1/exp1_frameloss.pdf}}\\
+    \subfloat[Flood load per hand-off versus request interval.\label{fig:ext_interval_flood}]{\includegraphics[width=\columnwidth]{results/extended/exp1/exp1_flood.pdf}}
+    \caption{OptoFlood sensitivity to the request interval (stream quality).}
+    \label{fig:ext_interval}
+\end{figure}
+
+\begin{figure}
+    \centering
+    \includegraphics[width=\columnwidth]{results/extended/exp1/exp1_delivery_timeline.pdf}
+    \caption{Per-frame delivery latency over the run at a representative request interval. Each point is the elapsed time from a frame's first request to its Data arrival; the horizontal line marks the playout deadline and the vertical lines mark hand-offs.}
+    \label{fig:ext_interval_timeline}
+\end{figure}
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{Multiple Consumers}
+\label{sec:evaluation:extended:consumers}
+
+We attach several consumers to the access network under two demand patterns. In the \emph{shared} pattern, all consumers view the same live stream. Two mechanisms then let them share the recovery: consumers requesting the same frame at the same time are aggregated in the PIT, and consumers lagging the live edge by less than the Data freshness period are served from the Content Store. The temporary forwarding state that OptoFlood instals from mobility-marked data is a per-prefix forwarder state, so it is shared as well. In the \emph{distinct} pattern, each consumer requests a separate stream from the same producer, so no content is shared, and each stream is recovered on its own prefix. We scale the number of consumers, and for the shared pattern we also vary the lag behind the live edge relative to the freshness period.
+
+In Figure~\ref{fig:ext_consumers}, panel~(a) reports the shared-pattern per-consumer interruption time against consumer lag, in units of the Data freshness period. While the lag stays below the freshness period, the Content Store holds the requested frame and the consumer sees little disruption. Once the lag exceeds the freshness period, the cached frame expires and the disruption returns to the live-edge value. The curves for different numbers of consumers overlap, because PIT aggregation and the shared TFIB keep the per-consumer disruption independent of the number of consumers. Panel~(b) reports the recovery cost compared to the number of consumers for both patterns. Under the shared pattern, the cost stays close to its single-consumer value, because the mobility-marked Data is flooded once per event and its copies populate the Content Store. Under the distinct pattern the cost grows with the number of consumers, because each separate stream carries its own pending Interests and is recovered on its own prefix. The contrast isolates the saving from content sharing: the per consumer cost falls with scale under the shared pattern and remains constant per consumer under the distinct pattern.
+
+\begin{figure}
+    \centering
+    \subfloat[Shared pattern: per-consumer service disruption versus consumer lag, in units of the freshness period.\label{fig:ext_consumers_lag}]{\includegraphics[width=\columnwidth]{paper/figures/EXT 2(a)： per-consumer disruption vs lag.png}}\\
+    \subfloat[Recovery cost versus number of consumers, for the shared and distinct patterns.\label{fig:ext_consumers_cost}]{\includegraphics[width=\columnwidth]{paper/figures/EXT 2(b)： Recovery cost vs N.png}}
+    \caption{OptoFlood with multiple consumers under shared and distinct demand.}
+    \label{fig:ext_consumers}
+\end{figure}
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{Multiple Producers}
+\label{sec:evaluation:extended:producers}
+
+OptoFlood incurs its recovery cost once per mobility event, so its aggregate cost grows with the number of independent producers moving. We attach several producers, each paired with one consumer, and scale their number. Each producer advertises a distinct sub-prefix and moves on an independent schedule. A synchronised-movement variant provides the worst case for instantaneous load.
+
+Figure~\ref{fig:ext_producers} reports on the scale of recovery quality and cost. Panel~(a) shows that the aggregate overhead grows approximately linearly with the number of producers. Each added producer contributes one independent stream of mobility events, and OptoFlood's per-producer increment stays bounded by its hop limit and rate control. We compare the curve against the linear extrapolation of the single-producer cost from the main evaluation. The two remain close, so the overhead grows in proportion to the number of producers. Panel~(b) shows that the per-flow disruption distribution remains flat as producers are added. Recoveries keyed on distinct producer prefixes remain independent, so each flow retains its single-producer continuity.
+
+\begin{figure}
+    \centering
+    \subfloat[Aggregate network overhead versus number of producers.\label{fig:ext_producers_overhead}]{\includegraphics[width=\columnwidth]{paper/figures/EXT 3(a)： Aggregation overhead vs N.png}}\\
+    \subfloat[Per-flow service-disruption distribution versus number of producers.\label{fig:ext_producers_disruption}]{\includegraphics[width=\columnwidth]{paper/figures/EXT 3(b)： per-flow disruption distribution vs N.png}}
+    \caption{OptoFlood scaling with the number of producers.}
+    \label{fig:ext_producers}
+\end{figure}
+
 % ==============================================================================
 
 \section{Related Work}

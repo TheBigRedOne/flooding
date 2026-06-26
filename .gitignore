@@ -93,6 +93,7 @@ experiment/tool/.venv/
 test/results/
 test/minindn/
 results
+results0
 
 #Generated figures
 /paper/figures/baseline_*.pdf
