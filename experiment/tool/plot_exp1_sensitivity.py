@@ -26,7 +26,7 @@ import pandas as pd
 
 import plot_overhead
 
-APP_PREFIX = "/example/LiveStream"
+APP_PREFIX = "/LiveStream"
 
 # Window parameters (seconds) for the per-hand-off metrics.
 DISRUPTION_SEARCH_WINDOW = 60.0

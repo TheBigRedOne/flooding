@@ -111,6 +111,13 @@ if __name__ == '__main__':
     r4.cmd(f"tcpdump -i any -U -w {r4_pcap} &> {os.path.join(results_dir, 'tcpdump_r4.log')} &")
     r5.cmd(f"tcpdump -i any -U -w {r5_pcap} &> {os.path.join(results_dir, 'tcpdump_r5.log')} &")
 
+    # Establish application trust on the producer node before launching the apps.
+    # ndnsec key-gen sets /LiveStream as the producer's default identity (overriding
+    # the /localhost/operator identity created at NFD start); the self-signed
+    # certificate is exported to the path referenced by the consumer trust schema.
+    producer.cmd('ndnsec key-gen /LiveStream >/dev/null 2>&1')
+    producer.cmd('ndnsec cert-dump -i /LiveStream > /home/vagrant/flooding/experiment/app/livestream-trust-anchor.cert')
+
     # Launch producer and consumer apps (built under test/ by Makefile prep)
     producer_exec = os.path.join(experiment_dir, 'producer')
     consumer_exec = os.path.join(experiment_dir, 'consumer')

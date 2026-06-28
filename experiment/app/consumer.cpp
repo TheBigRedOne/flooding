@@ -33,6 +33,13 @@ public:
       intervalMs = 20;
     }
     m_interval = time::milliseconds(intervalMs);
+
+    // Stream prefix selects which data stream to request. The driver supplies it
+    // via EXP_STREAM_PREFIX so multi-stream studies can request /LiveStream/v1,
+    // /LiveStream/v2, etc.; the default /LiveStream/v0 is the baseline stream.
+    const char* rawStreamPrefix = std::getenv("EXP_STREAM_PREFIX");
+    m_streamPrefix = Name(rawStreamPrefix && rawStreamPrefix[0] != '\0'
+                          ? rawStreamPrefix : "/LiveStream/v0");
   }
 
   void
@@ -64,7 +71,7 @@ private:
     // sequence number.
     auto timestamp = std::chrono::system_clock::now().time_since_epoch().count();
 
-    Name interestName("/example/LiveStream");
+    Name interestName(m_streamPrefix);
     interestName.appendVersion(m_sequenceNo);
 
     std::cout << "[" << timestamp << "] INTEREST: Sending Interest #" << m_sequenceNo << std::endl;
@@ -171,6 +178,7 @@ private:
   Scheduler m_scheduler;
 
   time::milliseconds m_interval{20};
+  Name m_streamPrefix;
 
   uint64_t m_sequenceNo = 0;
 

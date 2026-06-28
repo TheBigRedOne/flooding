@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator, ScalarFormatter
 
 
-APP_PREFIX = "/example/LiveStream"
+APP_PREFIX = "/LiveStream"
 
 # ---------------------------------------------------------------------------
 # TUNING: Figure canvas size (physical export size before LaTeX scaling).

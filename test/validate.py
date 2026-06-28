@@ -521,7 +521,7 @@ def validate_s4() -> None:
         records: List[Tuple[int, str, int, int, str]] = []
         if not os.path.exists(pcap_path):
             return records
-        filter_expr = 'ndn.type==Interest && ndn.name contains "/example/LiveStream" && !(ndn.name contains "/localhost/")'
+        filter_expr = 'ndn.type==Interest && ndn.name contains "/LiveStream" && !(ndn.name contains "/localhost/")'
         cmd = tshark_cmd([
             '-r', pcap_path,
             '-Y', filter_expr,
@@ -540,7 +540,7 @@ def validate_s4() -> None:
             if len(cols) < 5:
                 continue
             pkttype, frame_raw, hop_raw, nonce_raw, name_raw = cols[:5]
-            if not name_raw.startswith('/example/LiveStream'):
+            if not name_raw.startswith('/LiveStream'):
                 continue
             hop_val: Optional[int] = None
             for token in hop_raw.replace(',', ' ').split():
@@ -632,7 +632,7 @@ def validate_s4() -> None:
             print(f'PASS: S4 Interest HopLimit decrement path = {chain} (nonce={hex(candidate)})')
             return
         last_node_idx = ['r2', 'r3', 'r4', 'r5'][len(chain) - 1]
-        if _has_rib_entry(last_node_idx, '/example/LiveStream'):
+        if _has_rib_entry(last_node_idx, '/LiveStream'):
             print(f'PASS: S4 Interest HopLimit chain={chain} stopped at {last_node_idx} due to existing route (nonce={hex(candidate)})')
             return
     print('FAIL: S4 no matching Interest nonce with monotonic HopLimit across nodes; candidates checked =', len(candidates))

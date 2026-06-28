@@ -25,7 +25,7 @@ def _parse_args() -> argparse.Namespace:
         help="Comma-separated handoff times (fallback when no handoff_file is given).",
     )
     parser.add_argument("--window", type=float, default=10.0, help="Window length after each handoff.")
-    parser.add_argument("--prefix", default="/example/LiveStream", help="Application prefix to include.")
+    parser.add_argument("--prefix", default="/LiveStream", help="Application prefix to include.")
     parser.add_argument(
         "--relay-nodes",
         default=",".join(plot_overhead.DEFAULT_RELAY_NODES),

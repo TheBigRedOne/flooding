@@ -90,7 +90,7 @@ def _parse_args() -> argparse.Namespace:
         default=1.0,
         help="Seconds before each handoff included to account for timestamp alignment.",
     )
-    parser.add_argument("--prefix", default="/example/LiveStream", help="Application prefix to include.")
+    parser.add_argument("--prefix", default="/LiveStream", help="Application prefix to include.")
     return parser.parse_args()
 
 

@@ -41,6 +41,14 @@ DEFAULT_HANDOFF_COUNT = 2
 DEFAULT_HANDOFF_INTERVAL_BASE = 120.0
 DEFAULT_HANDOFF_INTERVAL_JITTER = 0.0
 
+# Producer signing identity and exported trust anchor for application Data.
+# The producer node generates a self-signed /LiveStream identity (set as its
+# default identity) before the application starts, so produced Data is signed
+# under /LiveStream. The certificate is exported to the shared path referenced
+# by the consumer trust schema (trust-schema.conf).
+PRODUCER_IDENTITY = '/LiveStream'
+TRUST_ANCHOR_FILE = '/home/vagrant/flooding/experiment/app/livestream-trust-anchor.cert'
+
 # Access points that must start down so the experiment begins with the producer
 # attached only via acc2.
 NON_INITIAL_ACCESS_POINTS: Tuple[str, ...] = ('acc3', 'acc4', 'acc5', 'acc6')
@@ -354,6 +362,15 @@ if __name__ == '__main__':
     producer = ndn.net['producer']
     consumer = ndn.net['consumer']
 
+    # Establish application trust on the producer node before launching the apps.
+    # ndnsec key-gen sets /LiveStream as the producer's default identity, overriding
+    # the /localhost/operator identity created at NFD start, so producer Data is
+    # signed under /LiveStream. The self-signed certificate is exported to the path
+    # referenced by the consumer trust schema. NLSR prefix-update validation is
+    # disabled here, so changing the default identity does not affect advertisement.
+    producer.cmd('ndnsec key-gen {} >/dev/null 2>&1'.format(PRODUCER_IDENTITY))
+    producer.cmd('ndnsec cert-dump -i {} > {}'.format(PRODUCER_IDENTITY, TRUST_ANCHOR_FILE))
+
     consumer_pcap = os.path.join(results_dir, "consumer_capture.pcap")
     tcpdump_log = os.path.join(results_dir, "tcpdump.log")
     consumer.cmd(f"tcpdump -i consumer-eth0 -w {consumer_pcap} &> {tcpdump_log} &")
@@ -370,6 +387,11 @@ if __name__ == '__main__':
     consumer_log = os.path.join(experiment_dir, "results", "consumer.log")
 
     app_env = f"EXP_REQUEST_INTERVAL_MS={request_interval_ms}"
+    # Optional stream selection for multi-stream studies (default /LiveStream/v0
+    # is applied by the consumer when unset).
+    stream_prefix = os.getenv('EXP_STREAM_PREFIX')
+    if stream_prefix:
+        app_env += f" EXP_STREAM_PREFIX={quote(stream_prefix)}"
     producer.cmd(f"{app_env} {producer_exec} &> {producer_log} &")
     consumer.cmd(f"{app_env} {consumer_exec} &> {consumer_log} &")
 

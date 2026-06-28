@@ -200,7 +200,7 @@ public:
   run()
   {
     // Register prefix with a success callback to advertise it via NLSR
-    m_face.setInterestFilter("/example/LiveStream",
+    m_face.setInterestFilter("/LiveStream",
                              std::bind(&Producer::onInterest, this, _2),
                              std::bind(&Producer::onRegisterSuccess, this, _1),
                              std::bind(&Producer::onRegisterFailed, this, _1, _2));
@@ -231,7 +231,7 @@ private:
     
     // Now that the local filter is confirmed, advertise the prefix to the network.
     std::cout << "[" << timestamp << "] PREFIX: Advertising prefix via NLSR" << std::endl;
-    int ret = std::system("nlsrc advertise /example/LiveStream");
+    int ret = std::system("nlsrc advertise /LiveStream");
     if (ret != 0) {
       std::cerr << "[" << timestamp << "] ERROR: Failed to advertise prefix with nlsrc (exit code: " 
                 << ret << ")" << std::endl;

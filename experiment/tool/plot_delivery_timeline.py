@@ -17,7 +17,7 @@ from typing import List, Tuple
 import matplotlib.pyplot as plt
 import pandas as pd
 
-APP_PREFIX = "/example/LiveStream"
+APP_PREFIX = "/LiveStream"
 CM_TO_INCH = 1.0 / 2.54
 FIGURE_WIDTH_CM = 8.0
 FIGURE_HEIGHT_CM = 6.0

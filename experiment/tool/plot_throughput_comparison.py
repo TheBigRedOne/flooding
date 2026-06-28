@@ -24,7 +24,7 @@ LEGEND_SIZE = 7
 BASELINE_COLOR = "#0072B2"
 SOLUTION_COLOR = "#D55E00"
 HANDOFF_SHADE_ALPHA = 0.14
-APP_PREFIX = "/example/LiveStream"
+APP_PREFIX = "/LiveStream"
 
 
 def _configure_style() -> None:
