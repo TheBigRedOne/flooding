@@ -286,45 +286,46 @@ private:
       m_pendingInterests.pop_front();
     }
 
-    if (m_pendingInterests.empty()) {
-      scheduleDataSend();
-      return;
-    }
+    // Serve every pending Interest in this tick so the producer keeps pace with
+    // the request rate (one frame per request period per stream). Serving a
+    // single Data per tick falls behind the consumer and accumulates an
+    // unbounded backlog until pending requests reach the Interest lifetime.
+    while (!m_pendingInterests.empty()) {
+      PendingInterest pending = std::move(m_pendingInterests.front());
+      m_pendingInterests.pop_front();
 
-    PendingInterest pending = std::move(m_pendingInterests.front());
-    m_pendingInterests.pop_front();
-
-    auto data = make_shared<Data>(pending.name);
-    data->setFreshnessPeriod(10_s);
-    data->setContent(std::string_view("OptoFlood Test Data"));
+      auto data = make_shared<Data>(pending.name);
+      data->setFreshnessPeriod(10_s);
+      data->setContent(std::string_view("OptoFlood Test Data"));
 
 #ifdef SOLUTION_ENABLED
-    if (m_enableOptoFlood && pending.markMobility) {
-      MetaInfo metaInfo = data->getMetaInfo();
-      uint64_t floodId = ++m_floodIdSeq;
-      metaInfo.addAppMetaInfo(optoflood::makeFloodIdBlock(floodId));
-      metaInfo.addAppMetaInfo(optoflood::makeNewFaceSeqBlock(pending.mobilitySeq));
-      data->setMetaInfo(metaInfo);
-      std::cout << "[" << std::chrono::system_clock::now().time_since_epoch().count()
-                << "] DATA: Attaching OptoFlood mobility markers"
-                << " NewFaceSeq: " << pending.mobilitySeq
-                << " FloodId: " << floodId << std::endl;
-    }
+      if (m_enableOptoFlood && pending.markMobility) {
+        MetaInfo metaInfo = data->getMetaInfo();
+        uint64_t floodId = ++m_floodIdSeq;
+        metaInfo.addAppMetaInfo(optoflood::makeFloodIdBlock(floodId));
+        metaInfo.addAppMetaInfo(optoflood::makeNewFaceSeqBlock(pending.mobilitySeq));
+        data->setMetaInfo(metaInfo);
+        std::cout << "[" << std::chrono::system_clock::now().time_since_epoch().count()
+                  << "] DATA: Attaching OptoFlood mobility markers"
+                  << " NewFaceSeq: " << pending.mobilitySeq
+                  << " FloodId: " << floodId << std::endl;
+      }
 #endif
 
-    m_keyChain.sign(*data);
+      m_keyChain.sign(*data);
 
-    auto sendTimestamp = std::chrono::system_clock::now().time_since_epoch().count();
-    std::cout << "[" << sendTimestamp << "] DATA: Sending response"
-              << " Size: " << data->wireEncode().size() << " bytes"
-              << " Name: " << data->getName() << std::endl;
+      auto sendTimestamp = std::chrono::system_clock::now().time_since_epoch().count();
+      std::cout << "[" << sendTimestamp << "] DATA: Sending response"
+                << " Size: " << data->wireEncode().size() << " bytes"
+                << " Name: " << data->getName() << std::endl;
 
-    m_face.put(*data);
-    m_dataCount++;
-    m_pendingNames.erase(pending.name);
+      m_face.put(*data);
+      m_dataCount++;
+      m_pendingNames.erase(pending.name);
 
-    std::cout << "[" << sendTimestamp << "] STATS: Total Interests: " << m_interestCount
-              << " Total Data sent: " << m_dataCount << std::endl;
+      std::cout << "[" << sendTimestamp << "] STATS: Total Interests: " << m_interestCount
+                << " Total Data sent: " << m_dataCount << std::endl;
+    }
 
     scheduleDataSend();
   }
