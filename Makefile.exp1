@@ -6,8 +6,8 @@
 # (acc2..acc6..acc2 x2) with zero jitter, so every interval value faces the same
 # mobility timeline and the comparison isolates the request interval.
 
-EXT1_INTERVALS = 5 10 20 50
-EXT1_INTERVALS_CSV = 5,10,20,50
+EXT1_INTERVALS = 10 20 30 40 50
+EXT1_INTERVALS_CSV = 10,20,30,40,50
 
 EXT1_HANDOFF_SEQUENCE = acc2,acc3,acc4,acc5,acc6,acc5,acc4,acc3,acc2,acc3,acc4,acc5,acc6,acc5,acc4,acc3,acc2
 EXT1_HANDOFF_ENV = NLSR_HANDOFF_COUNT='16' NLSR_HANDOFF_INTERVAL_BASE='90' NLSR_HANDOFF_INTERVAL_JITTER='0' NLSR_HANDOFF_SEQUENCE='$(EXT1_HANDOFF_SEQUENCE)'
@@ -28,9 +28,10 @@ EXT1_EXPERIMENT_OUTPUTS = results/extended/exp1/XXX/consumer_capture.pcap \
                           results/extended/exp1/XXX/params.txt \
                           results/extended/exp1/XXX/handoffs.txt
 
-EXT1_RAW_OUTPUTS = $(subst XXX,i5,$(EXT1_EXPERIMENT_OUTPUTS)) \
-                   $(subst XXX,i10,$(EXT1_EXPERIMENT_OUTPUTS)) \
+EXT1_RAW_OUTPUTS = $(subst XXX,i10,$(EXT1_EXPERIMENT_OUTPUTS)) \
                    $(subst XXX,i20,$(EXT1_EXPERIMENT_OUTPUTS)) \
+                   $(subst XXX,i30,$(EXT1_EXPERIMENT_OUTPUTS)) \
+                   $(subst XXX,i40,$(EXT1_EXPERIMENT_OUTPUTS)) \
                    $(subst XXX,i50,$(EXT1_EXPERIMENT_OUTPUTS))
 
 # Host-side analysis inputs derived per interval.
@@ -60,16 +61,19 @@ EXT1_PRIMARY_DEADLINE = 200
 # the shared solution VM stage stays strictly serial under make -j N (concurrent
 # `vagrant up` against the same Vagrantfile would race).
 
-$(subst XXX,i5,$(EXT1_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(SOLUTION_INPUTS) | test/.validate_ok $(SOLUTION_RESULTS)
-	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="EXP_REQUEST_INTERVAL_MS='5' $(EXT1_HANDOFF_ENV) make all" sh $^ $@
-
-$(subst XXX,i10,$(EXT1_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(SOLUTION_INPUTS) | $(subst XXX,i5,$(EXT1_EXPERIMENT_OUTPUTS))
+$(subst XXX,i10,$(EXT1_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(SOLUTION_INPUTS) | test/.validate_ok $(SOLUTION_RESULTS)
 	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="EXP_REQUEST_INTERVAL_MS='10' $(EXT1_HANDOFF_ENV) make all" sh $^ $@
 
 $(subst XXX,i20,$(EXT1_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(SOLUTION_INPUTS) | $(subst XXX,i10,$(EXT1_EXPERIMENT_OUTPUTS))
 	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="EXP_REQUEST_INTERVAL_MS='20' $(EXT1_HANDOFF_ENV) make all" sh $^ $@
 
-$(subst XXX,i50,$(EXT1_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(SOLUTION_INPUTS) | $(subst XXX,i20,$(EXT1_EXPERIMENT_OUTPUTS))
+$(subst XXX,i30,$(EXT1_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(SOLUTION_INPUTS) | $(subst XXX,i20,$(EXT1_EXPERIMENT_OUTPUTS))
+	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="EXP_REQUEST_INTERVAL_MS='30' $(EXT1_HANDOFF_ENV) make all" sh $^ $@
+
+$(subst XXX,i40,$(EXT1_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(SOLUTION_INPUTS) | $(subst XXX,i30,$(EXT1_EXPERIMENT_OUTPUTS))
+	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="EXP_REQUEST_INTERVAL_MS='40' $(EXT1_HANDOFF_ENV) make all" sh $^ $@
+
+$(subst XXX,i50,$(EXT1_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(SOLUTION_INPUTS) | $(subst XXX,i40,$(EXT1_EXPERIMENT_OUTPUTS))
 	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="EXP_REQUEST_INTERVAL_MS='50' $(EXT1_HANDOFF_ENV) make all" sh $^ $@
 
 # --- Host-side analysis (reuses the shared decode/extract pipeline) ---

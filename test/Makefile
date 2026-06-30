@@ -83,6 +83,8 @@ $(PCAPS) $(RIBS) ../test/results/.validate_ok_vm &: ../test/.sync_solution_$(PRO
 	# Rsync back test artifacts (including VM validate stamp) to host test/results
 	mkdir -p ../test/results
 	rsync -avH -e "ssh -F .ssh_config_solution" solution:/home/vagrant/flooding/test/results/ ../test/results/
+	# Power off the dedicated test VM once artifacts are collected.
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant halt -f || true
 	@echo "Artifacts synced to ../test/results/"
 
 # Validation stamp (runs all validations)

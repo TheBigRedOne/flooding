@@ -40,7 +40,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--prefix",
         type=str,
-        default="/example/LiveStream",
+        default="/LiveStream",
         help="Application prefix to include.",
     )
     parser.add_argument(

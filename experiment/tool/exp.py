@@ -41,6 +41,14 @@ DEFAULT_HANDOFF_COUNT = 2
 DEFAULT_HANDOFF_INTERVAL_BASE = 120.0
 DEFAULT_HANDOFF_INTERVAL_JITTER = 0.0
 
+# Producer signing identity and exported trust anchor for application Data.
+# The producer node generates a self-signed /LiveStream identity (set as its
+# default identity) before the application starts, so produced Data is signed
+# under /LiveStream. The certificate is exported to the shared path referenced
+# by the consumer trust schema (trust-schema.conf).
+PRODUCER_IDENTITY = '/LiveStream'
+TRUST_ANCHOR_FILE = '/home/vagrant/flooding/experiment/app/livestream-trust-anchor.cert'
+
 # Access points that must start down so the experiment begins with the producer
 # attached only via acc2.
 NON_INITIAL_ACCESS_POINTS: Tuple[str, ...] = ('acc3', 'acc4', 'acc5', 'acc6')
@@ -155,6 +163,20 @@ def _load_request_interval_ms() -> int:
     return value
 
 
+def _load_positive_int_env(name: str, default: int) -> int:
+    """Read a positive-integer experiment parameter from the environment."""
+    raw_value = (os.getenv(name) or '').strip()
+    if not raw_value:
+        return default
+    try:
+        value = int(raw_value)
+    except ValueError as exc:
+        raise ValueError(f'Invalid {name}: {raw_value}') from exc
+    if value <= 0:
+        raise ValueError(f'{name} must be positive: {value}')
+    return value
+
+
 def _write_nlsr_params_file(
     results_dir: str,
     nlsr_params: Dict[str, str],
@@ -163,6 +185,8 @@ def _write_nlsr_params_file(
     handoff_jitter: float,
     handoff_sequence: List[str],
     request_interval_ms: int,
+    window_frames: int,
+    segments_per_frame: int,
 ) -> None:
     """Persist NLSR tuning parameters and handoff configuration to params.txt."""
     output_path = os.path.join(results_dir, 'params.txt')
@@ -172,6 +196,8 @@ def _write_nlsr_params_file(
     combined['handoff_interval_jitter_s'] = f'{handoff_jitter:.3f}'
     combined['handoff_sequence'] = ','.join(handoff_sequence)
     combined['request_interval_ms'] = str(request_interval_ms)
+    combined['window_frames'] = str(window_frames)
+    combined['segments_per_frame'] = str(segments_per_frame)
     with open(output_path, 'w', encoding='utf-8') as output_file:
         for key in sorted(combined):
             output_file.write(f'{key}={combined[key]}\n')
@@ -316,6 +342,8 @@ if __name__ == '__main__':
 
     try:
         request_interval_ms = _load_request_interval_ms()
+        window_frames = _load_positive_int_env('EXP_WINDOW_FRAMES', 4)
+        segments_per_frame = _load_positive_int_env('EXP_SEGMENTS_PER_FRAME', 1)
     except ValueError as error:
         print(f"Error: {error}")
         exit(1)
@@ -328,6 +356,8 @@ if __name__ == '__main__':
         handoff_jitter,
         handoff_sequence,
         request_interval_ms,
+        window_frames,
+        segments_per_frame,
     )
     _init_handoffs_file(handoffs_path)
 
@@ -354,6 +384,15 @@ if __name__ == '__main__':
     producer = ndn.net['producer']
     consumer = ndn.net['consumer']
 
+    # Establish application trust on the producer node before launching the apps.
+    # ndnsec key-gen sets /LiveStream as the producer's default identity, overriding
+    # the /localhost/operator identity created at NFD start, so producer Data is
+    # signed under /LiveStream. The self-signed certificate is exported to the path
+    # referenced by the consumer trust schema. NLSR prefix-update validation is
+    # disabled here, so changing the default identity does not affect advertisement.
+    producer.cmd('ndnsec key-gen {} >/dev/null 2>&1'.format(PRODUCER_IDENTITY))
+    producer.cmd('ndnsec cert-dump -i {} > {}'.format(PRODUCER_IDENTITY, TRUST_ANCHOR_FILE))
+
     consumer_pcap = os.path.join(results_dir, "consumer_capture.pcap")
     tcpdump_log = os.path.join(results_dir, "tcpdump.log")
     consumer.cmd(f"tcpdump -i consumer-eth0 -w {consumer_pcap} &> {tcpdump_log} &")
@@ -369,7 +408,14 @@ if __name__ == '__main__':
     producer_log = os.path.join(experiment_dir, "results", "producer.log")
     consumer_log = os.path.join(experiment_dir, "results", "consumer.log")
 
-    app_env = f"EXP_REQUEST_INTERVAL_MS={request_interval_ms}"
+    app_env = (f"EXP_REQUEST_INTERVAL_MS={request_interval_ms}"
+               f" EXP_WINDOW_FRAMES={window_frames}"
+               f" EXP_SEGMENTS_PER_FRAME={segments_per_frame}")
+    # Optional stream selection for multi-stream studies (default /LiveStream/v0
+    # is applied by the consumer when unset).
+    stream_prefix = os.getenv('EXP_STREAM_PREFIX')
+    if stream_prefix:
+        app_env += f" EXP_STREAM_PREFIX={quote(stream_prefix)}"
     producer.cmd(f"{app_env} {producer_exec} &> {producer_log} &")
     consumer.cmd(f"{app_env} {consumer_exec} &> {consumer_log} &")
 

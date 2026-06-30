@@ -858,7 +858,7 @@ def main():
     parser.add_argument('--handoff-times', type=str, default='120, 240',
                         help='Comma-separated handoff times (fallback when no handoffs.txt is present in paths).')
     parser.add_argument('--window', type=float, default=10.0, help='Time window in seconds after a handoff for summary metrics.')
-    parser.add_argument('--prefix', type=str, default='/example/LiveStream', help='Application prefix to include.')
+    parser.add_argument('--prefix', type=str, default='/LiveStream', help='Application prefix to include.')
     parser.add_argument('--relay-nodes', type=str, default=','.join(DEFAULT_RELAY_NODES),
                         help='Comma-separated relay nodes counted in the forwarding-cost numerator.')
     parser.add_argument('--consumer-node', type=str, default='consumer',

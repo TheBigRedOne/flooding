@@ -20,7 +20,7 @@ Classification matches plot_overhead.py:
   - relay nodes: core,agg1,agg2,acc1..acc6
   - outbound: sll.pkttype == 4 (Linux cooked capture OUTGOING)
   - control: ndn.name contains '/nlsr/'
-  - app start alignment: first '/example/LiveStream' (non-control, non-localhost) packet
+  - app start alignment: first '/LiveStream' (non-control, non-localhost) packet
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ GROUPS = [
 ]
 
 RELAY_NODES = ["core", "agg1", "agg2", "acc1", "acc2", "acc3", "acc4", "acc5", "acc6"]
-APP_PREFIX = "/example/LiveStream"
+APP_PREFIX = "/LiveStream"
 LOCALHOST_PREFIX = "/localhost/"
 CSV_USECOLS = ["node", "frame.time_epoch", "frame.len", "sll.pkttype", "ndn.name"]
 
