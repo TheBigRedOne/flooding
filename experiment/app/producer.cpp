@@ -179,14 +179,23 @@ public:
     , m_scheduler(m_ioContext)
     , m_keyChain()
   {
-    // Frame generation period matches the consumer request interval, supplied
-    // by the driver via EXP_REQUEST_INTERVAL_MS (20 ms safety-net default).
+    // Frame production period: a new frame becomes available every m_interval,
+    // supplied by the driver via EXP_REQUEST_INTERVAL_MS (20 ms safety-net default).
     const char* rawInterval = std::getenv("EXP_REQUEST_INTERVAL_MS");
     int intervalMs = rawInterval ? std::atoi(rawInterval) : 20;
     if (intervalMs <= 0) {
       intervalMs = 20;
     }
     m_interval = time::milliseconds(intervalMs);
+
+    // Segments per frame (K). FinalBlockId on every segment advertises K-1 so the
+    // consumer can fetch all segments. Supplied via EXP_SEGMENTS_PER_FRAME (default 1).
+    const char* rawSegments = std::getenv("EXP_SEGMENTS_PER_FRAME");
+    m_segmentsPerFrame = rawSegments ? std::atoi(rawSegments) : 1;
+    if (m_segmentsPerFrame <= 0) {
+      m_segmentsPerFrame = 1;
+    }
+
     // Default to disabled; enable automatically in solution builds
 #ifdef SOLUTION_ENABLED
     m_enableOptoFlood = true;
@@ -269,62 +278,81 @@ private:
   void
   scheduleDataSend()
   {
-    m_scheduler.schedule(m_interval, [this] { this->sendPendingData(); });
+    m_scheduler.schedule(m_interval, [this] { this->advanceLiveEdgeAndServe(); });
   }
 
+  // Encode and send one Data packet for a requested (frame, segment). Mobility-
+  // marked Data carry OptoFlood markers so the modified forwarder floods them
+  // along the FIB to refresh the path after a handoff.
   void
-  sendPendingData()
+  serveOne(const Name& name, bool markMobility, uint32_t mobilitySeq)
   {
-    // Drop pending Interests whose lifetime has elapsed. After an outage this
-    // prevents the producer from sending Data for requests that have already
-    // expired in the network. The TTL matches the consumer Interest lifetime.
-    const time::seconds pendingTtl(6);
-    auto now = time::steady_clock::now();
-    while (!m_pendingInterests.empty() &&
-           now - m_pendingInterests.front().arrival > pendingTtl) {
-      m_pendingNames.erase(m_pendingInterests.front().name);
-      m_pendingInterests.pop_front();
-    }
-
-    // Serve every pending Interest in this tick so the producer keeps pace with
-    // the request rate (one frame per request period per stream). Serving a
-    // single Data per tick falls behind the consumer and accumulates an
-    // unbounded backlog until pending requests reach the Interest lifetime.
-    while (!m_pendingInterests.empty()) {
-      PendingInterest pending = std::move(m_pendingInterests.front());
-      m_pendingInterests.pop_front();
-
-      auto data = make_shared<Data>(pending.name);
-      data->setFreshnessPeriod(10_s);
-      data->setContent(std::string_view("OptoFlood Test Data"));
+    auto data = make_shared<Data>(name);
+    data->setFreshnessPeriod(10_s);
+    // FinalBlockId advertises the last segment index (K-1) of the frame.
+    data->setFinalBlock(name::Component::fromSegment(m_segmentsPerFrame - 1));
+    data->setContent(std::string_view("OptoFlood Test Data"));
 
 #ifdef SOLUTION_ENABLED
-      if (m_enableOptoFlood && pending.markMobility) {
-        MetaInfo metaInfo = data->getMetaInfo();
-        uint64_t floodId = ++m_floodIdSeq;
-        metaInfo.addAppMetaInfo(optoflood::makeFloodIdBlock(floodId));
-        metaInfo.addAppMetaInfo(optoflood::makeNewFaceSeqBlock(pending.mobilitySeq));
-        data->setMetaInfo(metaInfo);
-        std::cout << "[" << std::chrono::system_clock::now().time_since_epoch().count()
-                  << "] DATA: Attaching OptoFlood mobility markers"
-                  << " NewFaceSeq: " << pending.mobilitySeq
-                  << " FloodId: " << floodId << std::endl;
-      }
+    if (m_enableOptoFlood && markMobility) {
+      MetaInfo metaInfo = data->getMetaInfo();
+      uint64_t floodId = ++m_floodIdSeq;
+      metaInfo.addAppMetaInfo(optoflood::makeFloodIdBlock(floodId));
+      metaInfo.addAppMetaInfo(optoflood::makeNewFaceSeqBlock(mobilitySeq));
+      data->setMetaInfo(metaInfo);
+      std::cout << "[" << std::chrono::system_clock::now().time_since_epoch().count()
+                << "] DATA: Attaching OptoFlood mobility markers"
+                << " NewFaceSeq: " << mobilitySeq
+                << " FloodId: " << floodId << std::endl;
+    }
 #endif
 
-      m_keyChain.sign(*data);
+    m_keyChain.sign(*data);
 
-      auto sendTimestamp = std::chrono::system_clock::now().time_since_epoch().count();
-      std::cout << "[" << sendTimestamp << "] DATA: Sending response"
-                << " Size: " << data->wireEncode().size() << " bytes"
-                << " Name: " << data->getName() << std::endl;
+    auto sendTimestamp = std::chrono::system_clock::now().time_since_epoch().count();
+    std::cout << "[" << sendTimestamp << "] DATA: Sending response"
+              << " Size: " << data->wireEncode().size() << " bytes"
+              << " Name: " << data->getName() << std::endl;
 
-      m_face.put(*data);
-      m_dataCount++;
-      m_pendingNames.erase(pending.name);
+    m_face.put(*data);
+    m_dataCount++;
 
-      std::cout << "[" << sendTimestamp << "] STATS: Total Interests: " << m_interestCount
-                << " Total Data sent: " << m_dataCount << std::endl;
+    std::cout << "[" << sendTimestamp << "] STATS: Total Interests: " << m_interestCount
+              << " Total Data sent: " << m_dataCount << std::endl;
+  }
+
+  // Live source: a new frame becomes available each frame period. Interests for
+  // not-yet-produced frames are held (parked); they are served as the live edge
+  // reaches them, which is the set marked and flooded on a handoff.
+  void
+  advanceLiveEdgeAndServe()
+  {
+    m_liveEdge++;
+
+    auto now = time::steady_clock::now();
+
+    // Drop parked Interests whose lifetime has elapsed: the network PIT entry is
+    // gone, so any Data produced now would be unsolicited.
+    for (auto it = m_pendingInterests.begin(); it != m_pendingInterests.end(); ) {
+      if (now > it->expiry) {
+        m_pendingNames.erase(it->name);
+        it = m_pendingInterests.erase(it);
+      }
+      else {
+        ++it;
+      }
+    }
+
+    // Serve every parked Interest whose frame has now been produced.
+    for (auto it = m_pendingInterests.begin(); it != m_pendingInterests.end(); ) {
+      if (it->frame <= m_liveEdge) {
+        serveOne(it->name, it->markMobility, it->mobilitySeq);
+        m_pendingNames.erase(it->name);
+        it = m_pendingInterests.erase(it);
+      }
+      else {
+        ++it;
+      }
     }
 
     scheduleDataSend();
@@ -336,21 +364,50 @@ private:
     auto timestamp = std::chrono::system_clock::now().time_since_epoch().count();
     m_interestCount++;
     
-    std::cout << "[" << timestamp << "] INTEREST: Received #" << m_interestCount 
-              << " Name: " << interest.getName() 
+    const Name& interestName = interest.getName();
+    std::cout << "[" << timestamp << "] INTEREST: Received #" << m_interestCount
+              << " Name: " << interestName
               << " CanBePrefix: " << interest.getCanBePrefix()
               << " MustBeFresh: " << interest.getMustBeFresh() << std::endl;
 
-    const Name& interestName = interest.getName();
-    if (m_pendingNames.find(interestName) != m_pendingNames.end()) {
-      std::cout << "[" << timestamp << "] INTEREST: Duplicate pending Interest ignored Name: "
-                << interestName << std::endl;
+    // Names follow /<stream>/<version=frame>/<segment>; the frame index gates
+    // production against the live edge.
+    uint64_t frame = 0;
+    try {
+      if (interestName.size() >= 2 && interestName.get(-1).isSegment() &&
+          interestName.get(-2).isVersion()) {
+        frame = interestName.get(-2).toVersion();
+      }
+      else if (!interestName.empty() && interestName.get(-1).isVersion()) {
+        frame = interestName.get(-1).toVersion();
+      }
+      else {
+        std::cerr << "[" << timestamp << "] INTEREST: Unrecognized name, ignored Name: "
+                  << interestName << std::endl;
+        return;
+      }
+    }
+    catch (const tlv::Error& e) {
+      std::cerr << "[" << timestamp << "] INTEREST: Failed to parse frame index: "
+                << e.what() << std::endl;
       return;
     }
 
-    PendingInterest pending{interestName, false, 0, time::steady_clock::now()};
-    m_pendingInterests.push_back(std::move(pending));
-    m_pendingNames.insert(interestName);
+    if (frame <= m_liveEdge) {
+      // The frame has already been produced: serve immediately (catch-up).
+      serveOne(interestName, false, 0);
+    }
+    else if (m_pendingNames.find(interestName) == m_pendingNames.end()) {
+      // Future frame: hold the Interest until the live edge reaches it; drop it
+      // once its own lifetime elapses.
+      auto expiry = time::steady_clock::now() + interest.getInterestLifetime();
+      m_pendingInterests.push_back(PendingInterest{interestName, frame, false, 0, expiry});
+      m_pendingNames.insert(interestName);
+    }
+    else {
+      std::cout << "[" << timestamp << "] INTEREST: Duplicate pending Interest ignored Name: "
+                << interestName << std::endl;
+    }
 
     if (m_forceMobilityOnceFlag) {
       m_forceMobilityOnceFlag = false;
@@ -361,9 +418,10 @@ private:
 private:
   struct PendingInterest {
     Name name;
+    uint64_t frame = 0;
     bool markMobility = false;
     uint32_t mobilitySeq = 0;
-    time::steady_clock::time_point arrival{};
+    time::steady_clock::time_point expiry{};
   };
 
   boost::asio::io_context m_ioContext;
@@ -372,6 +430,8 @@ private:
   KeyChain m_keyChain;
 
   time::milliseconds m_interval{20};
+  int m_segmentsPerFrame = 1;
+  uint64_t m_liveEdge = 0;
 
   std::unique_ptr<NetlinkListener> m_netlinkListener;
   bool m_enableOptoFlood = false;

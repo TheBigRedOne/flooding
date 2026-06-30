@@ -163,6 +163,20 @@ def _load_request_interval_ms() -> int:
     return value
 
 
+def _load_positive_int_env(name: str, default: int) -> int:
+    """Read a positive-integer experiment parameter from the environment."""
+    raw_value = (os.getenv(name) or '').strip()
+    if not raw_value:
+        return default
+    try:
+        value = int(raw_value)
+    except ValueError as exc:
+        raise ValueError(f'Invalid {name}: {raw_value}') from exc
+    if value <= 0:
+        raise ValueError(f'{name} must be positive: {value}')
+    return value
+
+
 def _write_nlsr_params_file(
     results_dir: str,
     nlsr_params: Dict[str, str],
@@ -171,6 +185,8 @@ def _write_nlsr_params_file(
     handoff_jitter: float,
     handoff_sequence: List[str],
     request_interval_ms: int,
+    window_frames: int,
+    segments_per_frame: int,
 ) -> None:
     """Persist NLSR tuning parameters and handoff configuration to params.txt."""
     output_path = os.path.join(results_dir, 'params.txt')
@@ -180,6 +196,8 @@ def _write_nlsr_params_file(
     combined['handoff_interval_jitter_s'] = f'{handoff_jitter:.3f}'
     combined['handoff_sequence'] = ','.join(handoff_sequence)
     combined['request_interval_ms'] = str(request_interval_ms)
+    combined['window_frames'] = str(window_frames)
+    combined['segments_per_frame'] = str(segments_per_frame)
     with open(output_path, 'w', encoding='utf-8') as output_file:
         for key in sorted(combined):
             output_file.write(f'{key}={combined[key]}\n')
@@ -324,6 +342,8 @@ if __name__ == '__main__':
 
     try:
         request_interval_ms = _load_request_interval_ms()
+        window_frames = _load_positive_int_env('EXP_WINDOW_FRAMES', 4)
+        segments_per_frame = _load_positive_int_env('EXP_SEGMENTS_PER_FRAME', 1)
     except ValueError as error:
         print(f"Error: {error}")
         exit(1)
@@ -336,6 +356,8 @@ if __name__ == '__main__':
         handoff_jitter,
         handoff_sequence,
         request_interval_ms,
+        window_frames,
+        segments_per_frame,
     )
     _init_handoffs_file(handoffs_path)
 
@@ -386,7 +408,9 @@ if __name__ == '__main__':
     producer_log = os.path.join(experiment_dir, "results", "producer.log")
     consumer_log = os.path.join(experiment_dir, "results", "consumer.log")
 
-    app_env = f"EXP_REQUEST_INTERVAL_MS={request_interval_ms}"
+    app_env = (f"EXP_REQUEST_INTERVAL_MS={request_interval_ms}"
+               f" EXP_WINDOW_FRAMES={window_frames}"
+               f" EXP_SEGMENTS_PER_FRAME={segments_per_frame}")
     # Optional stream selection for multi-stream studies (default /LiveStream/v0
     # is applied by the consumer when unset).
     stream_prefix = os.getenv('EXP_STREAM_PREFIX')
