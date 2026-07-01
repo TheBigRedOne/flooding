@@ -3,6 +3,7 @@
 #include <ndn-cxx/face.hpp>
 #include <ndn-cxx/interest.hpp>
 #include <ndn-cxx/encoding/tlv.hpp>
+#include <ndn-cxx/encoding/block-helpers.hpp>
 #include <ndn-cxx/security/validator-config.hpp>
 #include <ndn-cxx/util/scheduler.hpp>
 
@@ -11,23 +12,34 @@
 #include <cstdlib>
 #include <iostream>
 #include <map>
+#include <optional>
 #include <set>
 #include <unistd.h>
 
 namespace ndn {
 namespace examples {
 
+// Application-level TLV type carrying the producer's current live-edge frame
+// number in Data MetaInfo. Must match the producer (TLV_LIVE_EDGE / 206).
+constexpr uint32_t TLV_LIVE_EDGE = 206;
+
+// Generic name component marking a live-edge discovery Interest (<stream>/_meta).
+// Must match the producer.
+constexpr char DISCOVERY_MARKER[] = "_meta";
+
 /**
- * @brief Pull-based live-stream consumer with a fixed lookahead window.
+ * @brief Pull-based live-stream consumer that tracks the producer live edge via
+ *        Data feedback (no shared clock).
  *
- * The consumer keeps at most EXP_WINDOW_FRAMES frames in flight (one slot per
- * frame). Each frame is a versioned, segmented object
- * (/<stream>/<version=frame>/<segment>): segment 0 is requested first, its
- * FinalBlockId reveals the segment count K, and the remaining segments are then
- * requested. A frame that is not fully received within the per-frame timeout is
- * declared lost. On either completion or loss the window slides forward by one
- * frame, so the number of outstanding (and producer-parked) Interests stays
- * bounded by the window regardless of the production rate.
+ * On join the consumer discovers the current edge with a MustBeFresh
+ * "<stream>/_meta" Interest. It then keeps a lookahead of EXP_WINDOW_FRAMES
+ * frames ahead of the edge, fetching each frame as a versioned, segmented object
+ * (/<stream>/<version=frame>/<segment>): segment 0 first, its FinalBlockId
+ * reveals the segment count K, then the remaining segments. Every received Data
+ * reports the current edge, so the consumer slides its window forward; after a
+ * disruption it jumps to the latest edge (skipping stale frames), which is the
+ * live-streaming "skip to live" behaviour. The frames requested ahead of the
+ * edge are the producer-parked Interests that OptoFlood floods on a hand-off.
  */
 class Consumer : noncopyable
 {
@@ -47,8 +59,8 @@ public:
       m_windowFrames = 4;
     }
 
-    // Frame production period (ms): used to size the per-frame timeout so that
-    // legitimately parked frames are not declared lost before they can be
+    // Frame production period (ms): used only to size the per-frame timeout so
+    // that legitimately parked frames are not declared lost before they can be
     // produced and delivered.
     const char* rawInterval = std::getenv("EXP_REQUEST_INTERVAL_MS");
     int framePeriodMs = rawInterval ? std::atoi(rawInterval) : 20;
@@ -80,11 +92,7 @@ public:
     std::cout << "[" << nowNs() << "] STARTUP: window " << m_windowFrames
               << " frames, frame timeout " << m_frameTimeout.count() << " ms" << std::endl;
 
-    // Prime the lookahead window.
-    for (int i = 0; i < m_windowFrames; ++i) {
-      startFrame(m_nextFrame++);
-    }
-
+    sendDiscovery();
     m_ioContext.run();
   }
 
@@ -101,6 +109,96 @@ private:
   nowNs()
   {
     return std::chrono::system_clock::now().time_since_epoch().count();
+  }
+
+  // Extract the producer live edge reported in a Data's MetaInfo, if present.
+  static std::optional<uint64_t>
+  readEdge(const Data& data)
+  {
+    const Block* block = data.getMetaInfo().findAppMetaInfo(TLV_LIVE_EDGE);
+    if (block == nullptr) {
+      return std::nullopt;
+    }
+    try {
+      return readNonNegativeInteger(*block);
+    }
+    catch (const tlv::Error&) {
+      return std::nullopt;
+    }
+  }
+
+  // Discover (or re-acquire) the current live edge. Retried until the producer
+  // responds, which also covers start-up and recovery from a long outage.
+  void
+  sendDiscovery()
+  {
+    Name name(m_streamPrefix);
+    name.append(name::Component(DISCOVERY_MARKER));
+
+    Interest interest(name);
+    interest.setCanBePrefix(false);
+    interest.setMustBeFresh(true);
+    interest.setInterestLifetime(1_s);
+
+    m_discoveries++;
+    std::cout << "[" << nowNs() << "] DISCOVER: " << name << std::endl;
+
+    m_face.expressInterest(interest,
+                           [this] (const Interest&, const Data& d) { onDiscoveryData(d); },
+                           [this] (const Interest&, const lp::Nack&) { scheduleDiscoveryRetry(); },
+                           [this] (const Interest&) { scheduleDiscoveryRetry(); });
+  }
+
+  void
+  scheduleDiscoveryRetry()
+  {
+    m_scheduler.schedule(200_ms, [this] { sendDiscovery(); });
+  }
+
+  void
+  onDiscoveryData(const Data& data)
+  {
+    auto edge = readEdge(data);
+    if (!edge) {
+      scheduleDiscoveryRetry();
+      return;
+    }
+    std::cout << "[" << nowNs() << "] DISCOVER: live edge = " << *edge << std::endl;
+    m_edgeKnown = true;
+    if (*edge > m_edge) {
+      m_edge = *edge;
+    }
+    if (m_requestedUpTo < m_edge) {
+      m_requestedUpTo = m_edge;   // start requesting from the live edge
+    }
+    ensureWindow();
+  }
+
+  // Keep the lookahead window filled: request every frame in (edge, edge + L]
+  // that has not yet been requested. Frames that fell behind the edge (after a
+  // disruption) are skipped and counted as lost (live "skip to latest").
+  void
+  ensureWindow()
+  {
+    if (!m_edgeKnown) {
+      return;
+    }
+    if (m_requestedUpTo < m_edge) {
+      m_framesSkipped += (m_edge - m_requestedUpTo);
+      m_requestedUpTo = m_edge;
+    }
+    while (m_requestedUpTo < m_edge + static_cast<uint64_t>(m_windowFrames)) {
+      startFrame(++m_requestedUpTo);
+    }
+  }
+
+  void
+  updateEdge(uint64_t edge)
+  {
+    if (edge > m_edge) {
+      m_edge = edge;
+      ensureWindow();
+    }
   }
 
   void
@@ -143,13 +241,18 @@ private:
     auto recvTimestamp = nowNs();
     m_segmentsReceived++;
 
+    // Track the live edge reported by the producer (feedback), regardless of
+    // whether this Data belongs to a frame still in the window.
+    if (auto edge = readEdge(data)) {
+      updateEdge(*edge);
+    }
+
     const Name& name = data.getName();
     uint64_t frame = 0;
     uint64_t segment = 0;
     try {
       if (name.size() < 2 || !name.get(-1).isSegment() || !name.get(-2).isVersion()) {
-        std::cerr << "[" << recvTimestamp << "] ERROR: Unexpected Data name: " << name << std::endl;
-        return;
+        return;  // discovery or unexpected name; edge already consumed above
       }
       frame = name.get(-2).toVersion();
       segment = name.get(-1).toSegment();
@@ -174,7 +277,7 @@ private:
 
     auto it = m_frames.find(frame);
     if (it == m_frames.end()) {
-      return;  // frame already completed or lost (late or duplicate segment)
+      return;  // frame already completed, lost, or skipped
     }
     FrameState& st = it->second;
     st.received.insert(segment);
@@ -211,10 +314,11 @@ private:
 
     std::cout << "[" << nowNs() << "] FRAME: delivered frame=" << frame
               << " latency_ms=" << latencyNs / 1000000.0
-              << " (delivered " << m_framesDelivered << ", lost " << m_framesLost << ")" << std::endl;
+              << " (delivered " << m_framesDelivered << ", lost " << m_framesLost
+              << ", skipped " << m_framesSkipped << ")" << std::endl;
 
-    m_frames.erase(it);          // cancels the per-frame deadline event
-    startFrame(m_nextFrame++);   // slide the window forward
+    m_frames.erase(it);   // cancels the per-frame deadline event
+    ensureWindow();
   }
 
   void
@@ -222,15 +326,22 @@ private:
   {
     auto it = m_frames.find(frame);
     if (it == m_frames.end()) {
-      return;                    // already completed
+      return;   // already completed
     }
     m_framesLost++;
 
     std::cerr << "[" << nowNs() << "] FRAME: lost frame=" << frame
-              << " (timeout; delivered " << m_framesDelivered << ", lost " << m_framesLost << ")" << std::endl;
+              << " (timeout; delivered " << m_framesDelivered << ", lost " << m_framesLost
+              << ", skipped " << m_framesSkipped << ")" << std::endl;
 
     m_frames.erase(it);
-    startFrame(m_nextFrame++);   // slide the window forward
+    if (m_frames.empty()) {
+      // Lost the whole window with no feedback source: re-acquire the live edge.
+      sendDiscovery();
+    }
+    else {
+      ensureWindow();
+    }
   }
 
   void
@@ -258,19 +369,23 @@ private:
 
   Name m_streamPrefix;
   int m_windowFrames = 4;
-  time::milliseconds m_frameTimeout{200};
+  time::milliseconds m_frameTimeout{2000};
 
-  uint64_t m_nextFrame = 0;
+  uint64_t m_edge = 0;
+  bool m_edgeKnown = false;
+  uint64_t m_requestedUpTo = 0;
   std::map<uint64_t, FrameState> m_frames;
 
   // Statistics for experiment analysis
   uint64_t m_framesRequested = 0;
   uint64_t m_framesDelivered = 0;
   uint64_t m_framesLost = 0;
+  uint64_t m_framesSkipped = 0;
   uint64_t m_interestsSent = 0;
   uint64_t m_segmentsReceived = 0;
   uint64_t m_nacks = 0;
   uint64_t m_timeouts = 0;
+  uint64_t m_discoveries = 0;
 };
 
 } // namespace examples

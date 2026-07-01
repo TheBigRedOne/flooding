@@ -5,6 +5,7 @@
 #include <ndn-cxx/security/key-chain.hpp>
 #include <ndn-cxx/meta-info.hpp>
 #include <ndn-cxx/encoding/block.hpp>
+#include <ndn-cxx/encoding/block-helpers.hpp>
 #include <ndn-cxx/encoding/tlv.hpp>
 #include <ndn-cxx/util/scheduler.hpp>
 
@@ -38,6 +39,16 @@
 
 namespace ndn {
 namespace examples {
+
+// Application-level TLV type carrying the producer's current live-edge frame
+// number in Data MetaInfo (application range [128,252]; distinct from the
+// OptoFlood tlv::optoflood::* types 201-205). Consumers read it to track the
+// live edge via feedback, with no shared clock. Must match the consumer.
+constexpr uint32_t TLV_LIVE_EDGE = 206;
+
+// Generic name component that marks a live-edge discovery Interest
+// (<stream>/_meta). Must match the consumer.
+constexpr char DISCOVERY_MARKER[] = "_meta";
 
 /**
  * @brief A helper class to listen for network interface changes using Netlink.
@@ -227,6 +238,7 @@ public:
       std::cerr << "ERROR: Failed to start Netlink listener: " << e.what() << std::endl;
     }
     }
+    m_startTime = time::steady_clock::now();
     scheduleDataSend();
     m_ioContext.run();
   }
@@ -281,31 +293,34 @@ private:
     m_scheduler.schedule(m_interval, [this] { this->advanceLiveEdgeAndServe(); });
   }
 
-  // Encode and send one Data packet for a requested (frame, segment). Mobility-
-  // marked Data carry OptoFlood markers so the modified forwarder floods them
-  // along the FIB to refresh the path after a handoff.
+  // Encode and send one Data packet for a requested (frame, segment). Every Data
+  // carries the current live edge (TLV_LIVE_EDGE) so consumers track it via
+  // feedback. Mobility-marked Data additionally carry OptoFlood markers so the
+  // modified forwarder floods them along the FIB to refresh the path.
   void
-  serveOne(const Name& name, bool markMobility, uint32_t mobilitySeq)
+  serveOne(const Name& name, bool markMobility, uint32_t mobilitySeq,
+           time::milliseconds freshness = 10_s)
   {
     auto data = make_shared<Data>(name);
-    data->setFreshnessPeriod(10_s);
+    data->setFreshnessPeriod(freshness);
     // FinalBlockId advertises the last segment index (K-1) of the frame.
     data->setFinalBlock(name::Component::fromSegment(m_segmentsPerFrame - 1));
     data->setContent(std::string_view("OptoFlood Test Data"));
 
+    MetaInfo metaInfo = data->getMetaInfo();
+    metaInfo.addAppMetaInfo(makeNonNegativeIntegerBlock(TLV_LIVE_EDGE, edgeNow()));
 #ifdef SOLUTION_ENABLED
     if (m_enableOptoFlood && markMobility) {
-      MetaInfo metaInfo = data->getMetaInfo();
       uint64_t floodId = ++m_floodIdSeq;
       metaInfo.addAppMetaInfo(optoflood::makeFloodIdBlock(floodId));
       metaInfo.addAppMetaInfo(optoflood::makeNewFaceSeqBlock(mobilitySeq));
-      data->setMetaInfo(metaInfo);
       std::cout << "[" << std::chrono::system_clock::now().time_since_epoch().count()
                 << "] DATA: Attaching OptoFlood mobility markers"
                 << " NewFaceSeq: " << mobilitySeq
                 << " FloodId: " << floodId << std::endl;
     }
 #endif
+    data->setMetaInfo(metaInfo);
 
     m_keyChain.sign(*data);
 
@@ -321,13 +336,25 @@ private:
               << " Total Data sent: " << m_dataCount << std::endl;
   }
 
-  // Live source: a new frame becomes available each frame period. Interests for
-  // not-yet-produced frames are held (parked); they are served as the live edge
-  // reaches them, which is the set marked and flooded on a handoff.
+  // The live edge advances by the producer's own wall-clock: frame N becomes
+  // available at m_startTime + N*framePeriod. Computed on demand, independent of
+  // per-tick processing time, and requires no cross-node clock synchronisation.
+  uint64_t
+  edgeNow() const
+  {
+    auto elapsed = time::steady_clock::now() - m_startTime;
+    if (elapsed.count() <= 0) {
+      return 0;
+    }
+    return static_cast<uint64_t>(elapsed / m_interval);
+  }
+
+  // Periodic tick: serve every parked Interest whose frame has now been produced
+  // (frame <= edgeNow()). Mobility-marked Interests carry OptoFlood markers.
   void
   advanceLiveEdgeAndServe()
   {
-    m_liveEdge++;
+    uint64_t edge = edgeNow();
 
     auto now = time::steady_clock::now();
 
@@ -345,7 +372,7 @@ private:
 
     // Serve every parked Interest whose frame has now been produced.
     for (auto it = m_pendingInterests.begin(); it != m_pendingInterests.end(); ) {
-      if (it->frame <= m_liveEdge) {
+      if (it->frame <= edge) {
         serveOne(it->name, it->markMobility, it->mobilitySeq);
         m_pendingNames.erase(it->name);
         it = m_pendingInterests.erase(it);
@@ -370,16 +397,21 @@ private:
               << " CanBePrefix: " << interest.getCanBePrefix()
               << " MustBeFresh: " << interest.getMustBeFresh() << std::endl;
 
-    // Names follow /<stream>/<version=frame>/<segment>; the frame index gates
-    // production against the live edge.
+    // Discovery: a bare "<stream>/_meta" Interest asks for the current live edge.
+    // Reply with a zero-freshness Data carrying the edge stamp, so a MustBeFresh
+    // discovery always reaches the producer instead of a cached copy.
+    if (!interestName.empty() && interestName.get(-1) == name::Component(DISCOVERY_MARKER)) {
+      serveOne(interestName, false, 0, 0_ms);
+      return;
+    }
+
+    // Content names follow /<stream>/<version=frame>/<segment>; the frame index
+    // gates production against the live edge.
     uint64_t frame = 0;
     try {
       if (interestName.size() >= 2 && interestName.get(-1).isSegment() &&
           interestName.get(-2).isVersion()) {
         frame = interestName.get(-2).toVersion();
-      }
-      else if (!interestName.empty() && interestName.get(-1).isVersion()) {
-        frame = interestName.get(-1).toVersion();
       }
       else {
         std::cerr << "[" << timestamp << "] INTEREST: Unrecognized name, ignored Name: "
@@ -393,7 +425,7 @@ private:
       return;
     }
 
-    if (frame <= m_liveEdge) {
+    if (frame <= edgeNow()) {
       // The frame has already been produced: serve immediately (catch-up).
       serveOne(interestName, false, 0);
     }
@@ -431,7 +463,7 @@ private:
 
   time::milliseconds m_interval{20};
   int m_segmentsPerFrame = 1;
-  uint64_t m_liveEdge = 0;
+  time::steady_clock::time_point m_startTime;
 
   std::unique_ptr<NetlinkListener> m_netlinkListener;
   bool m_enableOptoFlood = false;
