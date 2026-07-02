@@ -163,6 +163,13 @@ if __name__ == '__main__':
     r4.cmd("pkill -f 'tcpdump -i any' || true")
     r5.cmd("pkill -f 'tcpdump -i any' || true")
 
+    # Collect the OptoFlood lines of each router's NFD DEBUG log for TFIB
+    # validation (S3/S5). Only the OptoFlood lines are kept to avoid copying the
+    # full DEBUG log.
+    for node in (r1, r2, r3, r4, r5):
+        home = node.params['params']['homeDir']
+        node.cmd(f"grep OptoFlood {home}/log/nfd.log > {results_dir}/{node.name}_nfd.log 2>/dev/null || true")
+
     ndn.stop()
 
 
