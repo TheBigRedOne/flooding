@@ -8,7 +8,9 @@
 #include <ndn-cxx/util/scheduler.hpp>
 
 #include <boost/asio/io_context.hpp>
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <iostream>
 #include <map>
@@ -53,29 +55,40 @@ public:
     m_streamPrefix = Name(rawStreamPrefix && rawStreamPrefix[0] != '\0'
                           ? rawStreamPrefix : "/LiveStream/v0");
 
+    // Initial lookahead; refined adaptively once the RTT is observed (see
+    // updateRttWindow). Serves as the fallback before the first measurement.
     const char* rawWindow = std::getenv("EXP_WINDOW_FRAMES");
     m_windowFrames = rawWindow ? std::atoi(rawWindow) : 4;
     if (m_windowFrames <= 0) {
       m_windowFrames = 4;
     }
 
-    // Frame production period (ms): used only to size the per-frame timeout so
-    // that legitimately parked frames are not declared lost before they can be
-    // produced and delivered.
-    const char* rawInterval = std::getenv("EXP_REQUEST_INTERVAL_MS");
-    int framePeriodMs = rawInterval ? std::atoi(rawInterval) : 20;
-    if (framePeriodMs <= 0) {
-      framePeriodMs = 20;
+    // Target number of Interests kept requested ahead of the producer live edge
+    // (producer-parked Interests that OptoFlood floods on a hand-off). The
+    // effective window is target + ceil(RTT / framePeriod), so the parked count
+    // stays near this target independent of path RTT (topology). This replaces a
+    // topology-dependent fixed window with a topology-independent target.
+    const char* rawParked = std::getenv("EXP_TARGET_PARKED");
+    m_targetParked = rawParked ? std::atoi(rawParked) : 4;
+    if (m_targetParked <= 0) {
+      m_targetParked = 4;
     }
 
-    // Per-frame timeout = lookahead (m_windowFrames * framePeriod) plus a reclaim
-    // margin. It is the Interest lifetime and the slot-reclaim deadline, not a
-    // playout/QoE deadline: it is kept well above any playout deadline evaluated
-    // in post-processing (currently <= 1000 ms) so that late-but-delivered frames
-    // stay observable instead of being dropped here.
-    static constexpr int kReclaimMarginMs = 2000;
-    int timeoutMs = m_windowFrames * framePeriodMs + kReclaimMarginMs;
-    m_frameTimeout = time::milliseconds(timeoutMs);
+    // Frame production period (ms): sizes the per-frame timeout and converts the
+    // measured RTT into a number of frames for the effective window.
+    const char* rawInterval = std::getenv("EXP_REQUEST_INTERVAL_MS");
+    m_framePeriodMs = rawInterval ? std::atoi(rawInterval) : 20;
+    if (m_framePeriodMs <= 0) {
+      m_framePeriodMs = 20;
+    }
+
+    // Per-frame timeout = effective lookahead (frames * framePeriod) plus a
+    // reclaim margin. It is the Interest lifetime and the slot-reclaim deadline,
+    // not a playout/QoE deadline: it is kept well above any playout deadline
+    // evaluated in post-processing (currently <= 1000 ms) so that late-but-
+    // delivered frames stay observable instead of being dropped here.
+    m_effectiveWindow = m_windowFrames;
+    m_frameTimeout = time::milliseconds(m_effectiveWindow * m_framePeriodMs + kReclaimMarginMs);
   }
 
   void
@@ -89,8 +102,9 @@ public:
       return;
     }
 
-    std::cout << "[" << nowNs() << "] STARTUP: window " << m_windowFrames
-              << " frames, frame timeout " << m_frameTimeout.count() << " ms" << std::endl;
+    std::cout << "[" << nowNs() << "] STARTUP: target parked " << m_targetParked
+              << " frames, initial window " << m_effectiveWindow
+              << " frames, frame timeout " << m_frameTimeout.count() << " ms (RTT-adaptive)" << std::endl;
 
     sendDiscovery();
     m_ioContext.run();
@@ -141,10 +155,12 @@ private:
     interest.setInterestLifetime(1_s);
 
     m_discoveries++;
-    std::cout << "[" << nowNs() << "] DISCOVER: " << name << std::endl;
+    uint64_t sentNs = nowNs();
+    std::cout << "[" << sentNs << "] DISCOVER: " << name << std::endl;
 
+    // Capture the send time to measure a park-free round-trip on the response.
     m_face.expressInterest(interest,
-                           [this] (const Interest&, const Data& d) { onDiscoveryData(d); },
+                           [this, sentNs] (const Interest&, const Data& d) { onDiscoveryData(d, sentNs); },
                            [this] (const Interest&, const lp::Nack&) { scheduleDiscoveryRetry(); },
                            [this] (const Interest&) { scheduleDiscoveryRetry(); });
   }
@@ -156,8 +172,12 @@ private:
   }
 
   void
-  onDiscoveryData(const Data& data)
+  onDiscoveryData(const Data& data, uint64_t sentNs)
   {
+    // Discovery is a pure network round-trip (no producer parking), so it yields
+    // a clean RTT estimate for sizing the adaptive lookahead window.
+    updateRttWindow(static_cast<double>(nowNs() - sentNs) / 1000000.0);
+
     auto edge = readEdge(data);
     if (!edge) {
       scheduleDiscoveryRetry();
@@ -174,9 +194,39 @@ private:
     ensureWindow();
   }
 
+  // Refine the effective lookahead from an observed discovery round-trip so that
+  // the number of Interests parked ahead of the live edge stays near
+  // m_targetParked regardless of path RTT. Discovery RTT is used (not frame
+  // delivery latency) because a parked frame's latency includes producer hold
+  // time, which would otherwise create a window/latency feedback loop.
+  void
+  updateRttWindow(double rttMs)
+  {
+    if (rttMs <= 0.0 || rttMs > kMaxPlausibleRttMs) {
+      return;
+    }
+    m_rttEwmaMs = (m_rttEwmaMs <= 0.0) ? rttMs
+                                       : kRttAlpha * rttMs + (1.0 - kRttAlpha) * m_rttEwmaMs;
+
+    int rttFrames = static_cast<int>(std::ceil(m_rttEwmaMs / m_framePeriodMs));
+    int target = m_targetParked + rttFrames;
+    int minWindow = m_targetParked + 1;
+    target = std::max(minWindow, std::min(target, kMaxWindowFrames));
+
+    if (target != m_effectiveWindow) {
+      m_effectiveWindow = target;
+      m_frameTimeout = time::milliseconds(m_effectiveWindow * m_framePeriodMs + kReclaimMarginMs);
+      std::cout << "[" << nowNs() << "] WINDOW: L=" << m_effectiveWindow
+                << " targetParked=" << m_targetParked
+                << " rttEwma_ms=" << m_rttEwmaMs << std::endl;
+      ensureWindow();
+    }
+  }
+
   // Keep the lookahead window filled: request every frame in (edge, edge + L]
-  // that has not yet been requested. Frames that fell behind the edge (after a
-  // disruption) are skipped and counted as lost (live "skip to latest").
+  // that has not yet been requested, where L is the effective (RTT-adaptive)
+  // window. Frames that fell behind the edge (after a disruption) are skipped
+  // and counted as lost (live "skip to latest").
   void
   ensureWindow()
   {
@@ -187,7 +237,7 @@ private:
       m_framesSkipped += (m_edge - m_requestedUpTo);
       m_requestedUpTo = m_edge;
     }
-    while (m_requestedUpTo < m_edge + static_cast<uint64_t>(m_windowFrames)) {
+    while (m_requestedUpTo < m_edge + static_cast<uint64_t>(m_effectiveWindow)) {
       startFrame(++m_requestedUpTo);
     }
   }
@@ -367,8 +417,18 @@ private:
   ValidatorConfig m_validator;
   Scheduler m_scheduler;
 
+  // Adaptive lookahead tuning constants.
+  static constexpr int kReclaimMarginMs = 2000;
+  static constexpr double kRttAlpha = 0.25;         // EWMA weight for new RTT samples
+  static constexpr double kMaxPlausibleRttMs = 5000.0;  // reject implausible RTT samples
+  static constexpr int kMaxWindowFrames = 64;       // upper bound on effective window
+
   Name m_streamPrefix;
-  int m_windowFrames = 4;
+  int m_windowFrames = 4;          // configured initial lookahead (fallback)
+  int m_targetParked = 4;          // desired Interests parked ahead of the live edge
+  int m_framePeriodMs = 20;        // frame period; RTT -> frames conversion
+  int m_effectiveWindow = 4;       // current lookahead = targetParked + RTT/framePeriod
+  double m_rttEwmaMs = 0.0;        // smoothed discovery round-trip time
   time::milliseconds m_frameTimeout{2000};
 
   uint64_t m_edge = 0;
