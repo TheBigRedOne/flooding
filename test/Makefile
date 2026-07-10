@@ -117,9 +117,9 @@ validate-s4:
 	@echo "[S4] Validating Interest HopLimit decrement under miss";
 	python3 validate.py s4 || (echo "S4 FAIL" && exit 1)
 
-# S5: Fast-LSA (mgmt command + short-lived RIB with throttling/dedup)
+# S5: TFIB retirement (short-lived TFIB state retires after FIB stabilizes)
 validate-s5:
-	@echo "[S5] Validating Fast-LSA throttle/dedup and short-lived RIB";
+	@echo "[S5] Validating TFIB retirement after FIB stabilization";
 	python3 validate.py s5 || (echo "S5 FAIL" && exit 1)
 
 .PHONY: kvm vb
