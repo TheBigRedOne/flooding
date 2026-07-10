@@ -187,6 +187,9 @@ def _write_nlsr_params_file(
     request_interval_ms: int,
     window_frames: int,
     segments_per_frame: int,
+    guard_interval_ms: int,
+    guard_pending: int,
+    guard_recovery_ms: int,
 ) -> None:
     """Persist NLSR tuning parameters and handoff configuration to params.txt."""
     output_path = os.path.join(results_dir, 'params.txt')
@@ -198,6 +201,9 @@ def _write_nlsr_params_file(
     combined['request_interval_ms'] = str(request_interval_ms)
     combined['window_frames'] = str(window_frames)
     combined['segments_per_frame'] = str(segments_per_frame)
+    combined['guard_interval_ms'] = str(guard_interval_ms)
+    combined['guard_pending'] = str(guard_pending)
+    combined['guard_recovery_ms'] = str(guard_recovery_ms)
     with open(output_path, 'w', encoding='utf-8') as output_file:
         for key in sorted(combined):
             output_file.write(f'{key}={combined[key]}\n')
@@ -344,6 +350,9 @@ if __name__ == '__main__':
         request_interval_ms = _load_request_interval_ms()
         window_frames = _load_positive_int_env('EXP_WINDOW_FRAMES', 4)
         segments_per_frame = _load_positive_int_env('EXP_SEGMENTS_PER_FRAME', 1)
+        guard_interval_ms = _load_positive_int_env('EXP_GUARD_INTERVAL_MS', 1000)
+        guard_pending = _load_positive_int_env('EXP_GUARD_PENDING', 3)
+        guard_recovery_ms = _load_positive_int_env('EXP_GUARD_RECOVERY_MS', 2000)
     except ValueError as error:
         print(f"Error: {error}")
         exit(1)
@@ -358,6 +367,9 @@ if __name__ == '__main__':
         request_interval_ms,
         window_frames,
         segments_per_frame,
+        guard_interval_ms,
+        guard_pending,
+        guard_recovery_ms,
     )
     _init_handoffs_file(handoffs_path)
 
@@ -410,7 +422,10 @@ if __name__ == '__main__':
 
     app_env = (f"EXP_REQUEST_INTERVAL_MS={request_interval_ms}"
                f" EXP_WINDOW_FRAMES={window_frames}"
-               f" EXP_SEGMENTS_PER_FRAME={segments_per_frame}")
+               f" EXP_SEGMENTS_PER_FRAME={segments_per_frame}"
+               f" EXP_GUARD_INTERVAL_MS={guard_interval_ms}"
+               f" EXP_GUARD_PENDING={guard_pending}"
+               f" EXP_GUARD_RECOVERY_MS={guard_recovery_ms}")
     # Optional stream selection for multi-stream studies (default /LiveStream/v0
     # is applied by the consumer when unset).
     stream_prefix = os.getenv('EXP_STREAM_PREFIX')

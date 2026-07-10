@@ -50,6 +50,13 @@ constexpr uint32_t TLV_LIVE_EDGE = 206;
 // (<stream>/_meta). Must match the consumer.
 constexpr char DISCOVERY_MARKER[] = "_meta";
 
+// Generic name component marking a guard Interest
+// (<stream>/_guard/<clientId>/<seq>). Guard Interests are a solution-only
+// keep-alive mechanism: the producer holds a small set parked so every hand-off
+// has a floodable pending Interest, decoupled from the content request pattern.
+// Must match the consumer.
+constexpr char GUARD_MARKER[] = "_guard";
+
 /**
  * @brief A helper class to listen for network interface changes using Netlink.
  * This class encapsulates the logic for creating a Netlink socket and integrating
@@ -210,6 +217,22 @@ public:
     // Default to disabled; enable automatically in solution builds
 #ifdef SOLUTION_ENABLED
     m_enableOptoFlood = true;
+
+    // Guard keep-alive parameters (solution-only). N is the answer-oldest
+    // threshold (steady-state resident guards = N-1); the recovery interval
+    // spaces the staged re-floods after a hand-off (must exceed the consumer
+    // guard interval so a repaired path can deliver a new guard first).
+    const char* rawGuardN = std::getenv("EXP_GUARD_PENDING");
+    m_guardPending = rawGuardN ? std::atoi(rawGuardN) : 3;
+    if (m_guardPending < 1) {
+      m_guardPending = 3;
+    }
+    const char* rawGuardRecovery = std::getenv("EXP_GUARD_RECOVERY_MS");
+    int guardRecoveryMs = rawGuardRecovery ? std::atoi(rawGuardRecovery) : 2000;
+    if (guardRecoveryMs <= 0) {
+      guardRecoveryMs = 2000;
+    }
+    m_guardRecoveryInterval = time::milliseconds(guardRecoveryMs);
 #endif
   }
 
@@ -285,6 +308,20 @@ private:
     }
     std::cout << "[" << timestamp << "] MOBILITY: Total mobility events: " << m_mobilityEventCount << std::endl;
     std::cout << "[" << timestamp << "] MOBILITY: Pending Interests marked: " << m_pendingInterests.size() << std::endl;
+
+#ifdef SOLUTION_ENABLED
+    // Guard staged recovery: flood the oldest parked guard now, then one more
+    // every m_guardRecoveryInterval until a new guard arrives (path repaired) or
+    // the parked set is exhausted. All staged floods reuse this hand-off's
+    // NewFaceSeq, so they reinforce the same TFIB entry (gap-filling retransmit).
+    std::cout << "[" << timestamp << "] MOBILITY: Guard queue size: " << m_guardQueue.size() << std::endl;
+    m_guardRecoverySeq = m_mobilityEventCount;
+    if (!m_guardQueue.empty()) {
+      m_guardRecovering = true;
+      floodOldestGuard();
+      scheduleGuardRecovery();
+    }
+#endif
   }
 
   void
@@ -299,13 +336,19 @@ private:
   // modified forwarder floods them along the FIB to refresh the path.
   void
   serveOne(const Name& name, bool markMobility, uint32_t mobilitySeq,
-           time::milliseconds freshness = 10_s)
+           time::milliseconds freshness = 10_s, bool isGuard = false)
   {
     auto data = make_shared<Data>(name);
     data->setFreshnessPeriod(freshness);
-    // FinalBlockId advertises the last segment index (K-1) of the frame.
-    data->setFinalBlock(name::Component::fromSegment(m_segmentsPerFrame - 1));
-    data->setContent(std::string_view("OptoFlood Test Data"));
+    if (isGuard) {
+      // Guard Data carries no payload; it only needs to traverse nodes to leave
+      // TFIB state behind. Name and signature remain the fixed per-packet cost.
+    }
+    else {
+      // FinalBlockId advertises the last segment index (K-1) of the frame.
+      data->setFinalBlock(name::Component::fromSegment(m_segmentsPerFrame - 1));
+      data->setContent(std::string_view("OptoFlood Test Data"));
+    }
 
     MetaInfo metaInfo = data->getMetaInfo();
     metaInfo.addAppMetaInfo(makeNonNegativeIntegerBlock(TLV_LIVE_EDGE, edgeNow()));
@@ -358,6 +401,14 @@ private:
 
     auto now = time::steady_clock::now();
 
+#ifdef SOLUTION_ENABLED
+    // Reclaim guard Interests whose lifetime elapsed (e.g. the consumer stalled).
+    // Arrivals are ordered, so the front is always the earliest to expire.
+    while (!m_guardQueue.empty() && now > m_guardQueue.front().expiry) {
+      m_guardQueue.pop_front();
+    }
+#endif
+
     // Drop parked Interests whose lifetime has elapsed: the network PIT entry is
     // gone, so any Data produced now would be unsolicited.
     for (auto it = m_pendingInterests.begin(); it != m_pendingInterests.end(); ) {
@@ -405,6 +456,16 @@ private:
       return;
     }
 
+#ifdef SOLUTION_ENABLED
+    // Guard: /<stream>/_guard/<clientId>/<seq>. The marker sits third-from-last
+    // (clientId and seq follow). Solution-only keep-alive: parked, not gated on
+    // the live edge, and flooded on hand-off.
+    if (interestName.size() >= 3 && interestName.get(-3) == name::Component(GUARD_MARKER)) {
+      handleGuardInterest(interest);
+      return;
+    }
+#endif
+
     // Content names follow /<stream>/<version=frame>/<segment>; the frame index
     // gates production against the live edge.
     uint64_t frame = 0;
@@ -447,12 +508,78 @@ private:
     }
   }
 
+#ifdef SOLUTION_ENABLED
+  // Flood the oldest parked guard with OptoFlood mobility markers (empty payload)
+  // and remove it, reusing the current hand-off's NewFaceSeq.
+  void
+  floodOldestGuard()
+  {
+    if (m_guardQueue.empty()) {
+      return;
+    }
+    Name name = m_guardQueue.front().name;
+    m_guardQueue.pop_front();
+    serveOne(name, true, m_guardRecoverySeq, 1_s, true);
+  }
+
+  void
+  scheduleGuardRecovery()
+  {
+    m_guardRecoveryEvent = m_scheduler.schedule(m_guardRecoveryInterval,
+                                                [this] { this->onGuardRecoveryTick(); });
+  }
+
+  // Fired when no new guard arrived within the recovery interval: stage another
+  // repair flood if a parked guard remains, else end recovery.
+  void
+  onGuardRecoveryTick()
+  {
+    if (!m_guardRecovering) {
+      return;
+    }
+    if (m_guardQueue.empty()) {
+      m_guardRecovering = false;
+      return;
+    }
+    floodOldestGuard();
+    if (m_guardQueue.empty()) {
+      m_guardRecovering = false;
+      return;
+    }
+    scheduleGuardRecovery();
+  }
+
+  // Admit a guard Interest: park it, then keep at most (N-1) resident by
+  // answering the oldest with an unmarked, payload-free Data. A guard arriving
+  // during recovery signals the path is repaired and ends staged re-flooding.
+  void
+  handleGuardInterest(const Interest& interest)
+  {
+    if (m_guardRecovering) {
+      m_guardRecoveryEvent.reset();
+      m_guardRecovering = false;
+    }
+    auto expiry = time::steady_clock::now() + interest.getInterestLifetime();
+    m_guardQueue.push_back(GuardEntry{interest.getName(), expiry});
+    if (static_cast<int>(m_guardQueue.size()) >= m_guardPending) {
+      Name oldest = m_guardQueue.front().name;
+      m_guardQueue.pop_front();
+      serveOne(oldest, false, 0, 1_s, true);
+    }
+  }
+#endif
+
 private:
   struct PendingInterest {
     Name name;
     uint64_t frame = 0;
     bool markMobility = false;
     uint32_t mobilitySeq = 0;
+    time::steady_clock::time_point expiry{};
+  };
+
+  struct GuardEntry {
+    Name name;
     time::steady_clock::time_point expiry{};
   };
 
@@ -471,6 +598,14 @@ private:
   std::deque<PendingInterest> m_pendingInterests;
   std::unordered_set<Name> m_pendingNames;
   uint64_t m_floodIdSeq = 0;
+
+  // Guard keep-alive state (solution-only; unused in baseline builds).
+  int m_guardPending = 3;
+  time::milliseconds m_guardRecoveryInterval{2000};
+  std::deque<GuardEntry> m_guardQueue;
+  bool m_guardRecovering = false;
+  uint32_t m_guardRecoverySeq = 0;
+  scheduler::ScopedEventId m_guardRecoveryEvent;
   
   // Statistics counters for experiment analysis
   uint64_t m_interestCount = 0;

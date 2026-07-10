@@ -124,8 +124,11 @@ if __name__ == '__main__':
     producer_log = os.path.join(results_dir, 'producer.log')
     consumer_log = os.path.join(results_dir, 'consumer.log')
 
-    producer.cmd(f"{producer_exec} --solution &> {producer_log} &")
-    consumer.cmd(f"{consumer_exec} &> {consumer_log} &")
+    # Guard keep-alive parameters (defaults; consumer/producer built with
+    # -DSOLUTION_ENABLED here, so the guard mechanism is active in the test).
+    guard_env = "EXP_GUARD_INTERVAL_MS=1000 EXP_GUARD_PENDING=3 EXP_GUARD_RECOVERY_MS=2000"
+    producer.cmd(f"{guard_env} {producer_exec} --solution &> {producer_log} &")
+    consumer.cmd(f"{guard_env} {consumer_exec} &> {consumer_log} &")
 
     # Warm-up period, then take T0 snapshot
     sleep(60)
