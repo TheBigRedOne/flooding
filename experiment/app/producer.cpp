@@ -556,7 +556,7 @@ private:
   handleGuardInterest(const Interest& interest)
   {
     if (m_guardRecovering) {
-      m_guardRecoveryEvent.reset();
+      m_guardRecoveryEvent.cancel();
       m_guardRecovering = false;
     }
     auto expiry = time::steady_clock::now() + interest.getInterestLifetime();
