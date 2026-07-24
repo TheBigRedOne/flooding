@@ -21,21 +21,25 @@ EXPERIMENT_RESULTS = results/consumer_capture.pcap \
 all: $(EXPERIMENT_RESULTS)
 
 # The experiment script generates the complete raw result set in one run.
-$(EXPERIMENT_RESULTS) &: ../tool/exp.py producer consumer
+$(EXPERIMENT_RESULTS) &: ../tool/exp.py producer consumer optoflood-daemon
 	mkdir -p results
 	# Run the experiment script using sudo, preserving EXPERIMENT_DIR environment.
 	sudo -E env EXPERIMENT_DIR=$(shell pwd) python3 ../tool/exp.py
 
-# Recipe to compile the producer.
+# Recipe to compile the producer (plain baseline application).
 producer: ../app/producer.cpp
-	g++ -std=c++17 -g -O2 -DSOLUTION_ENABLED -o $@ $< $$(pkg-config --cflags --libs libndn-cxx)
+	g++ -std=c++17 -g -O2 -o $@ $< $$(pkg-config --cflags --libs libndn-cxx)
 
-# Recipe to compile the consumer.
+# Recipe to compile the consumer (plain baseline application).
 consumer: ../app/consumer.cpp
-	g++ -std=c++17 -g -O2 -DSOLUTION_ENABLED -o $@ $< $$(pkg-config --cflags --libs libndn-cxx)
+	g++ -std=c++17 -g -O2 -o $@ $< $$(pkg-config --cflags --libs libndn-cxx)
+
+# Recipe to compile the OptoFlood mobility control daemon (solution control plane).
+optoflood-daemon: ../app/optoflood-daemon.cpp
+	g++ -std=c++17 -g -O2 -o $@ $< $$(pkg-config --cflags --libs libndn-cxx)
 
 # A target to clean up all generated files.
 clean:
-	sudo rm -rf producer consumer results
+	sudo rm -rf producer consumer optoflood-daemon results
 
 .PHONY: all clean

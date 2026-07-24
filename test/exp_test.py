@@ -124,11 +124,18 @@ if __name__ == '__main__':
     producer_log = os.path.join(results_dir, 'producer.log')
     consumer_log = os.path.join(results_dir, 'consumer.log')
 
-    # Guard keep-alive parameters (defaults; consumer/producer built with
-    # -DSOLUTION_ENABLED here, so the guard mechanism is active in the test).
-    guard_env = "EXP_GUARD_INTERVAL_MS=1000 EXP_GUARD_PENDING=3 EXP_GUARD_RECOVERY_MS=2000"
-    producer.cmd(f"{guard_env} {producer_exec} --solution &> {producer_log} &")
-    consumer.cmd(f"{guard_env} {consumer_exec} &> {consumer_log} &")
+    producer.cmd(f"{producer_exec} &> {producer_log} &")
+    consumer.cmd(f"{consumer_exec} &> {consumer_log} &")
+
+    # OptoFlood mobility control daemon (solution control plane). Producer-side
+    # holds the aggregated guard <prefix>/_guard, detects host mobility via Netlink
+    # and arms the local NFD; consumer-side keeps one guard continuously pending.
+    daemon_exec = os.path.join(experiment_dir, 'optoflood-daemon')
+    producer_daemon_log = os.path.join(results_dir, 'optoflood_producer.log')
+    consumer_daemon_log = os.path.join(results_dir, 'optoflood_consumer.log')
+    daemon_env = "GUARD_PREFIX=/LiveStream EXP_GUARD_INTERVAL_MS=1000"
+    producer.cmd(f"{daemon_env} {daemon_exec} producer &> {producer_daemon_log} &")
+    consumer.cmd(f"{daemon_env} {daemon_exec} consumer &> {consumer_daemon_log} &")
 
     # Warm-up period, then take T0 snapshot
     sleep(60)

@@ -12,6 +12,7 @@ SYNC_INPUTS := \
 	../test/validate.py \
 	../experiment/app/producer.cpp \
 	../experiment/app/consumer.cpp \
+	../experiment/app/optoflood-daemon.cpp \
 	../experiment/app/trust-schema.conf \
 	../experiment/tool/ndn.lua
 
@@ -64,8 +65,9 @@ $(PCAPS) $(RIBS) ../test/results/.validate_ok_vm &: ../test/.sync_solution_$(PRO
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh-config --host solution > .ssh_config_solution
 	# Build apps inside VM from rsynced sources under /home/vagrant/flooding
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh -c 'set -e; test -d /home/vagrant/flooding/experiment/app || (echo "rsync failed: /home/vagrant/flooding/experiment/app missing" && exit 1)'
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh -c 'set -e; cd /home/vagrant/flooding/test && rm -f producer consumer && PKG="$$(pkg-config --cflags --libs libndn-cxx)" && g++ -std=c++17 -g -O2 -DSOLUTION_ENABLED -o producer /home/vagrant/flooding/experiment/app/producer.cpp $$PKG && chmod -v +x producer'
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh -c 'set -e; cd /home/vagrant/flooding/test && PKG="$$(pkg-config --cflags --libs libndn-cxx)" && g++ -std=c++17 -g -O2 -DSOLUTION_ENABLED -o consumer /home/vagrant/flooding/experiment/app/consumer.cpp $$PKG && chmod -v +x consumer'
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh -c 'set -e; cd /home/vagrant/flooding/test && rm -f producer consumer optoflood-daemon && PKG="$$(pkg-config --cflags --libs libndn-cxx)" && g++ -std=c++17 -g -O2 -o producer /home/vagrant/flooding/experiment/app/producer.cpp $$PKG && chmod -v +x producer'
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh -c 'set -e; cd /home/vagrant/flooding/test && PKG="$$(pkg-config --cflags --libs libndn-cxx)" && g++ -std=c++17 -g -O2 -o consumer /home/vagrant/flooding/experiment/app/consumer.cpp $$PKG && chmod -v +x consumer'
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh -c 'set -e; cd /home/vagrant/flooding/test && PKG="$$(pkg-config --cflags --libs libndn-cxx)" && g++ -std=c++17 -g -O2 -o optoflood-daemon /home/vagrant/flooding/experiment/app/optoflood-daemon.cpp $$PKG && chmod -v +x optoflood-daemon'
 	# Ensure trust schema is available beside binaries (fail if missing)
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh -c 'set -e; test -f /home/vagrant/flooding/experiment/app/trust-schema.conf && cp -f /home/vagrant/flooding/experiment/app/trust-schema.conf /home/vagrant/flooding/test/'
 	# Ensure tshark loads updated NDN dissector (ndn.lua)

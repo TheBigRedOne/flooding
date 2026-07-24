@@ -49,6 +49,14 @@ DEFAULT_HANDOFF_INTERVAL_JITTER = 0.0
 PRODUCER_IDENTITY = '/LiveStream'
 TRUST_ANCHOR_FILE = '/home/vagrant/flooding/experiment/app/livestream-trust-anchor.cert'
 
+# OptoFlood mobility control daemon binary name and the advertised/movable prefix
+# it manages. The daemon holds the aggregated guard <prefix>/_guard and arms the
+# local NFD for this prefix; the value matches the prefix the producer app
+# registers and advertises into NLSR. The daemon is launched only for solution
+# runs, selected by the presence of its binary in the experiment directory.
+OPTOFLOOD_DAEMON = 'optoflood-daemon'
+ADVERTISED_PREFIX = '/LiveStream'
+
 # Access points that must start down so the experiment begins with the producer
 # attached only via acc2.
 NON_INITIAL_ACCESS_POINTS: Tuple[str, ...] = ('acc3', 'acc4', 'acc5', 'acc6')
@@ -188,8 +196,6 @@ def _write_nlsr_params_file(
     window_frames: int,
     segments_per_frame: int,
     guard_interval_ms: int,
-    guard_pending: int,
-    guard_recovery_ms: int,
 ) -> None:
     """Persist NLSR tuning parameters and handoff configuration to params.txt."""
     output_path = os.path.join(results_dir, 'params.txt')
@@ -202,8 +208,6 @@ def _write_nlsr_params_file(
     combined['window_frames'] = str(window_frames)
     combined['segments_per_frame'] = str(segments_per_frame)
     combined['guard_interval_ms'] = str(guard_interval_ms)
-    combined['guard_pending'] = str(guard_pending)
-    combined['guard_recovery_ms'] = str(guard_recovery_ms)
     with open(output_path, 'w', encoding='utf-8') as output_file:
         for key in sorted(combined):
             output_file.write(f'{key}={combined[key]}\n')
@@ -351,8 +355,6 @@ if __name__ == '__main__':
         window_frames = _load_positive_int_env('EXP_WINDOW_FRAMES', 4)
         segments_per_frame = _load_positive_int_env('EXP_SEGMENTS_PER_FRAME', 1)
         guard_interval_ms = _load_positive_int_env('EXP_GUARD_INTERVAL_MS', 1000)
-        guard_pending = _load_positive_int_env('EXP_GUARD_PENDING', 3)
-        guard_recovery_ms = _load_positive_int_env('EXP_GUARD_RECOVERY_MS', 2000)
     except ValueError as error:
         print(f"Error: {error}")
         exit(1)
@@ -368,8 +370,6 @@ if __name__ == '__main__':
         window_frames,
         segments_per_frame,
         guard_interval_ms,
-        guard_pending,
-        guard_recovery_ms,
     )
     _init_handoffs_file(handoffs_path)
 
@@ -422,10 +422,7 @@ if __name__ == '__main__':
 
     app_env = (f"EXP_REQUEST_INTERVAL_MS={request_interval_ms}"
                f" EXP_WINDOW_FRAMES={window_frames}"
-               f" EXP_SEGMENTS_PER_FRAME={segments_per_frame}"
-               f" EXP_GUARD_INTERVAL_MS={guard_interval_ms}"
-               f" EXP_GUARD_PENDING={guard_pending}"
-               f" EXP_GUARD_RECOVERY_MS={guard_recovery_ms}")
+               f" EXP_SEGMENTS_PER_FRAME={segments_per_frame}")
     # Optional stream selection for multi-stream studies (default /LiveStream/v0
     # is applied by the consumer when unset).
     stream_prefix = os.getenv('EXP_STREAM_PREFIX')
@@ -433,6 +430,20 @@ if __name__ == '__main__':
         app_env += f" EXP_STREAM_PREFIX={quote(stream_prefix)}"
     producer.cmd(f"{app_env} {producer_exec} &> {producer_log} &")
     consumer.cmd(f"{app_env} {consumer_exec} &> {consumer_log} &")
+
+    # OptoFlood mobility control daemon (solution runs only). The daemon binary is
+    # built into the solution experiment directory but not the baseline one, so its
+    # presence selects the solution configuration without a separate flag. The
+    # producer-side daemon holds the aggregated guard, detects host mobility and
+    # arms the local NFD; the consumer-side daemon keeps one guard continuously
+    # pending at the producer (PIT aggregation collapses all consumers into one).
+    daemon_exec = os.path.join(experiment_dir, OPTOFLOOD_DAEMON)
+    if os.path.exists(daemon_exec):
+        daemon_env = f"GUARD_PREFIX={ADVERTISED_PREFIX} EXP_GUARD_INTERVAL_MS={guard_interval_ms}"
+        producer_daemon_log = os.path.join(results_dir, "optoflood_producer.log")
+        consumer_daemon_log = os.path.join(results_dir, "optoflood_consumer.log")
+        producer.cmd(f"{daemon_env} {daemon_exec} producer &> {producer_daemon_log} &")
+        consumer.cmd(f"{daemon_env} {daemon_exec} consumer &> {consumer_daemon_log} &")
 
     # The handoff loop runs K randomly-spaced toggles along handoff_sequence.
     # The first interval doubles as application warm-up before handoff #1.

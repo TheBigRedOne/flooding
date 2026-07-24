@@ -122,6 +122,7 @@ test: test/.validate_ok
 
 test/.validate_ok: test/Makefile test/Vagrantfile test/exp_test.py test/validate.py \
              experiment/app/producer.cpp experiment/app/consumer.cpp \
+             experiment/app/optoflood-daemon.cpp \
              experiment/app/trust-schema.conf experiment/tool/ndn.lua \
              box/solution/solution.$(PROVIDER).box \
              | $(BASELINE_RAW_OUTPUTS)

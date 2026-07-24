@@ -3,6 +3,7 @@
 SOLUTION_INPUTS = box/solution/solution.$(PROVIDER).box \
                   experiment/app/producer.cpp \
                   experiment/app/consumer.cpp \
+                  experiment/app/optoflood-daemon.cpp \
                   experiment/app/trust-schema.conf \
                   experiment/solution/Vagrantfile \
                   experiment/solution/Makefile \

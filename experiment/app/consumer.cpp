@@ -15,7 +15,6 @@
 #include <iostream>
 #include <map>
 #include <optional>
-#include <random>
 #include <set>
 #include <unistd.h>
 
@@ -29,11 +28,6 @@ constexpr uint32_t TLV_LIVE_EDGE = 206;
 // Generic name component marking a live-edge discovery Interest (<stream>/_meta).
 // Must match the producer.
 constexpr char DISCOVERY_MARKER[] = "_meta";
-
-// Generic name component marking a guard Interest
-// (<stream>/_guard/<clientId>/<seq>). Solution-only keep-alive; must match the
-// producer.
-constexpr char GUARD_MARKER[] = "_guard";
 
 /**
  * @brief Pull-based live-stream consumer that tracks the producer live edge via
@@ -95,17 +89,6 @@ public:
     // delivered frames stay observable instead of being dropped here.
     m_effectiveWindow = m_windowFrames;
     m_frameTimeout = time::milliseconds(m_effectiveWindow * m_framePeriodMs + kReclaimMarginMs);
-
-#ifdef SOLUTION_ENABLED
-    // Guard keep-alive interval (solution-only). The guard loop keeps a floodable
-    // pending Interest at the producer, decoupled from the content window.
-    const char* rawGuardInterval = std::getenv("EXP_GUARD_INTERVAL_MS");
-    int guardIntervalMs = rawGuardInterval ? std::atoi(rawGuardInterval) : 1000;
-    if (guardIntervalMs <= 0) {
-      guardIntervalMs = 1000;
-    }
-    m_guardInterval = time::milliseconds(guardIntervalMs);
-#endif
   }
 
   void
@@ -124,17 +107,6 @@ public:
               << " frames, frame timeout " << m_frameTimeout.count() << " ms (RTT-adaptive)" << std::endl;
 
     sendDiscovery();
-
-#ifdef SOLUTION_ENABLED
-    // Assign a random per-consumer id so guard names never collide across
-    // consumers sharing a stream, then start the keep-alive loop.
-    std::random_device rd;
-    std::mt19937_64 gen(rd());
-    m_clientId = gen();
-    std::cout << "[" << nowNs() << "] GUARD: enabled clientId=" << m_clientId
-              << " interval_ms=" << m_guardInterval.count() << std::endl;
-    sendGuard();
-#endif
 
     m_ioContext.run();
   }
@@ -440,43 +412,6 @@ private:
     // Loss is resolved by the per-frame deadline.
   }
 
-#ifdef SOLUTION_ENABLED
-  // Guard keep-alive loop: periodically express /<stream>/_guard/<clientId>/<seq>
-  // with a fresh seq. The producer parks these and floods one on each hand-off;
-  // here only the reported live edge is consumed and loss is ignored (the timer
-  // keeps the loop running). Independent of the content window.
-  void
-  sendGuard()
-  {
-    Name name(m_streamPrefix);
-    name.append(name::Component(GUARD_MARKER));
-    name.appendNumber(m_clientId);
-    name.appendNumber(m_guardSeq++);
-
-    Interest interest(name);
-    interest.setCanBePrefix(false);
-    interest.setMustBeFresh(true);
-    // InterestLifetime left at the ndn-cxx default (4 s): a guard is normally
-    // answered well before expiry; the lifetime is only the PIT reclaim fallback.
-
-    m_face.expressInterest(interest,
-                           [this] (const Interest&, const Data& d) { onGuardData(d); },
-                           [] (const Interest&, const lp::Nack&) {},
-                           [] (const Interest&) {});
-
-    m_guardTimer = m_scheduler.schedule(m_guardInterval, [this] { this->sendGuard(); });
-  }
-
-  void
-  onGuardData(const Data& data)
-  {
-    // Guard replies carry no payload; use only the reported live edge, if present.
-    if (auto edge = readEdge(data)) {
-      updateEdge(*edge);
-    }
-  }
-#endif
-
 private:
   boost::asio::io_context m_ioContext;
   Face m_face;
@@ -512,12 +447,6 @@ private:
   uint64_t m_nacks = 0;
   uint64_t m_timeouts = 0;
   uint64_t m_discoveries = 0;
-
-  // Guard keep-alive state (solution-only; unused in baseline builds).
-  uint64_t m_clientId = 0;
-  uint64_t m_guardSeq = 0;
-  time::milliseconds m_guardInterval{1000};
-  scheduler::ScopedEventId m_guardTimer;
 };
 
 } // namespace examples

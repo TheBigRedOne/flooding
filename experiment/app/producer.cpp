@@ -1,4 +1,16 @@
 // producer.cpp
+//
+// Baseline live-stream producer. It serves a versioned, segmented live stream
+// under /LiveStream: an Interest for a future frame is parked until that frame's
+// live edge is reached, then answered; an Interest for an already-produced frame
+// is answered immediately (catch-up). Every Data carries the current live-edge
+// frame number (TLV_LIVE_EDGE) so consumers track the edge by feedback without a
+// shared clock. A bare <stream>/_meta discovery Interest returns the current edge.
+//
+// This application contains no mobility/OptoFlood logic. The OptoFlood mobility
+// solution lives in the separate optoflood-daemon (control plane) and the NFD
+// OptoFlood forwarding module (data plane). The same binary is used for both
+// baseline and solution runs; the daemon is launched only for solution runs.
 
 #include <ndn-cxx/face.hpp>
 #include <ndn-cxx/interest.hpp>
@@ -10,184 +22,27 @@
 #include <ndn-cxx/util/scheduler.hpp>
 
 #include <boost/asio/io_context.hpp>
-#include <boost/asio/posix/stream_descriptor.hpp>
 
+#include <chrono>
+#include <cstdlib>
+#include <deque>
 #include <iostream>
 #include <string>
 #include <string_view>
-#include <cstdlib> // For std::system
-#include <cstring> // For strerror
-#include <cerrno>  // For errno
-#include <chrono>
-#include <thread>
-#include <iomanip>
-#include <deque>
 #include <unordered_set>
-
-// Only available in solution build
-#ifdef SOLUTION_ENABLED
-#include <ndn-cxx/optoflood.hpp>
-#endif
-// Linux headers for Netlink
-#include <asm/types.h>
-#include <sys/socket.h>
-#include <linux/netlink.h>
-#include <linux/rtnetlink.h>
 #include <unistd.h>
-
-// OptoFlood TLV types are now defined in ndn-cxx/optoflood.hpp
 
 namespace ndn {
 namespace examples {
 
 // Application-level TLV type carrying the producer's current live-edge frame
-// number in Data MetaInfo (application range [128,252]; distinct from the
-// OptoFlood tlv::optoflood::* types 201-205). Consumers read it to track the
-// live edge via feedback, with no shared clock. Must match the consumer.
+// number in Data MetaInfo (application range [128,252]). Consumers read it to
+// track the live edge via feedback, with no shared clock. Must match the consumer.
 constexpr uint32_t TLV_LIVE_EDGE = 206;
 
 // Generic name component that marks a live-edge discovery Interest
 // (<stream>/_meta). Must match the consumer.
 constexpr char DISCOVERY_MARKER[] = "_meta";
-
-// Generic name component marking a guard Interest
-// (<stream>/_guard/<clientId>/<seq>). Guard Interests are a solution-only
-// keep-alive mechanism: the producer holds a small set parked so every hand-off
-// has a floodable pending Interest, decoupled from the content request pattern.
-// Must match the consumer.
-constexpr char GUARD_MARKER[] = "_guard";
-
-/**
- * @brief A helper class to listen for network interface changes using Netlink.
- * This class encapsulates the logic for creating a Netlink socket and integrating
- * it with the ndn-cxx/boost::asio event loop.
- */
-class NetlinkListener : noncopyable
-{
-public:
-  // The callback will be invoked when a mobility event is detected.
-  using MobilityCallback = std::function<void()>;
-
-  NetlinkListener(boost::asio::io_context& io, MobilityCallback callback)
-    : m_ioService(io)
-    , m_callback(callback)
-    , m_netlinkSocket(io)
-  {
-  }
-
-  void
-  start()
-  {
-    int sock = socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
-    if (sock < 0) {
-      throw std::runtime_error("Failed to create Netlink socket");
-    }
-
-    struct sockaddr_nl sa;
-    memset(&sa, 0, sizeof(sa));
-    sa.nl_family = AF_NETLINK;
-    sa.nl_groups = RTMGRP_LINK;
-
-    if (bind(sock, (struct sockaddr*)&sa, sizeof(sa)) < 0) {
-      close(sock);
-      throw std::runtime_error("Failed to bind Netlink socket");
-    }
-
-    m_netlinkSocket.assign(sock);
-    waitForEvent();
-  }
-
-private:
-  void
-  waitForEvent()
-  {
-    // Asynchronously wait until the socket is ready to read.
-    m_netlinkSocket.async_wait(boost::asio::posix::stream_descriptor::wait_read,
-                              bind(&NetlinkListener::handleEvent, this, _1));
-  }
-
-  void
-  handleEvent(const boost::system::error_code& error)
-  {
-    if (error) {
-      std::cerr << "[" << std::chrono::system_clock::now().time_since_epoch().count() 
-                << "] ERROR: Netlink socket error: " << error.message() 
-                << " (code: " << error.value() << ")" << std::endl;
-      
-      if (error == boost::asio::error::operation_aborted) {
-        std::cerr << "[" << std::chrono::system_clock::now().time_since_epoch().count() 
-                  << "] INFO: Netlink listener shutting down gracefully" << std::endl;
-        return;
-      }
-      
-      // For other errors, try to restart monitoring after a delay
-      std::cerr << "[" << std::chrono::system_clock::now().time_since_epoch().count() 
-                << "] INFO: Attempting to restart Netlink monitoring in 1 second" << std::endl;
-      std::this_thread::sleep_for(std::chrono::seconds(1));
-      waitForEvent();
-      return;
-    }
-
-    char buf[8192];
-    struct iovec iov = { buf, sizeof(buf) };
-    struct sockaddr_nl sa;
-    struct msghdr msg = { &sa, sizeof(sa), &iov, 1, nullptr, 0, 0 };
-
-    ssize_t len = recvmsg(m_netlinkSocket.native_handle(), &msg, 0);
-    if (len < 0) {
-      int err = errno;
-      std::cerr << "[" << std::chrono::system_clock::now().time_since_epoch().count() 
-                << "] ERROR: Netlink recvmsg failed: " << strerror(err) 
-                << " (errno: " << err << ")" << std::endl;
-      
-      // Handle specific error cases
-      if (err == EAGAIN || err == EWOULDBLOCK) {
-        // No data available, continue waiting
-        waitForEvent();
-      } else if (err == ENOBUFS) {
-        // Buffer overflow, log and continue
-        std::cerr << "[" << std::chrono::system_clock::now().time_since_epoch().count() 
-                  << "] WARNING: Netlink buffer overflow, some events may be lost" << std::endl;
-        waitForEvent();
-      }
-      return;
-    }
-
-    for (struct nlmsghdr* nlh = (struct nlmsghdr*)buf; NLMSG_OK(nlh, len); nlh = NLMSG_NEXT(nlh, len)) {
-      if (nlh->nlmsg_type == RTM_NEWLINK) {
-        struct ifinfomsg* ifi = (struct ifinfomsg*)NLMSG_DATA(nlh);
-        // Check if the interface is up and running. This is our mobility trigger.
-        if ((ifi->ifi_flags & IFF_UP) && (ifi->ifi_flags & IFF_RUNNING)) {
-          struct rtattr* rta = IFLA_RTA(ifi);
-          int rta_len = nlh->nlmsg_len - NLMSG_LENGTH(sizeof(*ifi));
-          for (; RTA_OK(rta, rta_len); rta = RTA_NEXT(rta, rta_len)) {
-            if (rta->rta_type == IFLA_IFNAME) {
-                std::string ifname(static_cast<char*>(RTA_DATA(rta)));
-                auto now = std::chrono::system_clock::now();
-                auto timestamp = now.time_since_epoch().count();
-                
-                std::cout << "[" << timestamp << "] MOBILITY: Interface state change detected" << std::endl;
-                std::cout << "[" << timestamp << "] MOBILITY: Interface '" << ifname 
-                          << "' is UP (flags: 0x" << std::hex << ifi->ifi_flags << std::dec << ")" << std::endl;
-                std::cout << "[" << timestamp << "] MOBILITY: Triggering mobility event handler" << std::endl;
-                
-                m_callback();
-                break;
-            }
-          }
-        }
-      }
-    }
-    // Reschedule the wait for the next event
-    waitForEvent();
-  }
-
-private:
-  boost::asio::io_context& m_ioService;
-  MobilityCallback m_callback;
-  boost::asio::posix::stream_descriptor m_netlinkSocket;
-};
-
 
 class Producer : noncopyable
 {
@@ -198,7 +53,7 @@ public:
     , m_keyChain()
   {
     // Frame production period: a new frame becomes available every m_interval,
-    // supplied by the driver via EXP_REQUEST_INTERVAL_MS (20 ms safety-net default).
+    // supplied by the driver via EXP_REQUEST_INTERVAL_MS (20 ms safety default).
     const char* rawInterval = std::getenv("EXP_REQUEST_INTERVAL_MS");
     int intervalMs = rawInterval ? std::atoi(rawInterval) : 20;
     if (intervalMs <= 0) {
@@ -213,54 +68,16 @@ public:
     if (m_segmentsPerFrame <= 0) {
       m_segmentsPerFrame = 1;
     }
-
-    // Default to disabled; enable automatically in solution builds
-#ifdef SOLUTION_ENABLED
-    m_enableOptoFlood = true;
-
-    // Guard keep-alive parameters (solution-only). N is the answer-oldest
-    // threshold (steady-state resident guards = N-1); the recovery interval
-    // spaces the staged re-floods after a hand-off (must exceed the consumer
-    // guard interval so a repaired path can deliver a new guard first).
-    const char* rawGuardN = std::getenv("EXP_GUARD_PENDING");
-    m_guardPending = rawGuardN ? std::atoi(rawGuardN) : 3;
-    if (m_guardPending < 1) {
-      m_guardPending = 3;
-    }
-    const char* rawGuardRecovery = std::getenv("EXP_GUARD_RECOVERY_MS");
-    int guardRecoveryMs = rawGuardRecovery ? std::atoi(rawGuardRecovery) : 2000;
-    if (guardRecoveryMs <= 0) {
-      guardRecoveryMs = 2000;
-    }
-    m_guardRecoveryInterval = time::milliseconds(guardRecoveryMs);
-#endif
   }
-
-  void enableOptoFlood(bool enable = true) { m_enableOptoFlood = enable; }
-  void forceMobilityOnce() { m_enableOptoFlood = true; m_forceMobilityOnceFlag = true; }
 
   void
   run()
   {
-    // Register prefix with a success callback to advertise it via NLSR
+    // Register the prefix; on success advertise it into NLSR.
     m_face.setInterestFilter("/LiveStream",
                              std::bind(&Producer::onInterest, this, _2),
                              std::bind(&Producer::onRegisterSuccess, this, _1),
                              std::bind(&Producer::onRegisterFailed, this, _1, _2));
-    if (m_enableOptoFlood) {
-    try {
-        if (!m_netlinkListener) {
-          m_netlinkListener = std::make_unique<NetlinkListener>(
-            m_ioContext, [this] { this->onMobilityEvent(); }
-          );
-        }
-      m_netlinkListener->start();
-      std::cout << "Netlink listener started for mobility detection." << std::endl;
-    }
-    catch (const std::exception& e) {
-      std::cerr << "ERROR: Failed to start Netlink listener: " << e.what() << std::endl;
-    }
-    }
     m_startTime = time::steady_clock::now();
     scheduleDataSend();
     m_ioContext.run();
@@ -272,15 +89,15 @@ private:
   {
     auto timestamp = std::chrono::system_clock::now().time_since_epoch().count();
     std::cout << "[" << timestamp << "] PREFIX: Successfully registered prefix: " << prefix << std::endl;
-    
-    // Now that the local filter is confirmed, advertise the prefix to the network.
+
     std::cout << "[" << timestamp << "] PREFIX: Advertising prefix via NLSR" << std::endl;
     int ret = std::system("nlsrc advertise /LiveStream");
     if (ret != 0) {
-      std::cerr << "[" << timestamp << "] ERROR: Failed to advertise prefix with nlsrc (exit code: " 
+      std::cerr << "[" << timestamp << "] ERROR: Failed to advertise prefix with nlsrc (exit code: "
                 << ret << ")" << std::endl;
       m_face.shutdown();
-    } else {
+    }
+    else {
       std::cout << "[" << timestamp << "] PREFIX: Successfully advertised prefix via NLSR" << std::endl;
     }
   }
@@ -289,39 +106,9 @@ private:
   onRegisterFailed(const Name& prefix, const std::string& reason)
   {
     auto timestamp = std::chrono::system_clock::now().time_since_epoch().count();
-    std::cerr << "[" << timestamp << "] ERROR: Failed to register prefix '" << prefix 
+    std::cerr << "[" << timestamp << "] ERROR: Failed to register prefix '" << prefix
               << "' with reason: " << reason << std::endl;
-    std::cerr << "[" << timestamp << "] ERROR: Shutting down face due to registration failure" << std::endl;
     m_face.shutdown();
-  }
-
-  // This callback is triggered by the NetlinkListener
-  void
-  onMobilityEvent()
-  {
-    auto timestamp = std::chrono::system_clock::now().time_since_epoch().count();
-    std::cout << "[" << timestamp << "] MOBILITY: Producer mobility event triggered" << std::endl;
-    m_mobilityEventCount++;
-    for (auto& pending : m_pendingInterests) {
-      pending.markMobility = true;
-      pending.mobilitySeq = m_mobilityEventCount;
-    }
-    std::cout << "[" << timestamp << "] MOBILITY: Total mobility events: " << m_mobilityEventCount << std::endl;
-    std::cout << "[" << timestamp << "] MOBILITY: Pending Interests marked: " << m_pendingInterests.size() << std::endl;
-
-#ifdef SOLUTION_ENABLED
-    // Guard staged recovery: flood the oldest parked guard now, then one more
-    // every m_guardRecoveryInterval until a new guard arrives (path repaired) or
-    // the parked set is exhausted. All staged floods reuse this hand-off's
-    // NewFaceSeq, so they reinforce the same TFIB entry (gap-filling retransmit).
-    std::cout << "[" << timestamp << "] MOBILITY: Guard queue size: " << m_guardQueue.size() << std::endl;
-    m_guardRecoverySeq = m_mobilityEventCount;
-    if (!m_guardQueue.empty()) {
-      m_guardRecovering = true;
-      floodOldestGuard();
-      scheduleGuardRecovery();
-    }
-#endif
   }
 
   void
@@ -331,38 +118,18 @@ private:
   }
 
   // Encode and send one Data packet for a requested (frame, segment). Every Data
-  // carries the current live edge (TLV_LIVE_EDGE) so consumers track it via
-  // feedback. Mobility-marked Data additionally carry OptoFlood markers so the
-  // modified forwarder floods them along the FIB to refresh the path.
+  // carries the current live edge (TLV_LIVE_EDGE) so consumers track it by feedback.
   void
-  serveOne(const Name& name, bool markMobility, uint32_t mobilitySeq,
-           time::milliseconds freshness = 10_s, bool isGuard = false)
+  serveOne(const Name& name, time::milliseconds freshness = 10_s)
   {
     auto data = make_shared<Data>(name);
     data->setFreshnessPeriod(freshness);
-    if (isGuard) {
-      // Guard Data carries no payload; it only needs to traverse nodes to leave
-      // TFIB state behind. Name and signature remain the fixed per-packet cost.
-    }
-    else {
-      // FinalBlockId advertises the last segment index (K-1) of the frame.
-      data->setFinalBlock(name::Component::fromSegment(m_segmentsPerFrame - 1));
-      data->setContent(std::string_view("OptoFlood Test Data"));
-    }
+    // FinalBlockId advertises the last segment index (K-1) of the frame.
+    data->setFinalBlock(name::Component::fromSegment(m_segmentsPerFrame - 1));
+    data->setContent(std::string_view("LiveStream Data"));
 
     MetaInfo metaInfo = data->getMetaInfo();
     metaInfo.addAppMetaInfo(makeNonNegativeIntegerBlock(TLV_LIVE_EDGE, edgeNow()));
-#ifdef SOLUTION_ENABLED
-    if (m_enableOptoFlood && markMobility) {
-      uint64_t floodId = ++m_floodIdSeq;
-      metaInfo.addAppMetaInfo(optoflood::makeFloodIdBlock(floodId));
-      metaInfo.addAppMetaInfo(optoflood::makeNewFaceSeqBlock(mobilitySeq));
-      std::cout << "[" << std::chrono::system_clock::now().time_since_epoch().count()
-                << "] DATA: Attaching OptoFlood mobility markers"
-                << " NewFaceSeq: " << mobilitySeq
-                << " FloodId: " << floodId << std::endl;
-    }
-#endif
     data->setMetaInfo(metaInfo);
 
     m_keyChain.sign(*data);
@@ -393,21 +160,12 @@ private:
   }
 
   // Periodic tick: serve every parked Interest whose frame has now been produced
-  // (frame <= edgeNow()). Mobility-marked Interests carry OptoFlood markers.
+  // (frame <= edgeNow()); drop parked Interests whose lifetime has elapsed.
   void
   advanceLiveEdgeAndServe()
   {
     uint64_t edge = edgeNow();
-
     auto now = time::steady_clock::now();
-
-#ifdef SOLUTION_ENABLED
-    // Reclaim guard Interests whose lifetime elapsed (e.g. the consumer stalled).
-    // Arrivals are ordered, so the front is always the earliest to expire.
-    while (!m_guardQueue.empty() && now > m_guardQueue.front().expiry) {
-      m_guardQueue.pop_front();
-    }
-#endif
 
     // Drop parked Interests whose lifetime has elapsed: the network PIT entry is
     // gone, so any Data produced now would be unsolicited.
@@ -424,7 +182,7 @@ private:
     // Serve every parked Interest whose frame has now been produced.
     for (auto it = m_pendingInterests.begin(); it != m_pendingInterests.end(); ) {
       if (it->frame <= edge) {
-        serveOne(it->name, it->markMobility, it->mobilitySeq);
+        serveOne(it->name);
         m_pendingNames.erase(it->name);
         it = m_pendingInterests.erase(it);
       }
@@ -441,7 +199,7 @@ private:
   {
     auto timestamp = std::chrono::system_clock::now().time_since_epoch().count();
     m_interestCount++;
-    
+
     const Name& interestName = interest.getName();
     std::cout << "[" << timestamp << "] INTEREST: Received #" << m_interestCount
               << " Name: " << interestName
@@ -452,19 +210,9 @@ private:
     // Reply with a zero-freshness Data carrying the edge stamp, so a MustBeFresh
     // discovery always reaches the producer instead of a cached copy.
     if (!interestName.empty() && interestName.get(-1) == name::Component(DISCOVERY_MARKER)) {
-      serveOne(interestName, false, 0, 0_ms);
+      serveOne(interestName, 0_ms);
       return;
     }
-
-#ifdef SOLUTION_ENABLED
-    // Guard: /<stream>/_guard/<clientId>/<seq>. The marker sits third-from-last
-    // (clientId and seq follow). Solution-only keep-alive: parked, not gated on
-    // the live edge, and flooded on hand-off.
-    if (interestName.size() >= 3 && interestName.get(-3) == name::Component(GUARD_MARKER)) {
-      handleGuardInterest(interest);
-      return;
-    }
-#endif
 
     // Content names follow /<stream>/<version=frame>/<segment>; the frame index
     // gates production against the live edge.
@@ -488,98 +236,25 @@ private:
 
     if (frame <= edgeNow()) {
       // The frame has already been produced: serve immediately (catch-up).
-      serveOne(interestName, false, 0);
+      serveOne(interestName);
     }
     else if (m_pendingNames.find(interestName) == m_pendingNames.end()) {
       // Future frame: hold the Interest until the live edge reaches it; drop it
       // once its own lifetime elapses.
       auto expiry = time::steady_clock::now() + interest.getInterestLifetime();
-      m_pendingInterests.push_back(PendingInterest{interestName, frame, false, 0, expiry});
+      m_pendingInterests.push_back(PendingInterest{interestName, frame, expiry});
       m_pendingNames.insert(interestName);
     }
     else {
       std::cout << "[" << timestamp << "] INTEREST: Duplicate pending Interest ignored Name: "
                 << interestName << std::endl;
     }
-
-    if (m_forceMobilityOnceFlag) {
-      m_forceMobilityOnceFlag = false;
-      onMobilityEvent();
-    }
   }
-
-#ifdef SOLUTION_ENABLED
-  // Flood the oldest parked guard with OptoFlood mobility markers (empty payload)
-  // and remove it, reusing the current hand-off's NewFaceSeq.
-  void
-  floodOldestGuard()
-  {
-    if (m_guardQueue.empty()) {
-      return;
-    }
-    Name name = m_guardQueue.front().name;
-    m_guardQueue.pop_front();
-    serveOne(name, true, m_guardRecoverySeq, 1_s, true);
-  }
-
-  void
-  scheduleGuardRecovery()
-  {
-    m_guardRecoveryEvent = m_scheduler.schedule(m_guardRecoveryInterval,
-                                                [this] { this->onGuardRecoveryTick(); });
-  }
-
-  // Fired when no new guard arrived within the recovery interval: stage another
-  // repair flood if a parked guard remains, else end recovery.
-  void
-  onGuardRecoveryTick()
-  {
-    if (!m_guardRecovering) {
-      return;
-    }
-    if (m_guardQueue.empty()) {
-      m_guardRecovering = false;
-      return;
-    }
-    floodOldestGuard();
-    if (m_guardQueue.empty()) {
-      m_guardRecovering = false;
-      return;
-    }
-    scheduleGuardRecovery();
-  }
-
-  // Admit a guard Interest: park it, then keep at most (N-1) resident by
-  // answering the oldest with an unmarked, payload-free Data. A guard arriving
-  // during recovery signals the path is repaired and ends staged re-flooding.
-  void
-  handleGuardInterest(const Interest& interest)
-  {
-    if (m_guardRecovering) {
-      m_guardRecoveryEvent.cancel();
-      m_guardRecovering = false;
-    }
-    auto expiry = time::steady_clock::now() + interest.getInterestLifetime();
-    m_guardQueue.push_back(GuardEntry{interest.getName(), expiry});
-    if (static_cast<int>(m_guardQueue.size()) >= m_guardPending) {
-      Name oldest = m_guardQueue.front().name;
-      m_guardQueue.pop_front();
-      serveOne(oldest, false, 0, 1_s, true);
-    }
-  }
-#endif
 
 private:
   struct PendingInterest {
     Name name;
     uint64_t frame = 0;
-    bool markMobility = false;
-    uint32_t mobilitySeq = 0;
-    time::steady_clock::time_point expiry{};
-  };
-
-  struct GuardEntry {
-    Name name;
     time::steady_clock::time_point expiry{};
   };
 
@@ -592,25 +267,12 @@ private:
   int m_segmentsPerFrame = 1;
   time::steady_clock::time_point m_startTime;
 
-  std::unique_ptr<NetlinkListener> m_netlinkListener;
-  bool m_enableOptoFlood = false;
-  bool m_forceMobilityOnceFlag = false;
   std::deque<PendingInterest> m_pendingInterests;
   std::unordered_set<Name> m_pendingNames;
-  uint64_t m_floodIdSeq = 0;
 
-  // Guard keep-alive state (solution-only; unused in baseline builds).
-  int m_guardPending = 3;
-  time::milliseconds m_guardRecoveryInterval{2000};
-  std::deque<GuardEntry> m_guardQueue;
-  bool m_guardRecovering = false;
-  uint32_t m_guardRecoverySeq = 0;
-  scheduler::ScopedEventId m_guardRecoveryEvent;
-  
   // Statistics counters for experiment analysis
   uint64_t m_interestCount = 0;
   uint64_t m_dataCount = 0;
-  uint64_t m_mobilityEventCount = 0;
 };
 
 } // namespace examples
@@ -620,24 +282,17 @@ int
 main(int argc, char** argv)
 {
   auto startTime = std::chrono::system_clock::now().time_since_epoch().count();
-  
+
   std::cout << "[" << startTime << "] STARTUP: Producer application starting" << std::endl;
   std::cout << "[" << startTime << "] STARTUP: Process ID: " << getpid() << std::endl;
 
+  // No application flags are required; any extra CLI arguments are ignored so
+  // callers that still pass legacy flags continue to work.
+  (void)argc;
+  (void)argv;
+
   try {
     ndn::examples::Producer producer;
-    // CLI flags retained but not required under solution build
-    // --solution / --mode=solution: no-op in solution build (already enabled)
-    // --force-mobility: Force one mobility event
-    for (int i = 1; i < argc; ++i) {
-      std::string arg = argv[i];
-      if (arg == "--force-mobility") {
-        producer.forceMobilityOnce();
-      }
-      else if (arg == "--solution" || arg == "--mode=solution") {
-        producer.enableOptoFlood(true);
-      }
-    }
     std::cout << "[" << startTime << "] STARTUP: Producer initialized, starting event loop" << std::endl;
     producer.run();
   }
@@ -646,7 +301,7 @@ main(int argc, char** argv)
     std::cerr << "[" << errorTime << "] FATAL: Exception in producer: " << e.what() << std::endl;
     return 1;
   }
-  
+
   auto endTime = std::chrono::system_clock::now().time_since_epoch().count();
   std::cout << "[" << endTime << "] SHUTDOWN: Producer application terminated" << std::endl;
   return 0;
