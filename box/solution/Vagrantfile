@@ -9,7 +9,7 @@ $INSTALL_BASE = <<EOF
   git checkout 73add71f860979426aef63136bf78ed525862e5c
   ./install.sh -y \
   --cxx=https://github.com/TheBigRedOne/ndn-cxx.git@cd9ea187f1e377c5ee5c2cd644ed1b696a50257b \
-  --nfd=https://github.com/TheBigRedOne/NFD.git@4b0cdf521e1c00ed619f0795e636530cebca057c \
+  --nfd=https://github.com/TheBigRedOne/NFD.git@4b6580e0b0945b215100a645358ca9926c8a9b0b \
   --psync=https://github.com/named-data/PSync.git@0.5.0 \
   --nlsr=https://github.com/TheBigRedOne/NLSR.git@0def81b8ca62acd23fdb5548b50467192859a694 \
   --tools=https://github.com/named-data/ndn-tools.git@ndn-tools-24.07 \
