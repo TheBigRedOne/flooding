@@ -22,6 +22,10 @@
 //   OPTOFLOOD_ROLE          "consumer" | "producer" (overridden by argv[1])
 //   GUARD_PREFIX            producer advertised/movable prefix (default /LiveStream)
 //   EXP_GUARD_INTERVAL_MS   consumer re-express period P in ms (default 1000)
+//
+// The producer role signs its prefix registration with a dedicated management identity
+// (/localhost/optoflood), created on first use, so that its command Interests do not
+// share NFD's per-signing-key replay state with the baseline producer application.
 
 #include <ndn-cxx/face.hpp>
 #include <ndn-cxx/interest.hpp>
@@ -60,6 +64,15 @@ namespace optoflood_daemon {
 // <advertisedPrefix>/_guard; a leading underscore marks it as a reserved
 // control component (consistent with the discovery "_meta" marker).
 constexpr char GUARD_MARKER[] = "_guard";
+
+// Management identity used solely to sign this daemon's prefix-registration command.
+// It must differ from the identity the baseline producer application signs with: NFD
+// validates command Interests with a SignatureTime that must increase strictly per
+// signing key name, the timestamp has millisecond resolution, and each process only
+// tracks its own last value. Two processes sharing one key can therefore emit the same
+// SignatureTime when they register within the same millisecond, and NFD rejects the
+// later one ("Timestamp is reordered for key ..."), surfaced only as a generic 403.
+const Name OPTOFLOOD_MGMT_IDENTITY("/localhost/optoflood");
 
 static uint64_t
 nowNs()
@@ -250,7 +263,8 @@ public:
     m_face.setInterestFilter(m_guardName,
                              std::bind(&GuardProducer::onGuardInterest, this, _2),
                              std::bind(&GuardProducer::onRegisterSuccess, this, _1),
-                             std::bind(&GuardProducer::onRegisterFailed, this, _1, _2));
+                             std::bind(&GuardProducer::onRegisterFailed, this, _1, _2),
+                             makeManagementSigningInfo());
     try {
       m_netlink = std::make_unique<NetlinkListener>(m_io, [this] { this->onMobilityEvent(); });
       m_netlink->start();
@@ -264,11 +278,36 @@ public:
   }
 
 private:
+  // Ensure this daemon's management identity exists and return signing parameters for
+  // it, so that its prefix-registration command carries a KeyLocator distinct from the
+  // producer application's. NFD keeps command-Interest replay state per signing key
+  // name, so a separate key gives the daemon its own record and removes the
+  // same-millisecond collision with the application's registration.
+  //
+  // createIdentity() is idempotent and only becomes the node default when no default
+  // exists; the producer node already has one, so guard Data keeps being signed under
+  // the producer's advertised identity and the consumer trust schema is unaffected.
+  ndn::security::SigningInfo
+  makeManagementSigningInfo()
+  {
+    try {
+      m_keyChain.createIdentity(OPTOFLOOD_MGMT_IDENTITY);
+      return ndn::security::SigningInfo(ndn::security::SigningInfo::SIGNER_TYPE_ID,
+                                        OPTOFLOOD_MGMT_IDENTITY);
+    }
+    catch (const std::exception& e) {
+      std::cerr << "[" << nowNs() << "] WARN: management identity " << OPTOFLOOD_MGMT_IDENTITY
+                << " unavailable (" << e.what() << "); signing registration with the default"
+                << " identity, which may collide with the producer application" << std::endl;
+      return ndn::security::SigningInfo();
+    }
+  }
+
   void
   onRegisterSuccess(const Name& prefix)
   {
     std::cout << "[" << nowNs() << "] GUARD-PRODUCER: registered guard prefix " << prefix
-              << std::endl;
+              << " signed-by=" << OPTOFLOOD_MGMT_IDENTITY << std::endl;
   }
 
   void
