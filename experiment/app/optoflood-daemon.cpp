@@ -41,6 +41,7 @@
 #include <cerrno>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -278,33 +279,38 @@ private:
     m_face.shutdown();
   }
 
-  // Hold the aggregated guard: record that one is pending; do NOT reply in
-  // steady state. Re-expressions refresh the network PIT; after a mobility
-  // flood satisfies the guard, the next fresh expression re-arms this flag.
+  // Hold the aggregated guard: record the pending Interest and the instant its
+  // lifetime lapses; do NOT reply in steady state. The expiry mirrors what the local
+  // NFD recorded for the corresponding PIT in-record, and follows the same rule the
+  // baseline producer applies to parked business Interests: once the lifetime has
+  // elapsed the PIT entry is gone, so a Data produced then would be unsolicited.
   void
   onGuardInterest(const Interest& interest)
   {
-    m_haveGuard = true;
+    m_heldGuard = HeldGuard{interest.getName(),
+                            time::steady_clock::now() + interest.getInterestLifetime()};
     std::cout << "[" << nowNs() << "] GUARD-PRODUCER: holding guard " << interest.getName()
-              << std::endl;
+              << " lifetime_ms=" << interest.getInterestLifetime().count() << std::endl;
   }
 
-  // Host mobility: advance the epoch and flood the single held guard Data.
+  // Host mobility: advance the epoch, arm the local NFD for the stranded business
+  // Data, and reply to the held guard if it is still pending.
   void
   onMobilityEvent()
   {
     m_epoch++;
+    const bool guardLive = m_heldGuard && time::steady_clock::now() <= m_heldGuard->expiry;
     std::cout << "[" << nowNs() << "] MOBILITY: epoch=" << m_epoch
-              << " haveGuard=" << (m_haveGuard ? 1 : 0) << std::endl;
+              << " guardLive=" << (guardLive ? 1 : 0) << std::endl;
     // Arm the local NFD so the producer's pending business Data (the stranded set
     // at this instant) is LP-marked and flooded too (rescue in-flight interests).
     armNfd();
-    // Flood the single held guard so a floodable trigger exists even when there
-    // is no pending business traffic.
-    if (m_haveGuard) {
+    // Reply to the held guard so a floodable trigger exists even when there is no
+    // pending business traffic. A lapsed guard is dropped without replying.
+    if (guardLive) {
       floodGuard();
-      m_haveGuard = false; // consumed; consumer re-expression re-arms it
     }
+    m_heldGuard.reset(); // consumed or lapsed; consumer re-expression re-arms it
   }
 
   // Arm the local NFD's OptoFlood business-marking for this producer's advertised
@@ -356,8 +362,17 @@ private:
   KeyChain m_keyChain;
   Name m_advertisedPrefix;
   Name m_guardName;
+  // The single aggregated guard Interest currently pending at this producer, with
+  // the instant its lifetime lapses. Same lifecycle model as the baseline producer's
+  // parked business Interests.
+  struct HeldGuard
+  {
+    Name name;
+    time::steady_clock::time_point expiry;
+  };
+
   std::unique_ptr<NetlinkListener> m_netlink;
-  bool m_haveGuard = false;
+  std::optional<HeldGuard> m_heldGuard;
   uint32_t m_epoch = 0;
   uint64_t m_floodIdSeq = 0;
 };

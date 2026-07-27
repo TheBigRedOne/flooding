@@ -180,6 +180,15 @@ if __name__ == '__main__':
         home = node.params['params']['homeDir']
         node.cmd(f"grep OptoFlood {home}/log/nfd.log > {results_dir}/{node.name}_nfd.log 2>/dev/null || true")
 
+    # Producer/consumer node NFD logs. Besides the OptoFlood data-path lines, the RIB
+    # and command-authenticator lines are kept: the OptoFlood daemon registers its
+    # guard sub-namespace through standard prefix registration, and a registration
+    # failure is only explained by those subsystems.
+    for node in (producer, consumer):
+        home = node.params['params']['homeDir']
+        node.cmd(f"grep -E 'OptoFlood|RibManager|CommandAuthenticator' {home}/log/nfd.log"
+                 f" > {results_dir}/{node.name}_nfd.log 2>/dev/null || true")
+
     ndn.stop()
 
 
