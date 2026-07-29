@@ -57,6 +57,12 @@ TRUST_ANCHOR_FILE = '/home/vagrant/flooding/experiment/app/livestream-trust-anch
 OPTOFLOOD_DAEMON = 'optoflood-daemon'
 ADVERTISED_PREFIX = '/LiveStream'
 
+# Signing identity used only for the daemon's prefix-registration command. NFD tracks
+# command-Interest replay per signing key, so the daemon must not share the producer
+# application's key; it is provisioned by the driver because creating an identity
+# writes to the PIB shared with the concurrently starting applications.
+OPTOFLOOD_MGMT_IDENTITY = '/localhost/optoflood'
+
 # Access points that must start down so the experiment begins with the producer
 # attached only via acc2.
 NON_INITIAL_ACCESS_POINTS: Tuple[str, ...] = ('acc3', 'acc4', 'acc5', 'acc6')
@@ -404,6 +410,12 @@ if __name__ == '__main__':
     # disabled here, so changing the default identity does not affect advertisement.
     producer.cmd('ndnsec key-gen {} >/dev/null 2>&1'.format(PRODUCER_IDENTITY))
     producer.cmd('ndnsec cert-dump -i {} > {}'.format(PRODUCER_IDENTITY, TRUST_ANCHOR_FILE))
+
+    # Solution runs only: provision the OptoFlood daemon's management identity before
+    # the applications start. -n leaves the node default identity untouched, so the
+    # producer keeps signing Data under PRODUCER_IDENTITY.
+    if os.path.exists(os.path.join(experiment_dir, OPTOFLOOD_DAEMON)):
+        producer.cmd('ndnsec key-gen -n {} >/dev/null 2>&1'.format(OPTOFLOOD_MGMT_IDENTITY))
 
     consumer_pcap = os.path.join(results_dir, "consumer_capture.pcap")
     tcpdump_log = os.path.join(results_dir, "tcpdump.log")

@@ -24,8 +24,9 @@
 //   EXP_GUARD_INTERVAL_MS   consumer re-express period P in ms (default 1000)
 //
 // The producer role signs its prefix registration with a dedicated management identity
-// (/localhost/optoflood), created on first use, so that its command Interests do not
-// share NFD's per-signing-key replay state with the baseline producer application.
+// (/localhost/optoflood), which must be provisioned before start-up, so that its
+// command Interests do not share NFD's per-signing-key replay state with the baseline
+// producer application.
 
 #include <ndn-cxx/face.hpp>
 #include <ndn-cxx/interest.hpp>
@@ -278,20 +279,25 @@ public:
   }
 
 private:
-  // Ensure this daemon's management identity exists and return signing parameters for
-  // it, so that its prefix-registration command carries a KeyLocator distinct from the
-  // producer application's. NFD keeps command-Interest replay state per signing key
-  // name, so a separate key gives the daemon its own record and removes the
-  // same-millisecond collision with the application's registration.
+  // Return signing parameters for this daemon's management identity, so that its
+  // prefix-registration command carries a KeyLocator distinct from the producer
+  // application's. NFD keeps command-Interest replay state per signing key name, so a
+  // separate key gives the daemon its own record and removes the same-millisecond
+  // collision with the application's registration.
   //
-  // createIdentity() is idempotent and only becomes the node default when no default
-  // exists; the producer node already has one, so guard Data keeps being signed under
-  // the producer's advertised identity and the consumer trust schema is unaffected.
+  // The identity is looked up read-only and must already exist; the experiment drivers
+  // provision it with `ndnsec key-gen -n` before any application starts. It must NOT be
+  // created here: creating an identity writes to the PIB, and that write takes an
+  // exclusive lock on the database shared with the concurrently starting producer
+  // application, which then aborts with "PIB database cannot be initialized: database
+  // is locked".
   ndn::security::SigningInfo
   makeManagementSigningInfo()
   {
     try {
-      m_keyChain.createIdentity(OPTOFLOOD_MGMT_IDENTITY);
+      m_keyChain.getPib().getIdentity(OPTOFLOOD_MGMT_IDENTITY);
+      std::cout << "[" << nowNs() << "] GUARD-PRODUCER: registration signed by "
+                << OPTOFLOOD_MGMT_IDENTITY << std::endl;
       return ndn::security::SigningInfo(ndn::security::SigningInfo::SIGNER_TYPE_ID,
                                         OPTOFLOOD_MGMT_IDENTITY);
     }
@@ -307,7 +313,7 @@ private:
   onRegisterSuccess(const Name& prefix)
   {
     std::cout << "[" << nowNs() << "] GUARD-PRODUCER: registered guard prefix " << prefix
-              << " signed-by=" << OPTOFLOOD_MGMT_IDENTITY << std::endl;
+              << std::endl;
   }
 
   void

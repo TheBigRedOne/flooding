@@ -118,6 +118,14 @@ if __name__ == '__main__':
     producer.cmd('ndnsec key-gen /LiveStream >/dev/null 2>&1')
     producer.cmd('ndnsec cert-dump -i /LiveStream > /home/vagrant/flooding/experiment/app/livestream-trust-anchor.cert')
 
+    # Dedicated management identity for the OptoFlood daemon's prefix registration.
+    # NFD tracks command-Interest replay per signing key, so the daemon must not sign
+    # with the producer's key. It is provisioned here rather than by the daemon itself:
+    # creating an identity writes to the PIB, and that write would lock the database
+    # while the producer application is initialising its own KeyChain. -n leaves the
+    # node default identity (/LiveStream) untouched, so Data signing is unaffected.
+    producer.cmd('ndnsec key-gen -n /localhost/optoflood >/dev/null 2>&1')
+
     # Launch producer and consumer apps (built under test/ by Makefile prep)
     producer_exec = os.path.join(experiment_dir, 'producer')
     consumer_exec = os.path.join(experiment_dir, 'consumer')
