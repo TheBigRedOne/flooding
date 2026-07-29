@@ -22,6 +22,9 @@
 //   OPTOFLOOD_ROLE          "consumer" | "producer" (overridden by argv[1])
 //   GUARD_PREFIX            producer advertised/movable prefix (default /LiveStream)
 //   EXP_GUARD_INTERVAL_MS   consumer re-express period P in ms (default 1000)
+//   EXP_GUARD_LIFETIME_MS   guard InterestLifetime in ms; unset leaves the ndn-cxx
+//                           default (4 s). Provided to measure how the rate at which
+//                           guards actually reach the producer relates to the lifetime.
 //
 // The producer role signs its prefix registration with a dedicated management identity
 // (/localhost/optoflood), which must be provisioned before start-up, so that its
@@ -194,11 +197,13 @@ private:
 class GuardConsumer : noncopyable
 {
 public:
-  GuardConsumer(const Name& advertisedPrefix, time::milliseconds interval)
+  GuardConsumer(const Name& advertisedPrefix, time::milliseconds interval,
+                time::milliseconds lifetime)
     : m_face(m_io)
     , m_scheduler(m_io)
     , m_guardName(Name(advertisedPrefix).append(GUARD_MARKER))
     , m_interval(interval)
+    , m_lifetime(lifetime)
   {
   }
 
@@ -206,7 +211,9 @@ public:
   run()
   {
     std::cout << "[" << nowNs() << "] GUARD-CONSUMER: name=" << m_guardName
-              << " interval_ms=" << m_interval.count() << std::endl;
+              << " interval_ms=" << m_interval.count()
+              << " lifetime_ms=" << (m_lifetime > 0_ms ? m_lifetime.count() : 0)
+              << " (0 = ndn-cxx default)" << std::endl;
     sendGuard();
     m_io.run();
   }
@@ -220,13 +227,25 @@ private:
     Interest interest(m_guardName);
     interest.setCanBePrefix(false);
     interest.setMustBeFresh(true);
-    // InterestLifetime left at the ndn-cxx default; the guard is a keep-alive,
-    // re-expressed every P well within its lifetime.
+    // Lease lifetime: left at the ndn-cxx default unless overridden, so default
+    // behaviour is unchanged.
+    if (m_lifetime > 0_ms) {
+      interest.setInterestLifetime(m_lifetime);
+    }
+
+    // Fix the nonce before the Interest is copied by expressInterest, so that this
+    // log line can be matched against the per-hop forwarder logs. The producer has
+    // been observed to receive guards less often than they are expressed here, and
+    // locating that difference requires both ends of the path to be countable.
+    const auto nonce = interest.getNonce();
 
     m_face.expressInterest(interest,
                            [] (const Interest&, const Data&) {},
                            [] (const Interest&, const lp::Nack&) {},
                            [] (const Interest&) {});
+
+    std::cout << "[" << nowNs() << "] GUARD-CONSUMER: sent #" << ++m_sent
+              << " nonce=" << nonce << std::endl;
 
     m_timer = m_scheduler.schedule(m_interval, [this] { this->sendGuard(); });
   }
@@ -236,6 +255,8 @@ private:
   Scheduler m_scheduler;
   Name m_guardName;
   time::milliseconds m_interval;
+  time::milliseconds m_lifetime;
+  uint64_t m_sent = 0;
   scheduler::ScopedEventId m_timer;
 };
 
@@ -261,11 +282,17 @@ public:
   void
   run()
   {
+    // ROUTE_FLAG_CAPTURE, rather than the default CHILD_INHERIT, keeps the producer
+    // application's /<prefix> route - which is registered with child-inherit - from
+    // being inherited into this more specific entry. Without it NFD also delivers
+    // every guard Interest to the application face, where a baseline application can
+    // only discard it as an unrecognised name.
     m_face.setInterestFilter(m_guardName,
                              std::bind(&GuardProducer::onGuardInterest, this, _2),
                              std::bind(&GuardProducer::onRegisterSuccess, this, _1),
                              std::bind(&GuardProducer::onRegisterFailed, this, _1, _2),
-                             makeManagementSigningInfo());
+                             makeManagementSigningInfo(),
+                             ndn::nfd::ROUTE_FLAG_CAPTURE);
     try {
       m_netlink = std::make_unique<NetlinkListener>(m_io, [this] { this->onMobilityEvent(); });
       m_netlink->start();
@@ -455,12 +482,20 @@ main(int argc, char** argv)
     intervalMs = 1000;
   }
 
+  // 0 means "leave the ndn-cxx default", so omitting the variable changes nothing.
+  const char* rawLifetime = std::getenv("EXP_GUARD_LIFETIME_MS");
+  int lifetimeMs = rawLifetime ? std::atoi(rawLifetime) : 0;
+  if (lifetimeMs < 0) {
+    lifetimeMs = 0;
+  }
+
   std::cout << "[" << optoflood_daemon::nowNs() << "] STARTUP: OptoFlood daemon role='" << role
             << "' prefix=" << advertisedPrefix << " pid=" << getpid() << std::endl;
 
   try {
     if (role == "consumer") {
-      optoflood_daemon::GuardConsumer consumer(advertisedPrefix, time::milliseconds(intervalMs));
+      optoflood_daemon::GuardConsumer consumer(advertisedPrefix, time::milliseconds(intervalMs),
+                                               time::milliseconds(lifetimeMs));
       consumer.run();
     }
     else if (role == "producer") {

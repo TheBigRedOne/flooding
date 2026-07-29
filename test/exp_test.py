@@ -184,9 +184,15 @@ if __name__ == '__main__':
     # Collect the OptoFlood lines of each router's NFD DEBUG log for TFIB
     # validation (S3/S5). Only the OptoFlood lines are kept to avoid copying the
     # full DEBUG log.
+    # Lines mentioning the guard name are kept alongside the OptoFlood lines so that
+    # each hop's handling of every individual guard Interest (forwarded, suppressed,
+    # or never received) can be reconstructed; that is what distinguishes a send-side
+    # from a forwarding-side cause when guards reach the producer less often than they
+    # are expressed. Filtering by name keeps the volume small.
     for node in (r1, r2, r3, r4, r5):
         home = node.params['params']['homeDir']
-        node.cmd(f"grep OptoFlood {home}/log/nfd.log > {results_dir}/{node.name}_nfd.log 2>/dev/null || true")
+        node.cmd(f"grep -E 'OptoFlood|_guard' {home}/log/nfd.log"
+                 f" > {results_dir}/{node.name}_nfd.log 2>/dev/null || true")
 
     # Producer/consumer node NFD logs. Besides the OptoFlood data-path lines, the RIB
     # and command-authenticator lines are kept: the OptoFlood daemon registers its
@@ -194,7 +200,7 @@ if __name__ == '__main__':
     # failure is only explained by those subsystems.
     for node in (producer, consumer):
         home = node.params['params']['homeDir']
-        node.cmd(f"grep -E 'OptoFlood|RibManager|CommandAuthenticator' {home}/log/nfd.log"
+        node.cmd(f"grep -E 'OptoFlood|RibManager|CommandAuthenticator|_guard' {home}/log/nfd.log"
                  f" > {results_dir}/{node.name}_nfd.log 2>/dev/null || true")
 
     ndn.stop()
