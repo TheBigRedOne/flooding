@@ -10,6 +10,7 @@ Outputs:
 import json
 import ipaddress
 import os
+import re
 import struct
 import subprocess
 import sys
@@ -678,19 +679,33 @@ def validate_s3() -> None:
 
 
 def validate_s5() -> None:
-    # Short-lived TFIB: once the routing-plane FIB is stable again, the temporary
-    # entry is retired (ceded to the FIB). This is the short-lived nature of the
-    # flood-installed state; evidence it from the NFD DEBUG logs.
+    # Short-lived TFIB, now handed over in two phases. Once the FIB forwards the
+    # prefix on the same face, the entry stops preempting the strategy (standby);
+    # it is deleted only after the local NLSR reports that its own LSDB has
+    # absorbed the topology change (route-ready). Both phases must be observable,
+    # because standby alone would leave the entry to expire on its bound, and a
+    # deletion without a preceding standby would mean the strategy was bypassed
+    # for the whole convergence period.
     text = _tfib_log_text()
     if text is None:
-        print('FAIL: S5 missing NFD logs (<node>_nfd.log) for TFIB retirement check')
+        print('FAIL: S5 missing NFD logs (<node>_nfd.log) for TFIB handover check')
         sys.exit(1)
-    retired = text.count('OptoFlood tfib-retire prefix=')
-    if retired == 0:
-        print('FAIL: S5 no TFIB retirement observed '
-              '(no "OptoFlood tfib-retire" in NFD logs)')
+    standby = text.count('OptoFlood tfib-standby prefix=')
+    # Only a release carrying reason=route-ready proves the handover completed;
+    # reason=expired means the entry was reclaimed on its bound without the routing
+    # protocol ever confirming that it had absorbed the change.
+    released = len(re.findall(r'OptoFlood tfib-retire prefix=\S+ reason=route-ready', text))
+    expired = len(re.findall(r'OptoFlood tfib-retire prefix=\S+ reason=expired', text))
+    if standby == 0:
+        print('FAIL: S5 no TFIB standby transition observed '
+              '(no "OptoFlood tfib-standby" in NFD logs)')
         sys.exit(1)
-    print(f'PASS: S5 TFIB short-lived: {retired} entries retired after FIB stabilised')
+    if released == 0:
+        print(f'FAIL: S5 no TFIB release on route-ready ({expired} expired on bound); '
+              'NLSR route-ready signal missing?')
+        sys.exit(1)
+    print(f'PASS: S5 TFIB handover in two phases: {standby} standby, '
+          f'{released} released on route-ready ({expired} expired on bound)')
 
 
 def main():
