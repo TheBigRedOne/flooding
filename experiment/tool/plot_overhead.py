@@ -58,6 +58,9 @@ DATA_OTHER_COLOR = 'seagreen'
 DATA_FLOOD_COLOR = 'firebrick'
 DEFAULT_RELAY_NODES = ['core', 'agg1', 'agg2', 'acc1', 'acc2', 'acc3', 'acc4', 'acc5', 'acc6']
 LOCALHOST_PREFIX = '/localhost/'
+# Threshold separating Unix epoch hand-off times from offsets measured within a
+# capture; see normalize_handoff_times.
+EPOCH_THRESHOLD_SECONDS = 1e9
 OVERHEAD_TIMESERIES_FILENAME = 'overhead_timeseries.pdf'
 OVERHEAD_SUMMARY_FILENAME = 'overhead_summary.pdf'
 OVERHEAD_METRICS_FILENAME = 'overhead_total.txt'
@@ -91,6 +94,7 @@ class OverheadAnalysis:
     data_other_series: pd.Series
     data_flood_series: pd.Series
     control_series: pd.Series
+    handoff_offsets: List[float]
     handoff_summaries: List[WindowSummary]
     full_run_summary: WindowSummary
 
@@ -308,10 +312,13 @@ def _parse_handoff_times(raw: Optional[str]) -> List[float]:
 
 
 def load_handoff_times_from_file(path: str) -> List[float]:
-    """Read relative handoff times (seconds) from a handoffs.txt file.
+    """Read absolute handoff times (Unix epoch seconds) from a handoffs.txt file.
 
-    The file is the tab-separated artifact written by exp.py. Only the third
-    column (rel_time) is consumed; the header row is skipped.
+    The file is the tab-separated artifact written by exp.py; column 2 carries the
+    absolute epoch of each hand-off, and callers convert it to their own time origin
+    with normalize_handoff_times. Absolute time keeps that conversion exact to the
+    capture's own clock, which analysis windows depend on: flooding is a sub-second
+    burst at the hand-off, so a window aligned one second away holds none of it.
     """
     handoff_times: List[float] = []
     with open(path, 'r', encoding='utf-8') as input_file:
@@ -322,11 +329,26 @@ def load_handoff_times_from_file(path: str) -> List[float]:
             tokens = line.split()
             if len(tokens) < 3:
                 continue
-            try:
-                handoff_times.append(float(tokens[2]))
-            except ValueError:
-                continue
+            for column in (1, 2):
+                try:
+                    handoff_times.append(float(tokens[column]))
+                except ValueError:
+                    continue
+                break
     return handoff_times
+
+
+def normalize_handoff_times(handoff_times: List[float], capture_start: float) -> List[float]:
+    """Express handoff times as offsets from capture_start.
+
+    Values above EPOCH_THRESHOLD_SECONDS are absolute epochs and are converted;
+    smaller values are offsets already and pass through, which is the form hand-off
+    times take when supplied on the command line.
+    """
+    return [
+        time - capture_start if time > EPOCH_THRESHOLD_SECONDS else time
+        for time in handoff_times
+    ]
 
 
 def resolve_handoff_times(
@@ -545,6 +567,7 @@ def _load_analysis(
     relay_data_other_series = (relay_data_series - relay_data_flood_series).clip(lower=0)
     time_axis = list(range(max_second + 1))
 
+    handoff_offsets = normalize_handoff_times(handoff_times, start_time)
     handoff_summaries = [
         _summarize_window(
             f'Handoff {index + 1}',
@@ -559,7 +582,7 @@ def _load_analysis(
             relay_control_out,
             delivered_data_in,
         )
-        for index, handoff_time in enumerate(handoff_times)
+        for index, handoff_time in enumerate(handoff_offsets)
     ]
     full_run_summary = _summarize_window(
         'Full Run',
@@ -583,6 +606,7 @@ def _load_analysis(
         data_other_series=relay_data_other_series,
         data_flood_series=relay_data_flood_series,
         control_series=relay_control_series,
+        handoff_offsets=handoff_offsets,
         handoff_summaries=handoff_summaries,
         full_run_summary=full_run_summary,
     )
@@ -630,7 +654,6 @@ def _write_summary_file(
 def _write_timeseries_plot(
     output_path: str | None,
     analysis: OverheadAnalysis,
-    handoff_times: List[float],
     window: float,
     explicit_max: Optional[float],
 ) -> None:
@@ -683,7 +706,7 @@ def _write_timeseries_plot(
             linestyle=':',
         )
 
-    for index, handoff_time in enumerate(handoff_times):
+    for index, handoff_time in enumerate(analysis.handoff_offsets):
         label = 'Handoff Window' if index == 0 else None
         ax_timeseries.axvspan(
             handoff_time,
@@ -919,7 +942,6 @@ def main():
     _write_timeseries_plot(
         timeseries_output,
         analysis,
-        handoff_times,
         args.window,
         args.timeseries_y_max,
     )

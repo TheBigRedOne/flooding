@@ -4,7 +4,13 @@
 X axis: first-request time (seconds, relative to the run start).
 Y axis: delivery latency (ms) = Data arrival - first request, per frame.
 A horizontal line marks the playout deadline; vertical lines mark hand-offs.
-Frames whose Data never arrives are drawn as losses at the top of the axis.
+
+The vertical range is set from a percentile of the delivered latencies, which keeps
+the steady-state distribution legible across runs whose first frames are answered
+tens of seconds after they are requested, while the producer prefix is still
+propagating. Frames above that range, and frames whose Data never arrives, appear
+as markers in labelled bands above the data; a band marks membership and its height
+is fixed by the axis.
 """
 
 from __future__ import annotations
@@ -15,12 +21,23 @@ import os
 from typing import List, Tuple
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 
 APP_PREFIX = "/LiveStream"
 CM_TO_INCH = 1.0 / 2.54
 FIGURE_WIDTH_CM = 8.0
 FIGURE_HEIGHT_CM = 6.0
+
+# Percentile of the delivered latencies that the vertical range must cover, and
+# the headroom left above it for the out-of-range and loss marker bands.
+VISIBLE_PERCENTILE = 80.0
+AXIS_HEADROOM = 1.25
+OVERFLOW_BAND = 1.06
+AXIS_LIMIT = 1.14
+
+# Threshold separating Unix epoch hand-off times from offsets within a capture.
+EPOCH_THRESHOLD_SECONDS = 1e9
 
 
 def _normalize_name(name: str) -> str:
@@ -29,7 +46,11 @@ def _normalize_name(name: str) -> str:
 
 
 def _load_handoff_times(path: str) -> List[float]:
-    """Read relative handoff times (seconds) from a handoffs.txt file."""
+    """Read absolute handoff times (Unix epoch seconds) from a handoffs.txt file.
+
+    Column 2 carries the absolute epoch of each hand-off; main() converts it to the
+    capture's own origin. See plot_overhead.load_handoff_times_from_file.
+    """
     times: List[float] = []
     if not os.path.exists(path):
         return times
@@ -41,10 +62,12 @@ def _load_handoff_times(path: str) -> List[float]:
             tokens = line.split()
             if len(tokens) < 3:
                 continue
-            try:
-                times.append(float(tokens[2]))
-            except ValueError:
-                continue
+            for column in (1, 2):
+                try:
+                    times.append(float(tokens[column]))
+                except ValueError:
+                    continue
+                break
     return times
 
 
@@ -122,22 +145,34 @@ def main() -> int:
     df["base_name"] = df["name"].apply(_normalize_name)
 
     delivered_req, delivered_latency, lost_req = _per_frame_latency(df)
-    handoff_times = _load_handoff_times(args.handoff_file)
+    start_time = float(df["time"].min())
+    handoff_times = [
+        handoff - start_time if handoff > EPOCH_THRESHOLD_SECONDS else handoff
+        for handoff in _load_handoff_times(args.handoff_file)
+    ]
 
     fig = plt.figure(figsize=(FIGURE_WIDTH_CM * CM_TO_INCH, FIGURE_HEIGHT_CM * CM_TO_INCH))
     ax = fig.add_subplot(1, 1, 1)
 
-    if delivered_req:
-        ax.scatter(delivered_req, delivered_latency, s=4, color="steelblue",
-                   alpha=0.6, label="Delivered")
-
     if delivered_latency:
-        top_level = max(max(delivered_latency), args.deadline) * 1.1
+        visible_max = float(np.percentile(delivered_latency, VISIBLE_PERCENTILE))
+        data_top = max(visible_max, args.deadline) * AXIS_HEADROOM
     else:
-        top_level = args.deadline * 1.5
+        data_top = args.deadline * AXIS_HEADROOM
+
+    in_range = [(req, lat) for req, lat in zip(delivered_req, delivered_latency)
+                if lat <= data_top]
+    overflow = [req for req, lat in zip(delivered_req, delivered_latency) if lat > data_top]
+
+    if in_range:
+        ax.scatter([req for req, _ in in_range], [lat for _, lat in in_range],
+                   s=4, color="steelblue", alpha=0.6, label="Delivered")
+    if overflow:
+        ax.scatter(overflow, [data_top * OVERFLOW_BAND] * len(overflow), s=10, marker="^",
+                   color="steelblue", label=f"Delivered above range (n={len(overflow)})")
     if lost_req:
-        ax.scatter(lost_req, [top_level] * len(lost_req), s=8, marker="x",
-                   color="firebrick", label="Lost")
+        ax.scatter(lost_req, [data_top * AXIS_LIMIT * 0.97] * len(lost_req), s=8, marker="x",
+                   color="firebrick", label=f"Not delivered (n={len(lost_req)})")
 
     ax.axhline(args.deadline, color="black", linestyle="--", linewidth=1.0,
                label=f"Deadline {args.deadline:.0f} ms")
@@ -147,9 +182,11 @@ def main() -> int:
 
     ax.set_xlabel("Request time (s)")
     ax.set_ylabel("Delivery latency (ms)")
-    ax.set_ylim(bottom=0)
+    ax.set_ylim(0, data_top * AXIS_LIMIT)
     ax.grid(True, linestyle="--", alpha=0.6)
-    ax.legend(frameon=False, loc="upper right", fontsize=7)
+    # The marker bands occupy the top of the axis and the steady-state cluster sits
+    # well above the floor, leaving the lower right clear for the legend.
+    ax.legend(frameon=True, framealpha=0.85, loc="lower right", fontsize=7)
     fig.tight_layout()
     fig.savefig(args.output_pdf, bbox_inches="tight")
     plt.close(fig)
