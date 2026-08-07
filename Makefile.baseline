@@ -1,9 +1,21 @@
 # Rules to run baseline experiments.
+#
+# Each profile scales the four NLSR timers by a common factor, 1.0 down to 0.6:
+# hello-interval, adj-lsa-build-interval, routing-calc-interval and
+# sync-interest-lifetime. The profile name carries all four in seconds
+# (hNN-aNN-rNN-sNN); nlsr.conf takes the first three in seconds and
+# sync-interest-lifetime in milliseconds, which is why the environment variable
+# for it is named with an _MS suffix and carries a value a thousand times larger.
+#
+# sync-interest-lifetime governs how often PSync re-expresses a sync Interest,
+# at half the lifetime. It bounds how long a freshly built LSA waits before a
+# neighbour asks for it, and so sits on the critical path of baseline recovery
+# alongside the other three timers.
 
-BASELINE_DEFAULT_DIR = results/baseline/g0-h60-a10-r15
+BASELINE_DEFAULT_DIR = results/baseline/g0-h60-a10-r15-s60
 
-BASELINE_PROFILE_NAMES = g0-h60-a10-r15,g1-h54-a9-r14,g2-h48-a8-r12,g3-h42-a7-r10,g4-h36-a6-r9
-BASELINE_DEFAULT_PROFILE = g0-h60-a10-r15
+BASELINE_PROFILE_NAMES = g0-h60-a10-r15-s60,g1-h54-a9-r14-s54,g2-h48-a8-r12-s48,g3-h42-a7-r10-s42,g4-h36-a6-r9-s36
+BASELINE_DEFAULT_PROFILE = g0-h60-a10-r15-s60
 
 # Shared handoff loop configuration: K=16 toggles along a double round trip
 # acc2 -> acc3 -> acc4 -> acc5 -> acc6 -> acc5 -> acc4 -> acc3 -> acc2 (x2).
@@ -33,27 +45,27 @@ BASELINE_EXPERIMENT_OUTPUTS = results/baseline/XXX/consumer_capture.pcap \
                               results/baseline/XXX/params.txt \
                               results/baseline/XXX/handoffs.txt
 
-BASELINE_RAW_OUTPUTS = $(subst XXX,g0-h60-a10-r15,$(BASELINE_EXPERIMENT_OUTPUTS)) \
-                       $(subst XXX,g1-h54-a9-r14,$(BASELINE_EXPERIMENT_OUTPUTS)) \
-                       $(subst XXX,g2-h48-a8-r12,$(BASELINE_EXPERIMENT_OUTPUTS)) \
-                       $(subst XXX,g3-h42-a7-r10,$(BASELINE_EXPERIMENT_OUTPUTS)) \
-                       $(subst XXX,g4-h36-a6-r9,$(BASELINE_EXPERIMENT_OUTPUTS))
+BASELINE_RAW_OUTPUTS = $(subst XXX,g0-h60-a10-r15-s60,$(BASELINE_EXPERIMENT_OUTPUTS)) \
+                       $(subst XXX,g1-h54-a9-r14-s54,$(BASELINE_EXPERIMENT_OUTPUTS)) \
+                       $(subst XXX,g2-h48-a8-r12-s48,$(BASELINE_EXPERIMENT_OUTPUTS)) \
+                       $(subst XXX,g3-h42-a7-r10-s42,$(BASELINE_EXPERIMENT_OUTPUTS)) \
+                       $(subst XXX,g4-h36-a6-r9-s36,$(BASELINE_EXPERIMENT_OUTPUTS))
 
-BASELINE_PROFILE_SUMMARY_INPUTS = results/baseline/g0-h60-a10-r15/params.txt \
-                                  results/baseline/g0-h60-a10-r15/disruption_metrics.txt \
-                                  results/baseline/g0-h60-a10-r15/overhead_total.txt \
-                                  results/baseline/g1-h54-a9-r14/params.txt \
-                                  results/baseline/g1-h54-a9-r14/disruption_metrics.txt \
-                                  results/baseline/g1-h54-a9-r14/overhead_total.txt \
-                                  results/baseline/g2-h48-a8-r12/params.txt \
-                                  results/baseline/g2-h48-a8-r12/disruption_metrics.txt \
-                                  results/baseline/g2-h48-a8-r12/overhead_total.txt \
-                                  results/baseline/g3-h42-a7-r10/params.txt \
-                                  results/baseline/g3-h42-a7-r10/disruption_metrics.txt \
-                                  results/baseline/g3-h42-a7-r10/overhead_total.txt \
-                                  results/baseline/g4-h36-a6-r9/params.txt \
-                                  results/baseline/g4-h36-a6-r9/disruption_metrics.txt \
-                                  results/baseline/g4-h36-a6-r9/overhead_total.txt
+BASELINE_PROFILE_SUMMARY_INPUTS = results/baseline/g0-h60-a10-r15-s60/params.txt \
+                                  results/baseline/g0-h60-a10-r15-s60/disruption_metrics.txt \
+                                  results/baseline/g0-h60-a10-r15-s60/overhead_total.txt \
+                                  results/baseline/g1-h54-a9-r14-s54/params.txt \
+                                  results/baseline/g1-h54-a9-r14-s54/disruption_metrics.txt \
+                                  results/baseline/g1-h54-a9-r14-s54/overhead_total.txt \
+                                  results/baseline/g2-h48-a8-r12-s48/params.txt \
+                                  results/baseline/g2-h48-a8-r12-s48/disruption_metrics.txt \
+                                  results/baseline/g2-h48-a8-r12-s48/overhead_total.txt \
+                                  results/baseline/g3-h42-a7-r10-s42/params.txt \
+                                  results/baseline/g3-h42-a7-r10-s42/disruption_metrics.txt \
+                                  results/baseline/g3-h42-a7-r10-s42/overhead_total.txt \
+                                  results/baseline/g4-h36-a6-r9-s36/params.txt \
+                                  results/baseline/g4-h36-a6-r9-s36/disruption_metrics.txt \
+                                  results/baseline/g4-h36-a6-r9-s36/overhead_total.txt
 
 BASELINE_PROFILE_COMPARE_OUTPUTS = results/baseline/summary.csv \
                                    results/baseline/disruption_comparison.pdf \
@@ -65,20 +77,20 @@ BASELINE_PROFILE_COMPARE_OUTPUTS = results/baseline/summary.csv \
 # Order-only prerequisites do not appear in `$^`, so each recipe still receives
 # only the inputs declared on its own line.
 
-$(subst XXX,g0-h60-a10-r15,$(BASELINE_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(BASELINE_EXPERIMENT_INPUTS)
-	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="NLSR_HELLO_INTERVAL='60' NLSR_ADJ_LSA_BUILD_INTERVAL='10' NLSR_ROUTING_CALC_INTERVAL='15' NLSR_TUNING_PROFILE='g0-h60-a10-r15' $(BASELINE_HANDOFF_ENV) make all" sh $^ $@
+$(subst XXX,g0-h60-a10-r15-s60,$(BASELINE_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(BASELINE_EXPERIMENT_INPUTS)
+	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="NLSR_HELLO_INTERVAL='60' NLSR_ADJ_LSA_BUILD_INTERVAL='10' NLSR_ROUTING_CALC_INTERVAL='15' NLSR_SYNC_INTEREST_LIFETIME_MS='60000' NLSR_TUNING_PROFILE='g0-h60-a10-r15-s60' $(BASELINE_HANDOFF_ENV) make all" sh $^ $@
 
-$(subst XXX,g1-h54-a9-r14,$(BASELINE_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(BASELINE_EXPERIMENT_INPUTS) | $(subst XXX,g0-h60-a10-r15,$(BASELINE_EXPERIMENT_OUTPUTS))
-	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="NLSR_HELLO_INTERVAL='54' NLSR_ADJ_LSA_BUILD_INTERVAL='9' NLSR_ROUTING_CALC_INTERVAL='14' NLSR_TUNING_PROFILE='g1-h54-a9-r14' $(BASELINE_HANDOFF_ENV) make all" sh $^ $@
+$(subst XXX,g1-h54-a9-r14-s54,$(BASELINE_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(BASELINE_EXPERIMENT_INPUTS) | $(subst XXX,g0-h60-a10-r15-s60,$(BASELINE_EXPERIMENT_OUTPUTS))
+	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="NLSR_HELLO_INTERVAL='54' NLSR_ADJ_LSA_BUILD_INTERVAL='9' NLSR_ROUTING_CALC_INTERVAL='14' NLSR_SYNC_INTEREST_LIFETIME_MS='54000' NLSR_TUNING_PROFILE='g1-h54-a9-r14-s54' $(BASELINE_HANDOFF_ENV) make all" sh $^ $@
 
-$(subst XXX,g2-h48-a8-r12,$(BASELINE_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(BASELINE_EXPERIMENT_INPUTS) | $(subst XXX,g1-h54-a9-r14,$(BASELINE_EXPERIMENT_OUTPUTS))
-	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="NLSR_HELLO_INTERVAL='48' NLSR_ADJ_LSA_BUILD_INTERVAL='8' NLSR_ROUTING_CALC_INTERVAL='12' NLSR_TUNING_PROFILE='g2-h48-a8-r12' $(BASELINE_HANDOFF_ENV) make all" sh $^ $@
+$(subst XXX,g2-h48-a8-r12-s48,$(BASELINE_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(BASELINE_EXPERIMENT_INPUTS) | $(subst XXX,g1-h54-a9-r14-s54,$(BASELINE_EXPERIMENT_OUTPUTS))
+	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="NLSR_HELLO_INTERVAL='48' NLSR_ADJ_LSA_BUILD_INTERVAL='8' NLSR_ROUTING_CALC_INTERVAL='12' NLSR_SYNC_INTEREST_LIFETIME_MS='48000' NLSR_TUNING_PROFILE='g2-h48-a8-r12-s48' $(BASELINE_HANDOFF_ENV) make all" sh $^ $@
 
-$(subst XXX,g3-h42-a7-r10,$(BASELINE_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(BASELINE_EXPERIMENT_INPUTS) | $(subst XXX,g2-h48-a8-r12,$(BASELINE_EXPERIMENT_OUTPUTS))
-	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="NLSR_HELLO_INTERVAL='42' NLSR_ADJ_LSA_BUILD_INTERVAL='7' NLSR_ROUTING_CALC_INTERVAL='10' NLSR_TUNING_PROFILE='g3-h42-a7-r10' $(BASELINE_HANDOFF_ENV) make all" sh $^ $@
+$(subst XXX,g3-h42-a7-r10-s42,$(BASELINE_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(BASELINE_EXPERIMENT_INPUTS) | $(subst XXX,g2-h48-a8-r12-s48,$(BASELINE_EXPERIMENT_OUTPUTS))
+	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="NLSR_HELLO_INTERVAL='42' NLSR_ADJ_LSA_BUILD_INTERVAL='7' NLSR_ROUTING_CALC_INTERVAL='10' NLSR_SYNC_INTEREST_LIFETIME_MS='42000' NLSR_TUNING_PROFILE='g3-h42-a7-r10-s42' $(BASELINE_HANDOFF_ENV) make all" sh $^ $@
 
-$(subst XXX,g4-h36-a6-r9,$(BASELINE_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(BASELINE_EXPERIMENT_INPUTS) | $(subst XXX,g3-h42-a7-r10,$(BASELINE_EXPERIMENT_OUTPUTS))
-	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="NLSR_HELLO_INTERVAL='36' NLSR_ADJ_LSA_BUILD_INTERVAL='6' NLSR_ROUTING_CALC_INTERVAL='9' NLSR_TUNING_PROFILE='g4-h36-a6-r9' $(BASELINE_HANDOFF_ENV) make all" sh $^ $@
+$(subst XXX,g4-h36-a6-r9-s36,$(BASELINE_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(BASELINE_EXPERIMENT_INPUTS) | $(subst XXX,g3-h42-a7-r10-s42,$(BASELINE_EXPERIMENT_OUTPUTS))
+	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="NLSR_HELLO_INTERVAL='36' NLSR_ADJ_LSA_BUILD_INTERVAL='6' NLSR_ROUTING_CALC_INTERVAL='9' NLSR_SYNC_INTEREST_LIFETIME_MS='36000' NLSR_TUNING_PROFILE='g4-h36-a6-r9-s36' $(BASELINE_HANDOFF_ENV) make all" sh $^ $@
 
 
 # Rules to process outputs from baseline experiments.

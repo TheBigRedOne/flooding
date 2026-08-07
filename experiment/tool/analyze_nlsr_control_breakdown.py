@@ -33,13 +33,21 @@ import pandas as pd
 
 RESULTS_LOCAL = r"d:\Cursor\flooding\results\baseline"
 RESULTS_PEER = r"d:\Cursor\flooding\results0\baseline"
-GROUPS = [
-    "g0-h60-a10-r15",
-    "g1-h54-a9-r14",
-    "g2-h48-a8-r12",
-    "g3-h42-a7-r10",
-    "g4-h36-a6-r9",
-]
+# Profile directories carry their timer values in the name, so the name changes
+# whenever the sweep gains a parameter. Groups are addressed by the stable g<N>
+# prefix and resolved against each root separately, which lets one run be compared
+# against another recorded under an earlier naming scheme.
+GROUPS = ["g0", "g1", "g2", "g3", "g4"]
+
+
+def _group_dir(root: str, label: str) -> str:
+    """Return the profile directory under root whose name starts with label."""
+    if os.path.isdir(root):
+        for entry in sorted(os.listdir(root)):
+            if entry.startswith(label + "-") and os.path.isdir(os.path.join(root, entry)):
+                return os.path.join(root, entry)
+    return os.path.join(root, label)
+
 
 RELAY_NODES = ["core", "agg1", "agg2", "acc1", "acc2", "acc3", "acc4", "acc5", "acc6"]
 APP_PREFIX = "/LiveStream"
@@ -161,8 +169,8 @@ def main() -> int:
     print(header)
     storm_delta: Dict[str, Tuple[float, float]] = {}
     for g in GROUPS:
-        loc = _parse_full_run(os.path.join(RESULTS_LOCAL, g, "overhead_total.txt"))
-        peer = _parse_full_run(os.path.join(RESULTS_PEER, g, "overhead_total.txt"))
+        loc = _parse_full_run(os.path.join(_group_dir(RESULTS_LOCAL, g), "overhead_total.txt"))
+        peer = _parse_full_run(os.path.join(_group_dir(RESULTS_PEER, g), "overhead_total.txt"))
         lbp = (loc["bytes"] / loc["pkts"]) if loc["pkts"] else None
         pbp = (peer["bytes"] / peer["pkts"]) if peer["pkts"] else None
         ratio = (peer["bytes"] / loc["bytes"]) if (loc["bytes"] and peer["bytes"]) else None
@@ -180,7 +188,7 @@ def main() -> int:
     print("SECTION 2  NLSR control decomposition in local run (results/, no storm)")
     print("=" * 96)
     for g in GROUPS:
-        csv_path = os.path.join(RESULTS_LOCAL, g, "network_overhead.csv")
+        csv_path = os.path.join(_group_dir(RESULTS_LOCAL, g), "network_overhead.csv")
         if not os.path.exists(csv_path):
             print(f"{g}: CSV missing")
             continue
@@ -219,7 +227,7 @@ def main() -> int:
     print("SECTION 4  Per-second relay control rate and burst composition (local CSV)")
     print("=" * 96)
     for g in GROUPS:
-        csv_path = os.path.join(RESULTS_LOCAL, g, "network_overhead.csv")
+        csv_path = os.path.join(_group_dir(RESULTS_LOCAL, g), "network_overhead.csv")
         if not os.path.exists(csv_path):
             continue
         control, _ = _load_relay_control(csv_path)
@@ -248,7 +256,7 @@ def main() -> int:
     print("SECTION 5  Baseline g0 vs Solution: composition and per-second spikiness")
     print("=" * 96)
     pairs = [
-        ("baseline g0", os.path.join(RESULTS_LOCAL, "g0-h60-a10-r15", "network_overhead.csv")),
+        ("baseline g0", os.path.join(_group_dir(RESULTS_LOCAL, "g0"), "network_overhead.csv")),
         ("solution", os.path.join(os.path.dirname(RESULTS_LOCAL), "solution", "network_overhead.csv")),
     ]
     for label, path in pairs:

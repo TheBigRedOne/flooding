@@ -27,11 +27,14 @@ from minindn.apps.nlsr import Nlsr
 from mininet.topo import Topo
 
 
-# Map NLSR-override env variables to nlsr.conf keys edited via infoedit.
+# Map NLSR-override env variables to nlsr.conf keys edited via infoedit. The
+# first three keys take seconds; sync-interest-lifetime takes milliseconds, so its
+# variable carries an _MS suffix to keep the unit visible at every call site.
 NLSR_INTERVAL_ENV_TO_KEY = {
     'NLSR_HELLO_INTERVAL': 'neighbors.hello-interval',
     'NLSR_ADJ_LSA_BUILD_INTERVAL': 'neighbors.adj-lsa-build-interval',
     'NLSR_ROUTING_CALC_INTERVAL': 'fib.routing-calc-interval',
+    'NLSR_SYNC_INTEREST_LIFETIME_MS': 'general.sync-interest-lifetime',
 }
 
 # Defaults preserve the legacy two-handoff baseline so unchanged callers keep
@@ -79,9 +82,10 @@ def _load_nlsr_interval_overrides() -> Tuple[Optional[List[Tuple[str, str]]], Di
     """
     Read optional NLSR interval overrides from the environment.
 
-    The three interval variables must either be provided together or omitted
-    together. When present, values are validated as non-negative integers and
-    converted into Mini-NDN infoeditChanges entries.
+    Every variable in NLSR_INTERVAL_ENV_TO_KEY must be provided together or omitted
+    together, so a tuning profile that adds a timer fails loudly on any call site
+    that still sets the older subset. When present, values are validated as
+    non-negative integers and converted into Mini-NDN infoeditChanges entries.
     """
     raw_values = {
         env_name: (os.getenv(env_name) or '').strip()
