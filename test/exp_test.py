@@ -67,7 +67,9 @@ if __name__ == '__main__':
     info('Starting NFD on all nodes\n')
     nfds = AppManager(ndn, ndn.net.hosts, Nfd, logLevel='DEBUG')
     info('Starting NLSR on all nodes\n')
-    nlsrs = AppManager(ndn, ndn.net.hosts, Nlsr)
+    # DEBUG matches the main experiment and is what makes the routing-calculation
+    # scheduling lines available; at the default level NLSR emits nothing.
+    nlsrs = AppManager(ndn, ndn.net.hosts, Nlsr, logLevel='DEBUG')
 
     # Allow routing to converge
     sleep(30)
