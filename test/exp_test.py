@@ -203,6 +203,16 @@ if __name__ == '__main__':
         node.cmd(f"grep -E 'OptoFlood|RibManager|CommandAuthenticator|_guard' {home}/log/nfd.log"
                  f" > {results_dir}/{node.name}_nfd.log 2>/dev/null || true")
 
+    # Routing-calculation scheduling lines from each node's NLSR log. They carry the
+    # evidence that an immediate calculation withdraws the one already scheduled:
+    # every calculation entry is logged, and calculateLinkStateRoutingPath marks each
+    # run, so a scheduled run surviving a cancellation would show up as a run without
+    # a matching entry. The observer lines record which adjacency change prompted it.
+    for node in (r1, r2, r3, r4, r5, producer, consumer):
+        home = node.params['params']['homeDir']
+        node.cmd("grep -E 'RoutingTable|TopologyChangeObserver|calculateLinkStateRoutingPath'"
+                 f" {home}/log/nlsr.log > {results_dir}/{node.name}_nlsr.log 2>/dev/null || true")
+
     ndn.stop()
 
 
