@@ -123,6 +123,7 @@ def main() -> int:
         "hello_interval",
         "adj_lsa_build_interval",
         "routing_calc_interval",
+        "sync_interest_lifetime_ms",
         "handoff_count",
         "disruption_min_ms",
         "disruption_max_ms",
@@ -146,6 +147,8 @@ def main() -> int:
             hello = params.get("neighbors.hello-interval", "n/a")
             adj = params.get("neighbors.adj-lsa-build-interval", "n/a")
             route = params.get("fib.routing-calc-interval", "n/a")
+            # Recorded in milliseconds, unlike the three interval values above.
+            sync = params.get("general.sync-interest-lifetime", "n/a")
             handoff_count_label, dis_min, dis_max, dis_mean = _aggregate_disruption(disruption_values)
 
             writer.writerow({
@@ -154,6 +157,7 @@ def main() -> int:
                 "hello_interval": hello,
                 "adj_lsa_build_interval": adj,
                 "routing_calc_interval": route,
+                "sync_interest_lifetime_ms": sync,
                 "handoff_count": handoff_count_label,
                 "disruption_min_ms": dis_min,
                 "disruption_max_ms": dis_max,
