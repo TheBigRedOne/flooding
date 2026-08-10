@@ -205,15 +205,26 @@ if __name__ == '__main__':
         node.cmd(f"grep -E 'OptoFlood|RibManager|CommandAuthenticator|_guard' {home}/log/nfd.log"
                  f" > {results_dir}/{node.name}_nfd.log 2>/dev/null || true")
 
-    # Routing-calculation scheduling lines from each node's NLSR log. They carry the
-    # evidence that an immediate calculation withdraws the one already scheduled:
-    # every calculation entry is logged, and calculateLinkStateRoutingPath marks each
-    # run, so a scheduled run surviving a cancellation would show up as a run without
-    # a matching entry. The observer lines record which adjacency change prompted it.
+    # NLSR lines that together decompose the interval between a hand-off and the
+    # moment the routing plane carries the new location:
+    #
+    #   HelloProtocol, Face creation event, with face id
+    #       when the adjacency was noticed, and whether a face event prompted it or
+    #       the periodic Hello did; the old side's timeouts appear here too
+    #   SequencingManager, LSA sequence number from interest
+    #       when the Adjacency LSA was built and when a neighbour first asked for it
+    #   Sync prefix registered
+    #       when the sync bootstrap fired
+    #   TopologyChangeObserver
+    #       which adjacency change the routing plane acted on
+    #   RoutingTable, calculateLinkStateRoutingPath
+    #       every calculation entry and every run, so a scheduled run surviving a
+    #       cancellation would show up as a run without a matching entry
     for node in (r1, r2, r3, r4, r5, producer, consumer):
         home = node.params['params']['homeDir']
         node.cmd("grep -E 'RoutingTable|TopologyChangeObserver|calculateLinkStateRoutingPath"
-                 "|SequencingManager|LSA sequence number from interest|Sync prefix registered'"
+                 "|SequencingManager|LSA sequence number from interest|Sync prefix registered"
+                 "|HelloProtocol|Face creation event|with face id'"
                  f" {home}/log/nlsr.log > {results_dir}/{node.name}_nlsr.log 2>/dev/null || true")
 
     ndn.stop()
