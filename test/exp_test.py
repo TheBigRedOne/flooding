@@ -212,7 +212,8 @@ if __name__ == '__main__':
     # a matching entry. The observer lines record which adjacency change prompted it.
     for node in (r1, r2, r3, r4, r5, producer, consumer):
         home = node.params['params']['homeDir']
-        node.cmd("grep -E 'RoutingTable|TopologyChangeObserver|calculateLinkStateRoutingPath'"
+        node.cmd("grep -E 'RoutingTable|TopologyChangeObserver|calculateLinkStateRoutingPath"
+                 "|SequencingManager|LSA sequence number from interest|Sync prefix registered'"
                  f" {home}/log/nlsr.log > {results_dir}/{node.name}_nlsr.log 2>/dev/null || true")
 
     ndn.stop()
