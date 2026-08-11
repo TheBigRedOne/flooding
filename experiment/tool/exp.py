@@ -37,13 +37,12 @@ NLSR_INTERVAL_ENV_TO_KEY = {
     'NLSR_SYNC_INTEREST_LIFETIME_MS': 'general.sync-interest-lifetime',
 }
 
-# Map the NLSR acceleration switches to nlsr.conf keys. Each takes 'on' or 'off' and is
-# read on its own, so a run may enable one without the other, which is what an ablation
-# needs. An unset variable leaves the key at the value shipped in nlsr.conf, which is off.
-# Only the solution NLSR build defines these keys; setting them for a baseline run would
-# edit a key its NLSR does not read.
+# Map the NLSR acceleration switch to its nlsr.conf key. Takes 'on' or 'off'.
+# An unset variable leaves the key at the value shipped in nlsr.conf (off).
+# Only the solution NLSR build defines this key; setting it for a baseline run would
+# edit a key its NLSR does not read. When on, a validated reciprocal Hello status
+# change builds the own Adj-LSA immediately; periodic Hello successes keep the delay.
 NLSR_FEATURE_ENV_TO_KEY = {
-    'NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION': 'neighbors.event-driven-adjacency-verification',
     'NLSR_RESULT_DRIVEN_ADJ_LSA_BUILD': 'neighbors.result-driven-adj-lsa-build',
 }
 

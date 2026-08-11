@@ -10,11 +10,11 @@ from shlex import quote
 import os
 
 
-# NLSR acceleration switches exercised by the test run. Both are off in the shipped
-# nlsr.conf, so they must be set explicitly; an ablation run is obtained by removing
-# entries from this list rather than by rebuilding.
+# NLSR acceleration switches exercised by the test run. Off in the shipped nlsr.conf,
+# so it must be set explicitly; an ablation run is obtained by removing the entry from
+# this list rather than by rebuilding. Controls immediate own Adj-LSA after a validated
+# reciprocal Hello status change only.
 NLSR_INFOEDIT_CHANGES = [
-    ('neighbors.event-driven-adjacency-verification', 'on'),
     ('neighbors.result-driven-adj-lsa-build', 'on'),
 ]
 
@@ -247,7 +247,8 @@ if __name__ == '__main__':
     #
     #   HelloProtocol, Face creation event, with face id
     #       when the adjacency was noticed, and whether a face event prompted it or
-    #       the periodic Hello did; the old side's timeouts appear here too
+    #       the periodic Hello did; the old side's timeouts appear here too;
+    #       reciprocal validated success may log an immediate Adj-LSA build
     #   SequencingManager, LSA sequence number from interest
     #       when the Adjacency LSA was built and when a neighbour first asked for it
     #   Sync prefix registered
@@ -257,8 +258,6 @@ if __name__ == '__main__':
     #   RoutingTable, calculateLinkStateRoutingPath
     #       every calculation entry and every run, so a scheduled run surviving a
     #       cancellation would show up as a run without a matching entry
-    #   TransitionController
-    #       which adjacencies one transition covers and when each was resolved
     #   Adjacency LSA, own Adj LSA, buildAdjLsa
     #       every build entry and every build, so an immediate build replacing the
     #       delayed one is distinguishable from an immediate build added beside it
@@ -267,7 +266,7 @@ if __name__ == '__main__':
         node.cmd("grep -E 'RoutingTable|TopologyChangeObserver|calculateLinkStateRoutingPath"
                  "|SequencingManager|LSA sequence number from interest|Sync prefix registered"
                  "|HelloProtocol|Face creation event|with face id"
-                 "|TransitionController|Adjacency LSA|own Adj LSA|buildAdjLsa'"
+                 "|Adjacency LSA|own Adj LSA|buildAdjLsa|Building Adjacency LSA now'"
                  f" {home}/log/nlsr.log > {results_dir}/{node.name}_nlsr.log 2>/dev/null || true")
 
     ndn.stop()
