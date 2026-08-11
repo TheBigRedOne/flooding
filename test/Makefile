@@ -119,9 +119,10 @@ validate-s4:
 	@echo "[S4] Validating Interest HopLimit decrement under miss";
 	python3 validate.py s4 || (echo "S4 FAIL" && exit 1)
 
-# S5: TFIB handover in two phases (standby once the FIB agrees, release on NLSR route-ready)
+# S5: TFIB handover in two phases (standby once ordinary forwarding agrees,
+# release on NLSR new-path-calculated + fib-agrees)
 validate-s5:
-	@echo "[S5] Validating TFIB standby and release on route-ready";
+	@echo "[S5] Validating TFIB standby and release on new-path-calculated";
 	python3 validate.py s5 || (echo "S5 FAIL" && exit 1)
 
 .PHONY: kvm vb
