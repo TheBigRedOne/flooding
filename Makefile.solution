@@ -13,6 +13,15 @@ SOLUTION_INPUTS = box/solution/solution.$(PROVIDER).box \
 SOLUTION_HANDOFF_SEQUENCE = acc2,acc3,acc4,acc5,acc6,acc5,acc4,acc3,acc2,acc3,acc4,acc5,acc6,acc5,acc4,acc3,acc2
 SOLUTION_HANDOFF_ENV = NLSR_HANDOFF_COUNT='16' NLSR_HANDOFF_INTERVAL_BASE='90' NLSR_HANDOFF_INTERVAL_JITTER='60' NLSR_HANDOFF_SEQUENCE='$(SOLUTION_HANDOFF_SEQUENCE)'
 
+# NLSR acceleration switches, shared by the solution run and the Exp 1 sweep so both
+# face the same control plane. Override either on the command line to obtain the
+# corresponding ablation cell, e.g. SOLUTION_NLSR_RESULT_DRIVEN=off. The baseline box
+# runs upstream NLSR, which does not read these keys, so they are set for solution runs
+# only.
+SOLUTION_NLSR_EVENT_DRIVEN ?= on
+SOLUTION_NLSR_RESULT_DRIVEN ?= on
+SOLUTION_NLSR_ENV = NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION='$(SOLUTION_NLSR_EVENT_DRIVEN)' NLSR_RESULT_DRIVEN_ADJ_LSA_BUILD='$(SOLUTION_NLSR_RESULT_DRIVEN)'
+
 SOLUTION_RESULTS = results/solution/consumer_capture.pcap \
                    results/solution/pcap_nodes/core.pcap \
                    results/solution/pcap_nodes/agg1.pcap \
@@ -30,7 +39,7 @@ SOLUTION_RESULTS = results/solution/consumer_capture.pcap \
 # Order-only prerequisites: the solution VM runs after the last baseline group
 # and after the test validation passes.
 $(SOLUTION_RESULTS) &: scripts/run-in-vm.sh $(SOLUTION_INPUTS) | test/.validate_ok $(subst XXX,g4-h36-a6-r9-s36,$(BASELINE_EXPERIMENT_OUTPUTS))
-	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="$(SOLUTION_HANDOFF_ENV) make all" sh $^ $@
+	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="$(SOLUTION_HANDOFF_ENV) $(SOLUTION_NLSR_ENV) make all" sh $^ $@
 
 
 # Rules to process outputs from the OptoFlood experiment.

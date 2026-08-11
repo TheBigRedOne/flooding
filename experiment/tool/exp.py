@@ -37,6 +37,16 @@ NLSR_INTERVAL_ENV_TO_KEY = {
     'NLSR_SYNC_INTEREST_LIFETIME_MS': 'general.sync-interest-lifetime',
 }
 
+# Map the NLSR acceleration switches to nlsr.conf keys. Each takes 'on' or 'off' and is
+# read on its own, so a run may enable one without the other, which is what an ablation
+# needs. An unset variable leaves the key at the value shipped in nlsr.conf, which is off.
+# Only the solution NLSR build defines these keys; setting them for a baseline run would
+# edit a key its NLSR does not read.
+NLSR_FEATURE_ENV_TO_KEY = {
+    'NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION': 'neighbors.event-driven-adjacency-verification',
+    'NLSR_RESULT_DRIVEN_ADJ_LSA_BUILD': 'neighbors.result-driven-adj-lsa-build',
+}
+
 # Defaults preserve the legacy two-handoff baseline so unchanged callers keep
 # their previous behaviour.
 DEFAULT_HANDOFF_SEQUENCE: Tuple[str, ...] = ('acc2', 'acc3', 'acc4')
@@ -117,6 +127,27 @@ def _load_nlsr_interval_overrides() -> Tuple[Optional[List[Tuple[str, str]]], Di
     profile_name = (os.getenv('NLSR_TUNING_PROFILE') or '').strip()
     if profile_name:
         applied_params['profile'] = profile_name
+
+    return infoedit_changes, applied_params
+
+
+def _load_nlsr_feature_overrides() -> Tuple[List[Tuple[str, str]], Dict[str, str]]:
+    """
+    Read the optional NLSR acceleration switches from the environment.
+
+    Each switch is independent, so an unset variable leaves its key untouched rather
+    than forcing the whole set to be given. Accepted values are 'on' and 'off'.
+    """
+    infoedit_changes: List[Tuple[str, str]] = []
+    applied_params: Dict[str, str] = {}
+    for env_name, config_key in NLSR_FEATURE_ENV_TO_KEY.items():
+        value = (os.getenv(env_name) or '').strip().lower()
+        if not value:
+            continue
+        if value not in ('on', 'off'):
+            raise ValueError(f"Invalid value for {env_name}: {value} (expected 'on' or 'off')")
+        infoedit_changes.append((config_key, value))
+        applied_params[config_key] = value
 
     return infoedit_changes, applied_params
 
@@ -349,10 +380,14 @@ if __name__ == '__main__':
     os.makedirs(pcap_nodes_dir, exist_ok=True)
 
     try:
-        nlsr_infoedit_changes, nlsr_applied_params = _load_nlsr_interval_overrides()
+        interval_changes, nlsr_applied_params = _load_nlsr_interval_overrides()
+        feature_changes, feature_params = _load_nlsr_feature_overrides()
     except ValueError as error:
         print(f"Error: {error}")
         exit(1)
+
+    nlsr_infoedit_changes = (interval_changes or []) + feature_changes
+    nlsr_applied_params.update(feature_params)
 
     try:
         handoff_count, handoff_base, handoff_jitter, handoff_sequence = _load_handoff_config()

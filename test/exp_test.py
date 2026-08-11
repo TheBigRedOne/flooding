@@ -6,7 +6,43 @@ from minindn.apps.app_manager import AppManager
 from minindn.apps.nfd import Nfd
 from minindn.apps.nlsr import Nlsr
 from mininet.topo import Topo
+from shlex import quote
 import os
+
+
+# NLSR acceleration switches exercised by the test run. Both are off in the shipped
+# nlsr.conf, so they must be set explicitly; an ablation run is obtained by removing
+# entries from this list rather than by rebuilding.
+NLSR_INFOEDIT_CHANGES = [
+    ('neighbors.event-driven-adjacency-verification', 'on'),
+    ('neighbors.result-driven-adj-lsa-build', 'on'),
+]
+
+
+class TunableNlsr(Nlsr):
+    """
+    Nlsr wrapper for the Mini-NDN release installed in the test VM.
+
+    That release creates nlsr.conf in its constructor and does not accept infoedit
+    changes, so they are applied afterwards, against the generated file and before the
+    process starts.
+    """
+
+    def __init__(self, node, infoeditChanges=None, **kwargs):
+        super().__init__(node, **kwargs)
+        self._apply_manual_infoedit_changes(infoeditChanges)
+
+    def _apply_manual_infoedit_changes(self, infoedit_changes):
+        if not infoedit_changes:
+            return
+
+        conf_dir = getattr(self, 'homeDir', self.node.params['params']['homeDir'])
+        conf_file = getattr(self, 'confFile', os.path.join(conf_dir, 'nlsr.conf'))
+        for key, value in infoedit_changes:
+            self.node.cmd(
+                f'cd {quote(conf_dir)} && '
+                f'infoedit -f {quote(os.path.basename(conf_file))} -s {quote(key)} -v {quote(value)}'
+            )
 
 
 class BranchTopo(Topo):
@@ -69,7 +105,8 @@ if __name__ == '__main__':
     info('Starting NLSR on all nodes\n')
     # DEBUG matches the main experiment and is what makes the routing-calculation
     # scheduling lines available; at the default level NLSR emits nothing.
-    nlsrs = AppManager(ndn, ndn.net.hosts, Nlsr, logLevel='DEBUG')
+    nlsrs = AppManager(ndn, ndn.net.hosts, TunableNlsr, logLevel='DEBUG',
+                       infoeditChanges=NLSR_INFOEDIT_CHANGES)
 
     # Allow routing to converge
     sleep(30)
@@ -220,11 +257,17 @@ if __name__ == '__main__':
     #   RoutingTable, calculateLinkStateRoutingPath
     #       every calculation entry and every run, so a scheduled run surviving a
     #       cancellation would show up as a run without a matching entry
+    #   TransitionController
+    #       which adjacencies one transition covers and when each was resolved
+    #   Adjacency LSA, own Adj LSA, buildAdjLsa
+    #       every build entry and every build, so an immediate build replacing the
+    #       delayed one is distinguishable from an immediate build added beside it
     for node in (r1, r2, r3, r4, r5, producer, consumer):
         home = node.params['params']['homeDir']
         node.cmd("grep -E 'RoutingTable|TopologyChangeObserver|calculateLinkStateRoutingPath"
                  "|SequencingManager|LSA sequence number from interest|Sync prefix registered"
-                 "|HelloProtocol|Face creation event|with face id'"
+                 "|HelloProtocol|Face creation event|with face id"
+                 "|TransitionController|Adjacency LSA|own Adj LSA|buildAdjLsa'"
                  f" {home}/log/nlsr.log > {results_dir}/{node.name}_nlsr.log 2>/dev/null || true")
 
     ndn.stop()
