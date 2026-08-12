@@ -10,13 +10,30 @@ from shlex import quote
 import os
 
 
-# NLSR acceleration switches exercised by the test run. Off in the shipped nlsr.conf,
-# so it must be set explicitly; an ablation run is obtained by removing the entry from
-# this list rather than by rebuilding. Controls immediate own Adj-LSA after a validated
-# reciprocal Hello status change only.
-NLSR_INFOEDIT_CHANGES = [
-    ('neighbors.result-driven-adj-lsa-build', 'on'),
-]
+def _nlsr_switch(env_name, default='on'):
+    """Read an on/off NLSR experiment switch. Solution-test default is on."""
+    value = (os.getenv(env_name) or default).strip().lower()
+    if value not in ('on', 'off'):
+        raise ValueError(f'Invalid value for {env_name}: {value} (expected on or off)')
+    return value
+
+
+def _nlsr_infoedit_changes():
+    """Solution-test defaults: both accelerations on. Ablation via env=off."""
+    return [
+        ('neighbors.result-driven-adj-lsa-build',
+         _nlsr_switch('NLSR_RESULT_DRIVEN_ADJ_LSA_BUILD')),
+        ('neighbors.event-driven-adjacency-verification',
+         _nlsr_switch('NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION')),
+    ]
+
+
+def _write_params_file(results_dir, changes):
+    """Record resolved NLSR switches so a result directory identifies the run."""
+    path = os.path.join(results_dir, 'params.txt')
+    with open(path, 'w', encoding='utf-8') as output_file:
+        for key, value in changes:
+            output_file.write(f'{key}={value}\n')
 
 
 class TunableNlsr(Nlsr):
@@ -92,6 +109,13 @@ if __name__ == '__main__':
     pcap_dir = os.path.join(results_dir, 'pcap')
     os.makedirs(pcap_dir, exist_ok=True)
 
+    try:
+        nlsr_changes = _nlsr_infoedit_changes()
+    except ValueError as error:
+        print(f"Error: {error}")
+        exit(1)
+    _write_params_file(results_dir, nlsr_changes)
+
     # Clean and verify Mini-NDN
     Minindn.cleanUp()
     Minindn.verifyDependencies()
@@ -106,7 +130,7 @@ if __name__ == '__main__':
     # DEBUG matches the main experiment and is what makes the routing-calculation
     # scheduling lines available; at the default level NLSR emits nothing.
     nlsrs = AppManager(ndn, ndn.net.hosts, TunableNlsr, logLevel='DEBUG',
-                       infoeditChanges=NLSR_INFOEDIT_CHANGES)
+                       infoeditChanges=nlsr_changes)
 
     # Allow routing to converge
     sleep(30)
@@ -181,7 +205,10 @@ if __name__ == '__main__':
     producer_daemon_log = os.path.join(results_dir, 'optoflood_producer.log')
     consumer_daemon_log = os.path.join(results_dir, 'optoflood_consumer.log')
     daemon_env = "GUARD_PREFIX=/LiveStream EXP_GUARD_INTERVAL_MS=1000"
-    producer.cmd(f"{daemon_env} {daemon_exec} producer &> {producer_daemon_log} &")
+    producer_daemon_env = daemon_env
+    if _nlsr_switch('NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION') == 'on':
+        producer_daemon_env += " OPTOFLOOD_NLSR_VERIFY_NOW=1"
+    producer.cmd(f"{producer_daemon_env} {daemon_exec} producer &> {producer_daemon_log} &")
     consumer.cmd(f"{daemon_env} {daemon_exec} consumer &> {consumer_daemon_log} &")
 
     # Warm-up period, then take T0 snapshot
@@ -266,7 +293,9 @@ if __name__ == '__main__':
         node.cmd("grep -E 'RoutingTable|TopologyChangeObserver|calculateLinkStateRoutingPath"
                  "|SequencingManager|LSA sequence number from interest|Sync prefix registered"
                  "|HelloProtocol|Face creation event|with face id"
-                 "|Adjacency LSA|own Adj LSA|buildAdjLsa|Building Adjacency LSA now'"
+                 "|Adjacency LSA|own Adj LSA|buildAdjLsa|Building Adjacency LSA now"
+                 "|ConfParameter|MOBILITY VERIFICATION|ADJ LSA HOLD"
+                 "|HELLO FLOW SUPERSEDE|HELLO VERIFY RESULT|STALE HELLO'"
                  f" {home}/log/nlsr.log > {results_dir}/{node.name}_nlsr.log 2>/dev/null || true")
 
     ndn.stop()

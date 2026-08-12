@@ -1,6 +1,12 @@
 PROVIDER ?= virtualbox
 export PROVIDER
 
+# Canonical host knob (same names as Makefile.solution). Solution-test default ON.
+SOLUTION_NLSR_RESULT_DRIVEN ?= on
+SOLUTION_NLSR_EVENT_DRIVEN_VERIFICATION ?= on
+NLSR_RESULT_DRIVEN_ADJ_LSA_BUILD ?= $(SOLUTION_NLSR_RESULT_DRIVEN)
+NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION ?= $(SOLUTION_NLSR_EVENT_DRIVEN_VERIFICATION)
+
 # Purpose: Run solution VM validations (S1–S5) and manage VM lifecycle
 # Interface: test-all, validate-s[1..5], vm-up|vm-halt|vm-destroy; PROVIDER=kvm|vb
 
@@ -75,7 +81,7 @@ $(PCAPS) $(RIBS) ../test/results/.validate_ok_vm &: ../test/.sync_solution_$(PRO
 	# Preflight check for tshark presence
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh -c 'EXPERIMENT_DIR=/home/vagrant/flooding/test WIRESHARK_RUN_FROM_BUILD_DIRECTORY=1 WIRESHARK_PLUGIN_DIR= /usr/bin/sudo -E tshark -v >/dev/null 2>&1'
 	# Run test topology; generate artifacts under /home/vagrant/flooding/test
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh -c 'EXPERIMENT_DIR=/home/vagrant/flooding/test WIRESHARK_RUN_FROM_BUILD_DIRECTORY=1 WIRESHARK_PLUGIN_DIR= LUA_PATH="/usr/local/share/ndn-dissect-wireshark/?.lua;;" LUA_CPATH=";;" /usr/bin/sudo -E python3 /home/vagrant/flooding/test/exp_test.py'
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh -c 'EXPERIMENT_DIR=/home/vagrant/flooding/test NLSR_RESULT_DRIVEN_ADJ_LSA_BUILD=$(NLSR_RESULT_DRIVEN_ADJ_LSA_BUILD) NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION=$(NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION) WIRESHARK_RUN_FROM_BUILD_DIRECTORY=1 WIRESHARK_PLUGIN_DIR= LUA_PATH="/usr/local/share/ndn-dissect-wireshark/?.lua;;" LUA_CPATH=";;" /usr/bin/sudo -E python3 /home/vagrant/flooding/test/exp_test.py'
 	# Ensure result directories exist in VM
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh -c 'mkdir -p /home/vagrant/flooding/test/results/pcap'
 	# Run validation inside VM (uses system python3 + tshark in box)

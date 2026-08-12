@@ -1,5 +1,12 @@
 # Makefile for the SOLUTION experiment, to be run inside the VM.
 
+# Solution-box defaults: full OptoFlood enables both NLSR accelerations.
+# NLSR's own nlsr.conf default remains off; these env vars are the experiment
+# override. Host ablation: SOLUTION_NLSR_EVENT_DRIVEN_VERIFICATION=off maps to
+# NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION=off via RUN_IN_VM_REMOTE_MAKE.
+NLSR_RESULT_DRIVEN_ADJ_LSA_BUILD ?= on
+NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION ?= on
+
 # --- Target groups ---
 EXPERIMENT_RESULTS = results/consumer_capture.pcap \
                      results/pcap_nodes/core.pcap \
@@ -23,8 +30,8 @@ all: $(EXPERIMENT_RESULTS)
 # The experiment script generates the complete raw result set in one run.
 $(EXPERIMENT_RESULTS) &: ../tool/exp.py producer consumer optoflood-daemon
 	mkdir -p results
-	# Run the experiment script using sudo, preserving EXPERIMENT_DIR environment.
-	sudo -E env EXPERIMENT_DIR=$(shell pwd) python3 ../tool/exp.py
+	# Pass NLSR switches on the env line so they survive sudo env_reset.
+	sudo -E env EXPERIMENT_DIR=$(shell pwd) NLSR_RESULT_DRIVEN_ADJ_LSA_BUILD=$(NLSR_RESULT_DRIVEN_ADJ_LSA_BUILD) NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION=$(NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION) python3 ../tool/exp.py
 
 # Recipe to compile the producer (plain baseline application).
 producer: ../app/producer.cpp
