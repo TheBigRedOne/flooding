@@ -44,6 +44,7 @@ NLSR_INTERVAL_ENV_TO_KEY = {
 # change builds the own Adj-LSA immediately; periodic Hello successes keep the delay.
 NLSR_FEATURE_ENV_TO_KEY = {
     'NLSR_RESULT_DRIVEN_ADJ_LSA_BUILD': 'neighbors.result-driven-adj-lsa-build',
+    'NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION': 'neighbors.event-driven-adjacency-verification',
 }
 
 # Defaults preserve the legacy two-handoff baseline so unchanged callers keep
@@ -490,9 +491,14 @@ if __name__ == '__main__':
     daemon_exec = os.path.join(experiment_dir, OPTOFLOOD_DAEMON)
     if os.path.exists(daemon_exec):
         daemon_env = f"GUARD_PREFIX={ADVERTISED_PREFIX} EXP_GUARD_INTERVAL_MS={guard_interval_ms}"
+        producer_daemon_env = daemon_env
+        # Producer daemon sends localhost verify-now only when Commit2 is enabled.
+        event_driven = (os.getenv('NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION') or '').strip().lower()
+        if event_driven == 'on':
+            producer_daemon_env += " OPTOFLOOD_NLSR_VERIFY_NOW=1"
         producer_daemon_log = os.path.join(results_dir, "optoflood_producer.log")
         consumer_daemon_log = os.path.join(results_dir, "optoflood_consumer.log")
-        producer.cmd(f"{daemon_env} {daemon_exec} producer &> {producer_daemon_log} &")
+        producer.cmd(f"{producer_daemon_env} {daemon_exec} producer &> {producer_daemon_log} &")
         consumer.cmd(f"{daemon_env} {daemon_exec} consumer &> {consumer_daemon_log} &")
 
     # The handoff loop runs K randomly-spaced toggles along handoff_sequence.

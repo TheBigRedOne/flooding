@@ -277,6 +277,9 @@ public:
     , m_advertisedPrefix(advertisedPrefix)
     , m_guardName(Name(advertisedPrefix).append(GUARD_MARKER))
   {
+    const char* verifyNow = std::getenv("OPTOFLOOD_NLSR_VERIFY_NOW");
+    m_sendNlsrVerifyNow = verifyNow && verifyNow[0] != '\0' &&
+                          std::string(verifyNow) != "0";
   }
 
   void
@@ -377,6 +380,12 @@ private:
     // Arm the local NFD so the producer's pending business Data (the stranded set
     // at this instant) is LP-marked and flooded too (rescue in-flight interests).
     armNfd();
+    // Optional Commit2 hint: schedule NLSR Hello verification earlier. Enabled only
+    // when the experiment sets OPTOFLOOD_NLSR_VERIFY_NOW=1 (paired with NLSR
+    // event-driven-adjacency-verification=on). Does not change adjacency truth.
+    if (m_sendNlsrVerifyNow) {
+      sendNlsrVerifyNow();
+    }
     // Reply to the held guard so a floodable trigger exists even when there is no
     // pending business traffic. A lapsed guard is dropped without replying.
     if (guardLive) {
@@ -402,6 +411,23 @@ private:
                            [] (const Interest&, const lp::Nack&) {},
                            [] (const Interest&) {});
     std::cout << "[" << nowNs() << "] MOBILITY: armed NFD " << armName << std::endl;
+  }
+
+  // Fire-and-forget local scheduling hint for NLSR Commit2 verification sweep.
+  void
+  sendNlsrVerifyNow()
+  {
+    Name hintName("/localhost/nlsr/optoflood/verify-now");
+    Interest interest(hintName);
+    interest.setCanBePrefix(false);
+    interest.setMustBeFresh(true);
+    interest.setInterestLifetime(1_s);
+    m_face.expressInterest(interest,
+                           [] (const Interest&, const Data&) {},
+                           [] (const Interest&, const lp::Nack&) {},
+                           [] (const Interest&) {});
+    std::cout << "[" << nowNs() << "] MOBILITY: sent NLSR verification hint "
+              << hintName << std::endl;
   }
 
   // Produce and put one guard Data named <advertisedPrefix>/_guard with the
@@ -447,6 +473,7 @@ private:
   std::optional<HeldGuard> m_heldGuard;
   uint32_t m_epoch = 0;
   uint64_t m_floodIdSeq = 0;
+  bool m_sendNlsrVerifyNow = false;
 };
 
 } // namespace optoflood_daemon
