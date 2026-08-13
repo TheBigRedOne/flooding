@@ -10,7 +10,7 @@ $INSTALL_BASE = <<EOF
   ./install.sh -y \
   --cxx=https://github.com/TheBigRedOne/ndn-cxx.git@cd9ea187f1e377c5ee5c2cd644ed1b696a50257b \
   --nfd=https://github.com/TheBigRedOne/NFD.git@4b98b97386562ad3acaabc94397f2d33c0e752ac \
-  --psync=https://github.com/TheBigRedOne/PSync.git@eaf4b73191d3f0bfb6c7114ee54c27c0511e1b22 \
+  --psync=https://github.com/TheBigRedOne/PSync.git@a9bf01a38074969f690a59a0f7b6b49bbc6747a7 \
   --nlsr=https://github.com/TheBigRedOne/NLSR.git@78250a940cb407acf0ab953ec9957562ed05c5ca \
   --tools=https://github.com/named-data/ndn-tools.git@ndn-tools-24.07 \
   --traffic=https://github.com/named-data/ndn-traffic-generator.git@9bec15ac63ae2ac225c4e514daa9fc1366889d62 \
