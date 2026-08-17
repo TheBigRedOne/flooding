@@ -47,6 +47,12 @@ NLSR_FEATURE_ENV_TO_KEY = {
     'NLSR_CORRIDOR_PRIORITISED_ROUTING': 'neighbors.corridor-prioritised-routing',
 }
 
+# Independent optional integer scalars. Unset leaves nlsr.conf untouched.
+# Not part of NLSR_INTERVAL_ENV_TO_KEY: that loader requires the whole set.
+NLSR_SCALAR_ENV_TO_KEY = {
+    'NLSR_CORRIDOR_ADJ_LSA_SYNC_PUBLISH_DELAY': 'neighbors.corridor-adj-lsa-sync-publish-delay',
+}
+
 # Defaults preserve the legacy two-handoff baseline so unchanged callers keep
 # their previous behaviour.
 DEFAULT_HANDOFF_SEQUENCE: Tuple[str, ...] = ('acc2', 'acc3', 'acc4')
@@ -148,6 +154,32 @@ def _load_nlsr_feature_overrides() -> Tuple[List[Tuple[str, str]], Dict[str, str
             raise ValueError(f"Invalid value for {env_name}: {value} (expected 'on' or 'off')")
         infoedit_changes.append((config_key, value))
         applied_params[config_key] = value
+
+    return infoedit_changes, applied_params
+
+
+def _load_nlsr_scalar_overrides() -> Tuple[List[Tuple[str, str]], Dict[str, str]]:
+    """
+    Read optional independent NLSR integer scalars from the environment.
+
+    Each scalar is independent of interval-profile completeness and of the on/off
+    feature switches. Unset leaves the nlsr.conf value untouched. Values must be
+    non-negative integers; 0 is valid and there is no experiment-policy maximum.
+    """
+    infoedit_changes: List[Tuple[str, str]] = []
+    applied_params: Dict[str, str] = {}
+    for env_name, config_key in NLSR_SCALAR_ENV_TO_KEY.items():
+        value = (os.getenv(env_name) or '').strip()
+        if not value:
+            continue
+        try:
+            parsed = int(value)
+        except ValueError as exc:
+            raise ValueError(f'Invalid integer for {env_name}: {value}') from exc
+        if parsed < 0:
+            raise ValueError(f'Negative value is not allowed for {env_name}: {value}')
+        infoedit_changes.append((config_key, str(parsed)))
+        applied_params[config_key] = str(parsed)
 
     return infoedit_changes, applied_params
 
@@ -382,12 +414,14 @@ if __name__ == '__main__':
     try:
         interval_changes, nlsr_applied_params = _load_nlsr_interval_overrides()
         feature_changes, feature_params = _load_nlsr_feature_overrides()
+        scalar_changes, scalar_params = _load_nlsr_scalar_overrides()
     except ValueError as error:
         print(f"Error: {error}")
         exit(1)
 
-    nlsr_infoedit_changes = (interval_changes or []) + feature_changes
+    nlsr_infoedit_changes = (interval_changes or []) + feature_changes + scalar_changes
     nlsr_applied_params.update(feature_params)
+    nlsr_applied_params.update(scalar_params)
 
     try:
         handoff_count, handoff_base, handoff_jitter, handoff_sequence = _load_handoff_config()
@@ -430,7 +464,7 @@ if __name__ == '__main__':
     nlsr_kwargs: Dict[str, Any] = {'logLevel': 'DEBUG'}
     if nlsr_infoedit_changes:
         nlsr_kwargs['infoeditChanges'] = nlsr_infoedit_changes
-        info(f"Applying NLSR interval overrides: {nlsr_applied_params}\n")
+        info(f"Applying NLSR overrides: {nlsr_applied_params}\n")
     nlsrs = AppManager(ndn, ndn.net.hosts, TunableNlsr, **nlsr_kwargs)
     sleep(30)  # allow NLSR initial convergence
 
