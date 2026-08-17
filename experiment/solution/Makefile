@@ -4,8 +4,10 @@
 # NLSR's own nlsr.conf default remains off; these env vars are the experiment
 # override. Host ablation: SOLUTION_NLSR_EVENT_DRIVEN_VERIFICATION=off maps to
 # NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION=off via RUN_IN_VM_REMOTE_MAKE.
+# Corridor stays off unless the smoke/host explicitly sets it on.
 NLSR_RESULT_DRIVEN_ADJ_LSA_BUILD ?= on
 NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION ?= on
+NLSR_CORRIDOR_PRIORITISED_ROUTING ?= off
 
 # --- Target groups ---
 EXPERIMENT_RESULTS = results/consumer_capture.pcap \
@@ -31,7 +33,7 @@ all: $(EXPERIMENT_RESULTS)
 $(EXPERIMENT_RESULTS) &: ../tool/exp.py producer consumer optoflood-daemon
 	mkdir -p results
 	# Pass NLSR switches on the env line so they survive sudo env_reset.
-	sudo -E env EXPERIMENT_DIR=$(shell pwd) NLSR_RESULT_DRIVEN_ADJ_LSA_BUILD=$(NLSR_RESULT_DRIVEN_ADJ_LSA_BUILD) NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION=$(NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION) python3 ../tool/exp.py
+	sudo -E env EXPERIMENT_DIR=$(shell pwd) NLSR_RESULT_DRIVEN_ADJ_LSA_BUILD=$(NLSR_RESULT_DRIVEN_ADJ_LSA_BUILD) NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION=$(NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION) NLSR_CORRIDOR_PRIORITISED_ROUTING=$(NLSR_CORRIDOR_PRIORITISED_ROUTING) python3 ../tool/exp.py
 
 # Recipe to compile the producer (plain baseline application).
 producer: ../app/producer.cpp
