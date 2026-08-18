@@ -546,10 +546,10 @@ if __name__ == '__main__':
         sleep(interval_s)
         next_node = handoff_sequence[index]
         info(f"Handoff #{index}: producer detaches from {current_node}, attaches to {next_node}\n")
-        ndn.net.configLinkStatus('producer', current_node, 'down')
-        ndn.net.configLinkStatus('producer', next_node, 'up')
         abs_time = wall_time()
         rel_time = abs_time - sequence_start_time
+        ndn.net.configLinkStatus('producer', current_node, 'down')
+        ndn.net.configLinkStatus('producer', next_node, 'up')
         _append_handoff_row(
             handoffs_path,
             index,
