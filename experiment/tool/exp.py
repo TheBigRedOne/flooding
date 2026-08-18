@@ -51,6 +51,7 @@ NLSR_FEATURE_ENV_TO_KEY = {
 # Not part of NLSR_INTERVAL_ENV_TO_KEY: that loader requires the whole set.
 NLSR_SCALAR_ENV_TO_KEY = {
     'NLSR_CORRIDOR_ADJ_LSA_SYNC_PUBLISH_DELAY': 'neighbors.corridor-adj-lsa-sync-publish-delay',
+    'NLSR_EVENT_DRIVEN_VERIFICATION_TIMEOUT_MS': 'neighbors.event-driven-verification-timeout-ms',
 }
 
 # Defaults preserve the legacy two-handoff baseline so unchanged callers keep
