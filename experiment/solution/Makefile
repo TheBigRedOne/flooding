@@ -1,15 +1,17 @@
 # Makefile for the SOLUTION experiment, to be run inside the VM.
 
-# Solution-box defaults: full OptoFlood enables both NLSR accelerations.
-# NLSR's own nlsr.conf default remains off; these env vars are the experiment
-# override. Host ablation: SOLUTION_NLSR_EVENT_DRIVEN_VERIFICATION=off maps to
-# NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION=off via RUN_IN_VM_REMOTE_MAKE.
-# Corridor stays off unless the smoke/host explicitly sets it on.
+# Full-solution experiment defaults: result-driven on, event-driven on,
+# Corridor on, Commit-C publication delay 1 s, and event-driven verification
+# timeout 50 ms. NLSR's own nlsr.conf remains conservative (Corridor off,
+# timeout 0/inherit); these env vars are the experiment override.
+# Host ablation examples: SOLUTION_NLSR_CORRIDOR_PRIORITISED_ROUTING=off or
+# SOLUTION_NLSR_EVENT_DRIVEN_VERIFICATION_TIMEOUT_MS=0 map through
+# RUN_IN_VM_REMOTE_MAKE.
 NLSR_RESULT_DRIVEN_ADJ_LSA_BUILD ?= on
 NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION ?= on
-NLSR_CORRIDOR_PRIORITISED_ROUTING ?= off
+NLSR_CORRIDOR_PRIORITISED_ROUTING ?= on
 NLSR_CORRIDOR_ADJ_LSA_SYNC_PUBLISH_DELAY ?= 1
-NLSR_EVENT_DRIVEN_VERIFICATION_TIMEOUT_MS ?= 0
+NLSR_EVENT_DRIVEN_VERIFICATION_TIMEOUT_MS ?= 50
 
 # --- Target groups ---
 EXPERIMENT_RESULTS = results/consumer_capture.pcap \
