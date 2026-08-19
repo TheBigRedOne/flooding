@@ -582,6 +582,8 @@ def cell_cf(run: CellRun) -> int:
             run.results_dir, 'nfdc', 'r2_after_nlsr_stop_route_show_livestream.txt'))
         nlsr_hops = parse_nlsr_nexthops(route_show)
         run.event('nlsr_livestream_hops', hops=nlsr_hops)
+        offset_after_c = log_bytes(r2)
+        run.event('phase_c_log_offset', offset=offset_after_c)
         for hop in nlsr_hops:
             cmd = f'nfdc route remove prefix /LiveStream nexthop {hop} origin nlsr'
             out = r2.cmd(cmd)
@@ -597,8 +599,6 @@ def cell_cf(run: CellRun) -> int:
             return 1
 
         delivered_before = count_delivered(read_file(os.path.join(run.results_dir, 'consumer.log')))
-        offset_after_c = log_bytes(r2)
-        run.event('phase_c_log_offset', offset=offset_after_c)
         fb_text, _ = poll_grep_since(
             r2, r'OptoFlood tfib-fallback prefix=/LiveStream reason=', offset_after_c, 20.0)
         if fb_text and fb_text.strip():

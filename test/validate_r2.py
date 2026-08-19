@@ -17,8 +17,13 @@ OBSOLETE_PROOF_RETIRE = (
     r'OptoFlood tfib-retire prefix=\S+ reason=new-path-calculated\+fib-agrees'
 )
 PROBE_NAME = '/LiveStream/_r2probe'
+NONCE_HEX = r'[0-9A-Fa-f]+'
 HARD_DEADLINE_S = 120.0
 HARD_DEADLINE_TOL_S = 1.0
+
+
+def nonce_eq(left: str, right: str) -> bool:
+    return left.lower() == right.lower()
 
 
 class Check:
@@ -309,13 +314,13 @@ def validate_cf(results: str) -> List[Check]:
 
     incoming = list(re.finditer(
         rf'onIncomingInterest in=\(?({tfib_face})(?:,|\)|\s) interest={re.escape(PROBE_NAME)}'
-        r'\s+nonce=(\d+)',
+        rf'\s+nonce=({NONCE_HEX})',
         r2,
     ))
     if not incoming:
         incoming = list(re.finditer(
             rf'onIncomingInterest in=\(?(\d+)(?:,|\)|\s) interest={re.escape(PROBE_NAME)}'
-            r'\s+nonce=(\d+)',
+            rf'\s+nonce=({NONCE_HEX})',
             r2,
         ))
     if not incoming:
@@ -337,15 +342,19 @@ def validate_cf(results: str) -> List[Check]:
         rf'OptoFlood tfib-forward interest={re.escape(PROBE_NAME)}',
         r2,
     )
-    same_out = re.search(
-        rf'onOutgoingInterest out={tfib_face} interest={re.escape(PROBE_NAME)}\s+nonce={nonce}\b',
-        r2,
-    )
-    if any_probe_use or same_out:
+    same_out_n = False
+    for match in re.finditer(
+            rf'onOutgoingInterest out={tfib_face} interest={re.escape(PROBE_NAME)}'
+            rf'\s+nonce=({NONCE_HEX})\b',
+            r2):
+        if nonce_eq(match.group(1), nonce):
+            same_out_n = True
+            break
+    if any_probe_use or same_out_n:
         checks.append(Check(
             'FAIL', 'phase-f-direct-tfib-use',
             f'forbidden probe TFIB Use or same-nonce N={nonce} out to ingress '
-            f'fwd={bool(any_probe_use)} out={bool(same_out)}'))
+            f'fwd={bool(any_probe_use)} out={same_out_n}'))
     else:
         checks.append(Check('PASS', 'phase-f-direct-tfib-use',
                             f'no TFIB Use of {PROBE_NAME}; no same-nonce N={nonce} out={tfib_face}'))
@@ -372,19 +381,19 @@ def validate_cf(results: str) -> List[Check]:
                             'no Active tfib-ingress flood for the probe'))
 
     strategy = re.search(
-        rf'OptoFlood strategy flood interest={re.escape(PROBE_NAME)}\s+nonce=(\d+)',
+        rf'OptoFlood strategy flood interest={re.escape(PROBE_NAME)}\s+nonce=({NONCE_HEX})',
         r2,
     )
     hop_fwd = re.search(
-        rf'OptoFlood forward interest={re.escape(PROBE_NAME)}\s+nonce=(\d+).*hopLimit=3',
+        rf'OptoFlood forward interest={re.escape(PROBE_NAME)}\s+nonce=({NONCE_HEX}).*hopLimit=3',
         r2,
     )
     if strategy:
         nprime = strategy.group(1)
-        if nprime == nonce:
+        if nonce_eq(nprime, nonce):
             checks.append(Check('FAIL', 'phase-f-allowed-flood',
                                 f'strategy flood nonce {nprime} equals original N={nonce}'))
-        elif hop_fwd and hop_fwd.group(1) != nprime:
+        elif hop_fwd and not nonce_eq(hop_fwd.group(1), nprime):
             checks.append(Check(
                 'FAIL', 'phase-f-allowed-flood',
                 f'strategy flood N\'={nprime} but hopLimit=3 nonce={hop_fwd.group(1)}'))
