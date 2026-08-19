@@ -589,7 +589,9 @@ def cell_cf(run: CellRun) -> int:
             out = r2.cmd(cmd)
             run.write_text(f'nfdc/r2_route_remove_{hop}.txt', cmd + '\n' + out)
             run.event('route_remove', hop=hop, out=out.strip())
-        sleep(0.5)
+        # Expire ndn-cxx Dispatcher status-dataset IMS (FreshnessPeriod/insert 1s).
+        # Not a routing-convergence wait.
+        sleep(1.2)
         run.save_nfdc(r2, 'after_route_remove')
         face_after = read_file(os.path.join(run.results_dir, 'nfdc', 'r2_after_route_remove_face.txt'))
         tfib_face_alive = any(f['id'] == tfib_face for f in parse_face_list(face_after))
