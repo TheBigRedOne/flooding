@@ -141,6 +141,7 @@ run_one_cell() {
       R2_CELL=${cell} \
       R2_REQUIRED_NFD_VERSION=${REQUIRED_NFD_VERSION} \
       python3 ${REMOTE_DIR}/test/r2_runtime.py || rt=\$?
+    /usr/bin/sudo chown -R vagrant:vagrant ${REMOTE_RUNTIME}/results/${cell}
     val=0
     python3 ${REMOTE_DIR}/test/validate_r2.py ${cell} ${REMOTE_RUNTIME}/results/${cell} || val=\$?
     echo rt=\$rt val=\$val > ${REMOTE_RUNTIME}/results/${cell}/exit_codes.txt
