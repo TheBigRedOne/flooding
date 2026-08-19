@@ -313,21 +313,21 @@ def validate_cf(results: str) -> List[Check]:
     checks.append(Check('PASS', 'frozen-tfib-face', tfib_face))
 
     incoming = list(re.finditer(
-        rf'onIncomingInterest in=\(?({tfib_face})(?:,|\)|\s) interest={re.escape(PROBE_NAME)}'
-        rf'\s+nonce=({NONCE_HEX})',
+        rf'onIncomingInterest in=\(?({tfib_face})(?:,\s*[^)]+)?\)?\s+'
+        rf'interest={re.escape(PROBE_NAME)}\s+nonce=({NONCE_HEX})',
         r2,
     ))
     if not incoming:
         incoming = list(re.finditer(
-            rf'onIncomingInterest in=\(?(\d+)(?:,|\)|\s) interest={re.escape(PROBE_NAME)}'
-            rf'\s+nonce=({NONCE_HEX})',
+            rf'onIncomingInterest in=\(?(\d+)(?:,\s*[^)]+)?\)?\s+'
+            rf'interest={re.escape(PROBE_NAME)}\s+nonce=({NONCE_HEX})',
             r2,
         ))
     if not incoming:
         checks.append(Check('FAIL', 'phase-f-ingress',
                             f'no onIncomingInterest for {PROBE_NAME} on r2'))
         return checks
-    ingress = incoming[0].group(1).split(':')[0]
+    ingress = incoming[0].group(1)
     nonce = incoming[0].group(2)
     checks.append(Check('PASS', 'phase-f-ingress',
                         f'in={ingress} nonce={nonce} name={PROBE_NAME}'))
