@@ -174,10 +174,12 @@ These results show that NLSR cannot simply be tuned to reduce convergence times 
 Addressing these issues effectively requires specialised mechanisms that can rapidly establish temporary communication paths without waiting for global routing convergence.
 
 % ==============================================================================
-\section{Controlled Flooding for NDN Mobility} 
-\label{sec:solution}
+\section{OptoFlood Design}
+\label{sec:design}
 
-To reduce disruption after producer mobility, we extend NDN forwarding with controllable flooding that can rapidly establish temporary bidirectional communication paths, and that leverages these paths to accelerate routing convergence.
+When a producer changes its attachment point, Data returned for Interests received before the movement may no longer enter the existing reverse forwarding path, while newly issued Interests may continue to follow ordinary routing towards the old attachment. OptoFlood addresses these different recovery timescales with three complementary mechanisms operating over progressively broader scopes.
+
+Immediate Service Recovery uses Data returned for pre-movement pending Interests to restore delivery and establish temporary forwarding for subsequent requests. Service-Prioritised Routing Convergence uses the resulting forwarding observations to make ordinary routing information available first along paths currently carrying the service. Event-Driven Routing Convergence accelerates NLSR verification, dissemination, and route calculation across the routing domain. These mechanisms may operate concurrently, allowing service recovery to proceed while ordinary routing catches up.
 
 \begin{figure}
     \centering
@@ -188,65 +190,57 @@ To reduce disruption after producer mobility, we extend NDN forwarding with cont
 
 \csp{Need to ensure the terminology, and the description of the protocol, in this section aligns with that in the Introduction.}
 
-\subsection{Data Packet Flooding}
-\label{sec:solution:data-flooding}
+\subsection{Immediate Service Recovery}
+\label{sec:design:isr}
 
-Producer mobility in OptoFlood is detected by applications (e.g., via interface-up events). The producer marks subsequent Data packets to indicate a mobility event. Forwarders flood such mobility-marked Data. Mobility triggers based on attachment/interface events are commonly used in mobility systems \cite{johnson:2004:mipv6,gundavelli:2008:pmipv6}.
-Each mobility-marked Data packet carries the following markings:
-\begin{itemize}
-  \item \textbf{LP--MobilityFlag}: a hop-by-hop flag in the NDN Link Protocol (LP) header used to identify mobility-related Data at forwarders. If a forwarder finds a matching PIT entry, it clears the flag and forwards the Data normally so that the return path proceeds through standard PIT-based forwarding.
-  \item \textbf{LP--OptoHopLimit}: a hop-by-hop scope control that is decremented at each hop (default~3) to confine Data flooding to a local region. This field is experimental in our deployment and is distinct from the native Interest HopLimit.
-  \item \textbf{Flood-ID}: an immutable identifier used for duplicate suppression in floods. In our implementation, FloodId is encoded as a Data MetaInfo extension TLV so that it is part of the signed portion of the Data and cannot be forged or altered by intermediate nodes.
-  \item \textbf{NewFaceSeq}: an immutable sequence number used by forwarders to create or update a Temporary FIB (TFIB) entry upon receiving mobility-marked Data. NewFaceSeq is also carried in the signed portion of the Data (MetaInfo extension TLV) to ensure integrity.
-\end{itemize}
+OptoFlood runs local daemons alongside the producer and consumer applications. On the producer, the daemon monitors attachment changes and, following a handover, arms the local NFD for immediate recovery. The daemons additionally support the guard mechanism used to maintain recoverable pending state when application traffic alone does not provide it.
 
-At the forwarding plane, a forwarder treats a Data packet as OptoFlood-enabled when it detects FloodId/NewFaceSeq in the Data MetaInfo. The forwarder enforces duplicate suppression based on Flood-ID and applies a per-producer rate limit to bound overhead.
+When a handover is detected, the producer-side NFD records unsatisfied pending Interest state for the mobile prefix. Data subsequently returned in response to these recorded pre-movement Interests is marked for Forwarding-Guided Data Recovery.
 
-For dissemination, flooded Data packets \emph{first} follow available FIB next hops. If no valid FIB next hop exists, forwarders fall back to \emph{scoped expansion} over data-plane adjacent faces under LP--OptoHopLimit, excluding LOCAL faces and suppressing the incoming face (and any already satisfied faces) to avoid immediate loops. The aim is to reach a node that still holds a valid Pending Interest Table (PIT) entry along (or near) the original path so that the Data can be returned to the consumer without waiting for global routing updates.
+Recovery forwarding preferentially follows usable FIB next hops for the producer prefix. If the FIB provides no usable recovery direction, forwarding can expand to eligible neighbouring faces within a bounded hop limit. As recovery Data traverses the network, a matching PIT entry reconnects it to the existing reverse path towards the requester, after which the Data can be returned through ordinary NDN forwarding.
 
-\subsection{Temporary FIB}
-\label{sec:solution:bidir}
+The arrival direction of recovery Data is recorded as temporary forwarding state for the producer prefix. NFD maintains this state separately from the ordinary FIB in a Temporary FIB (TFIB). The TFIB can then forward subsequent Interests along the recovered path while ordinary routing catches up.
 
-A key goal of OptoFlood is to establish a temporary \emph{bidirectional} communication capability quickly after handover. In the downstream direction (consumer$\rightarrow$producer), Interest flooding can locate a viable path toward the producer's new attachment point when unicast forwarding fails. In upstream flows (producer$\rightarrow$consumer), mobility-marked Data flooding increases the likelihood that Data corresponding to Interests issued shortly before handover can reach a forwarder that still maintains the appropriate PIT state.
+A newer mobility observation supersedes older temporary forwarding state. When the exact ordinary FIB entry for the prefix consistently prefers the TFIB direction, active forwarding control returns to the ordinary FIB and forwarding strategy. This agreement alone does not show that the ordinary route has stabilised, since subsequent routing updates may still withdraw it or change its next hop. The TFIB entry therefore remains available as a bounded standby fallback after ordinary forwarding resumes active control. If the ordinary route subsequently becomes unavailable or no longer follows the recovered direction, the retained temporary state can again provide forwarding continuity.
 
-Forwarders opportunistically create short-lived forwarding hints via a \emph{Temporary FIB (TFIB)}. Upon receiving mobility-marked Data, a forwarder creates or updates a TFIB entry (separate from the standard FIB) mapping the relevant prefix to the incoming face, annotated with NewFaceSeq/FloodId, and with a short TTL (about one second). Subsequent Interests can then switch to unicast via TFIB immediately, reducing the need for repeated Interest flooding while global routing converges \cite{zhang:2018:kite, auge:2018:map-me}.
+Forwarding-guided recovery requires recoverable pending state at the producer-side NFD. When application traffic leaves no suitable pending Interest at the time of movement, the guard mechanism maintains recoverable pending state using low-rate control traffic under a dedicated guard namespace. The consumer periodically issues guard Interests, while the producer-side daemon keeps a guard Interest pending without responding during normal operation. On a mobility event, the daemon returns an empty-payload guard Data, which enters the same recovery process and can establish temporary forwarding state.
 
-\subsection{Interest Packet Flooding}
-\label{sec:solution:interest-flooding}
+The recovery process also reveals which downstream branches are carrying service for the mobile prefix. These forwarding observations are used by Service-Prioritised Routing Convergence.
 
-Interest flooding is performed by the forwarder as a last resort, invoked on a Content Store miss when both the FIB and the TFIB provide no usable next hop for the Interest prefix.
+\subsection{Service-Prioritised Routing Convergence}
+\label{sec:design:sprc}
 
-The forwarder sets and enforces the native \emph{HopLimit} (default~3) before flooding (if not already present), decrementing it at each hop. Interest flooding is sent only to non-LOCAL faces.
+OptoFlood records downstream forwarding observations made during recovery as ServiceBranch state associated with the producer prefix. ServiceBranch identifies consumer-facing branches observed carrying traffic for the affected service and is used to prioritise routing convergence.
 
-To prevent repeated storms, each forwarder maintains a short-lived per node cache keyed by (Name, Nonce) so that the same Interest is flooded at most once per node within a small time window (about one second).
+Ordinary NLSR disseminates updated topology information throughout the routing domain. After producer movement, restoring ordinary routing is most urgent along the branches that currently carry the affected service. The mechanism uses ServiceBranch observations to propagate availability indications for updated ordinary Adj-LSAs preferentially along these service-relevant branches.
 
-We also retain an explicit triggering path: if an Interest already carries a HopLimit, the forwarder may treat it as an explicit request to flood once even when a FIB entry exists, although the default consumer in our evaluation does not rely on this option.
+A node with an older local copy can then fetch the corresponding ordinary Adj-LSA from the direction in which the indication was received. Once fetched, the ordinary Adj-LSA follows the standard NLSR validation, LSDB installation, and route-update process. Routing decisions continue to derive from ordinary NLSR state; ServiceBranch is used only to prioritise where that state is made available.
 
-\begin{figure}
-    \centering
-    \includegraphics[width=1\linewidth]{Interest_Flooding.pdf}
-    \caption{Interest Flooding}
-    \label{fig:Interest Flooding}
-\end{figure}
+To give service-relevant dissemination a bounded head start, an updated Adj-LSA at the producer's attachment point is installed locally before its ordinary domain-wide Sync announcement. The ordinary domain-wide Sync announcement is held briefly, while the locally installed LSA is immediately available to the prioritised dissemination mechanism. Multiple updates during this interval are coalesced so that the latest locally installed version is then announced through ordinary NLSR synchronisation.
 
-\subsection{Fast-LSA}
-\label{sec:solution:convergence}
+At the producer's attachment point, an availability indication for the updated Adj-LSA is first advertised across active adjacencies. Once an intermediate node has fetched and installed that LSA, it propagates the indication further along its observed service branches. Ordinary routing information therefore advances preferentially through the part of the topology currently carrying the affected service.
 
-OptoFlood integrates temporary flooding-based paths with faster global convergence via NLSR. When a forwarder successfully establishes or updates a TFIB entry, it triggers an NLSR management command at \texttt{/localhost/nlsr/fast-lsa/trigger}. This command installs a short-lived routing entry (Fast-LSA style) with an expiration period of approximately one second, and employs throttling (500~ms per prefix) and de-duplication (by Prefix+NewFaceSeq) to limit control-plane overhead \cite{hoque:2013:nlsr}.
+\subsection{Event-Driven Routing Convergence}
+\label{sec:design:edrc}
 
-Regular periodic LSAs later supersede short-lived updates, and TFIB entries expire naturally.
+Ordinary NLSR verifies neighbour reachability through periodic Hello exchanges. Following a local attachment change, OptoFlood immediately initiates verification of the relevant adjacencies rather than waiting for the next periodic exchange. The mobility event advances the timing of verification, while neighbour state continues to be determined from ordinary validated Hello responses.
 
-\subsection{Security and Flooding Control}
+Adjacency changes discovered during this verification would normally wait for NLSR's delayed Adj-LSA construction. During the triggered verification, OptoFlood temporarily holds Adj-LSA construction until the targeted verification completes. This prevents an early result from producing an ordinary Adj-LSA from a partially updated adjacency table. Once verification completes, any accumulated adjacency changes trigger immediate construction of the ordinary Adj-LSA. If the triggered verification cannot obtain a definitive result, the temporary hold is released and ordinary NLSR processing resumes.
 
-To mitigate risks associated with flooding, OptoFlood uses complementary control mechanisms.
+When NLSR uses PSync FullSync, OptoFlood can prompt an immediate Sync exchange after an updated Adj-LSA sequence is published, rather than waiting for the next scheduled Sync re-expression. After receiving a Sync Interest, a node compares the Sync state represented by the Interest with its own. If the comparison shows that its local state is behind, the node immediately re-expresses its own Sync Interest. This allows the newer sequence to be learned without waiting for the next scheduled Sync exchange. Ordinary scheduled Sync remains the fallback.
 
-\textbf{Digital signatures for immutable fields.} NDN Data packets are signed; immutable fields such as Names, Content, and the MetaInfo extensions (e.g., FloodId/NewFaceSeq) are authenticated end-to-end. Dynamic hop-by-hop controls (\emph{LP--MobilityFlag}, \emph{LP--OptoHopLimit}) live in the LP header outside the signature so that intermediate nodes can legitimately decrement or clear them without breaking integrity checks on the Data itself.
+When validated adjacency updates change the topology represented in the LSDB, OptoFlood requests routing calculation promptly rather than waiting for the normal calculation delay. For newly added adjacencies, prompt calculation waits until the corresponding link is reflected consistently by both endpoint advertisements. Deletion-only changes can trigger recalculation immediately. The calculation itself remains the ordinary NLSR routing calculation, and the resulting routes are installed through the standard NLSR forwarding-update path.
 
-\textbf{Scoped hop limits.} A small default hop limit (3) confines both Data and Interest flooding to a local region and prevents excessive scope. Packets exceeding the threshold are dropped.
+Together, these event-driven actions reduce the control-plane waiting periods in NLSR mobility convergence.
 
-\textbf{Rate limiting and duplicate suppression.} Forwarders enforce a per-producer flood rate limit (e.g. 100~packets/s for flooded traffic) and maintain a FloodId-based cache for duplicate suppression. Together these controls bound overhead and reduce the attack surface for denial-of-service attempts, while still allowing enough exploration to rescue pending Interests.
+\subsection{Recovery and Convergence Coordination}
+\label{sec:design:coordination}
 
-Together, these controls bound overhead and reduce the attack surface for denial-of-service attempts, while still allowing enough exploration to rescue pending Interests \cite{afanasyev:2013:interest-flooding}.
+Immediate recovery can restore forwarding before ordinary routing has converged, while the routing-convergence mechanisms proceed in parallel. Neither routing-convergence mechanism is required to complete before immediate recovery can provide service continuity.
+
+Temporary forwarding observations can guide recovery forwarding and convergence priority. Mobility events can advance the timing of ordinary NLSR operations. Ordinary routing decisions continue to derive from validated NLSR state.
+
+As ordinary routing becomes usable, forwarding can return to the ordinary FIB while temporary recovery state remains available as a bounded fallback. Immediate recovery can continue while either routing-convergence mechanism is delayed or unavailable. If an accelerated routing step cannot complete, convergence continues through the corresponding ordinary NLSR process. Temporary forwarding state has a finite lifetime and is eventually removed.
 
 % ==============================================================================
 \section{Evaluation}
@@ -288,9 +282,7 @@ The core, aggregation, and access nodes form the in-network forwarding fabric an
 \begin{figure}
     \centering
     \includegraphics[width=1\linewidth]{Topology.pdf}
-	\caption{Experiment topology used in the mobility evaluation. %
-    \ryo{change the style of topology diagram to be consistent with Figure \ref{fig:Interest Flooding}}%
-    }
+	\caption{Experiment topology used in the mobility evaluation.}
     \label{exp_topo}
 \end{figure}
 
