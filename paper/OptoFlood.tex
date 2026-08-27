@@ -79,26 +79,13 @@ Named Data Networking, Producer Mobility, Controlled Flooding, TFIB, NLSR
 \label{sec:introduction}
 
 % Paragraph 1: Motivation.
-The use of Named Data Networking (NDN) protocols optimises the network for content delivery \cite{jacobson:2009:named-content, zhang:2014:ndn}. Rather than relying on an indirect name-to-location mapping via the DNS, as is done in the Internet today, NDN protocols make name-based routing, content delivery, and pervasive caching core services of the network.
+Named Data Networking (NDN) is designed around named content rather than host addresses \cite{jacobson:2009:named-content, zhang:2014:ndn}. Name-based forwarding, content delivery, and in-network caching are therefore integrated into the network architecture.
 
 % Paragraph 2: Specific problem.
-However, a limitation of current NDN protocols is that they do not effectively support producer mobility. Each time a content producer moves, the network must quickly discover its new location and ensure continuous data delivery without introducing delays or packet loss. For applications such as live video streaming and video conferencing, even short interruptions can degrade user experience and reliability. In practice, producer movement invalidates previously valid forwarding paths, while routing updates may take seconds to converge. During this period, Interest packets can be misrouted, timed out, or discarded due to a stale forwarding state. Previous works have improved the behaviour of NDN in these scenarios, but still lag behind what is needed \cite{abrar:2023:systematic, feng:2016:survey, tyson:2012:mobility-survey, zhang:2016:mobility-survey}.
+However, producer mobility remains difficult to support with current NDN routing. After a producer changes its attachment point, newly issued Interests may continue to follow stale forwarding state towards the previous attachment point until routing information is updated. Data returned for Interests received before the movement enters the network from the new attachment point and may no longer enter the reverse forwarding path established by those Interests. These forwarding failures can interrupt service and leave Interests unsatisfied. This is particularly problematic for latency-sensitive applications such as live video streaming and video conferencing. Our baseline measurements show that native NDN can still require tens of seconds to restore service after a hand-off.
 
 % Paragraph 3: Contributions.
-In this paper, we introduce OptoFlood, a novel controlled flooding scheme that can establish temporary bidirectional communication paths to accelerate network convergence after producer mobility events. OptoFlood proactively manages controlled local flooding of both \emph{Data} and \emph{Interest} packets, enabling rapid recovery from disruptions caused by producer movements. 
-OptoFlood comprises four complementary parts:
-\begin{enumerate}
-\item \emph{Data packet flooding} for Data packets packets that are marked as being sent after the producer moves but in response to pending Interest packets received before the move.
-Flooding of Data packets is explicitly hop-limited and rate controlled, and is intended to quickly ``push'' Data across nearby nodes so that Interests that would otherwise stall can be satisfied without waiting for global routing convergence.
-
-\item A \emph{temporary forwarding table (TFIB)}, based on newly observed forwarding opportunities, opportunistically created to help suppress repeated Data packet flooding and restore unicast forwarding quickly.
-
-\item Hop-limited \emph{Interest packet flooding}, when forwarding fails because both the standard FIB and the TFIB provide no usable next hop, triggered to promptly rediscover viable paths toward the producer's new attachment point.
-
-\item \emph{Fast-LSA}, short-lived routing updates based on newly established temporary paths, that accelerate convergence. 
-
-\end{enumerate}
-Collectively, these mechanisms reduce latency and packet loss while maintaining reasonable network resource usage.
+In this paper, we introduce OptoFlood to restore packet delivery after producer movement and to accelerate ordinary routing convergence. Immediate Service Recovery uses Data returned for Interests received before movement to reach the existing reverse forwarding path. Bounded temporary forwarding then allows subsequent Interests to reach the producer before ordinary routing has converged. Service-Prioritised Routing Convergence uses observations from recovery traffic to accelerate ordinary routing convergence in service-relevant parts of the network. Event-Driven Routing Convergence accelerates ordinary NLSR operations after mobility-related topology changes by reducing avoidable control-plane waiting. The three mechanisms are complementary and operate concurrently.
 
 % Paragraph 4: Comparison to related work.
 Compared to previous NDN mobility protocols, such as routing-based updates \cite{meddeb:2018:afirm}, Interest-based notification solutions \cite{auge:2016:map-me} or anchor-based tracing mechanisms \cite{zhang:2018:kite}, OptoFlood is a more integrated and lighter-weight solution that leverages flooding as its primary mechanism for rapid path recovery and convergence. Unlike existing flooding solutions \csp{add citations}, our approach uses explicit controls, including hop limits, deduplication within a short time window, and producer-side flood rate limits, to restrict the scope and duration of flooding, minimising unnecessary overhead. Additionally, by leveraging temporary bidirectional paths established via controlled flooding and propagating them through short-lived routing updates, OptoFlood accelerates global routing convergence without relying on centralised anchor nodes.
