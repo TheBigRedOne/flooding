@@ -103,7 +103,7 @@ Producer mobility in NDN can disrupt both Interest forwarding and Data return. A
 \subsection{NDN Forwarding and Routing}
 \label{sec:problem:forwarding}
 
-NDN shifts from a host-centric model to a data-centric model, where content is identified by names rather than addresses \cite{xylomenos:2014:icn-survey, zhang:2014:ndn}. In NDN, communication relies on two core packet types: Interest Packets, sent by consumers to request data by specifying the content name, and Data Packets, returned in response to Interests and carrying the requested content and related metadata  \cite{jacobson:2009:named-content, zhang:2014:ndn}. Both use Type-Length-Value (TLV) encoding \cite{ndn:packet-format}.
+NDN packet delivery relies on the interaction between the data plane and the control plane. In the data plane, packets are forwarded using content names and forwarding state maintained by NDN forwarders \cite{xylomenos:2014:icn-survey, zhang:2014:ndn}. In NDN, communication relies on two core packet types: Interest Packets, sent by consumers to request data by specifying the content name, and Data Packets, returned in response to Interests and carrying the requested content and related metadata  \cite{jacobson:2009:named-content, zhang:2014:ndn}. Both use Type-Length-Value (TLV) encoding \cite{ndn:packet-format}.
 
 \begin{figure}[t]
     \centering
@@ -116,7 +116,7 @@ NDN forwarders (Figure \ref{fig:NDN Packets Processing Flow}) maintain a Content
 
 When an Interest arrives at a forwarder, the forwarder checks the Content Store and returns cached Data if available. Otherwise, the forwarder checks the PIT to determine whether a matching Interest is already pending. If the Interest is new, it is forwarded based on the FIB.
 
-The Named-Data Link State Routing protocol (NLSR) disseminates link-state and prefix-reachability information using Link State Advertisements (LSAs). NLSR uses this information to calculate routes, which are subsequently reflected in the FIB. Following a topology change, NLSR verifies the affected adjacency state and constructs updated routing information. The update is disseminated through NLSR's synchronisation process, after which routes are recalculated and the forwarding state is updated \cite{hoque:2013:nlsr}. Neighbour verification, Adj-LSA construction, synchronisation, and route calculation may introduce control-plane waiting.
+In the control plane, the Named-Data Link State Routing protocol (NLSR) disseminates link-state and prefix-reachability information using Link State Advertisements (LSAs). NLSR uses this information to calculate routes, which are subsequently reflected in the FIB. Following a topology change, NLSR verifies the affected adjacency state and constructs updated routing information. The update is disseminated through NLSR's synchronisation process, after which routes are recalculated and the forwarding state is updated \cite{hoque:2013:nlsr}. Neighbour verification, Adj-LSA construction, synchronisation, and route calculation may introduce control-plane waiting.
 
 \subsection{Producer Mobility and Routing Convergence}
 \label{sec:problem:mobility}
@@ -140,9 +140,13 @@ These forwarding failures can have several consequences:
     \item \textbf{Increased Retransmissions:} Unsatisfied Interests may be retransmitted, increasing bandwidth and processing overhead.
 \end{itemize}
 
-Several stages of routing convergence are affected by configurable timing parameters. In the baseline experiments, we vary the NLSR Hello interval used for neighbour verification, the Adj-LSA build interval, the routing calculation interval, and the PSync Sync Interest lifetime used for synchronisation \cite{zhang:2017:psync}. Reducing these values can shorten the corresponding control-plane waiting periods.
+Consider a live-video producer that moves between access nodes while maintaining an ongoing stream. Ordinary routing can eventually restore reachability after each hand-off, but convergence takes time. If the producer changes attachment again before routing has converged from the previous movement, the network may still contain forwarding and routing state that reflects an earlier attachment. Ordinary NDN routing is therefore poorly suited to producer-mobility scenarios in which attachment changes occur on a timescale comparable to or shorter than routing convergence.
 
-To examine their effect on producer-mobility convergence, we evaluate baseline NDN routing behaviour under five configurations. The four timing parameters are progressively reduced across the configurations. Values are reported in the order of Hello interval, Adj-LSA build interval, routing calculation interval, and PSync Sync Interest lifetime. G0 uses the default values of 60 s, 10 s, 15 s, and 60 s. G1 uses 54 s, 9 s, 14 s, and 54 s; G2 uses 48 s, 8 s, 12 s, and 48 s; G3 uses 42 s, 7 s, 10 s, and 42 s; and G4 uses 36 s, 6 s, 9 s, and 36 s.
+The baseline experiments use ordinary NDN forwarding and NLSR with OptoFlood disabled. They first quantify the service disruption caused by producer movement under native routing. We then reduce the main NLSR and PSync timing parameters to determine whether more aggressive routing configuration alone can provide sufficiently fast recovery, and to observe the associated control-plane cost.
+
+Several stages of ordinary routing convergence are affected by configurable timing parameters. We vary four of these parameters in the baseline experiments. The NLSR Hello interval controls periodic neighbour verification. The Adj-LSA build delay controls how long NLSR waits before constructing a scheduled adjacency LSA. The routing calculation delay controls how long NLSR waits before a scheduled route recalculation. The PSync Sync Interest lifetime affects the timing of the synchronisation process used to disseminate routing updates \cite{zhang:2017:psync}.
+
+The four timing parameters are progressively reduced across five configurations. Values are reported in the order of Hello interval, Adj-LSA build delay, routing calculation delay, and PSync Sync Interest lifetime. G0 uses the default values of 60 s, 10 s, 15 s, and 60 s. G1 uses 54 s, 9 s, 14 s, and 54 s; G2 uses 48 s, 8 s, 12 s, and 48 s; G3 uses 42 s, 7 s, 10 s, and 42 s; and G4 uses 36 s, 6 s, 9 s, and 36 s.
 
 These baseline measurements use the three-layer access-network topology shown in Figure~\ref{exp_topo}. A fixed consumer retrieves a stream from a producer that performs hand-offs across the access nodes during the run.
 
