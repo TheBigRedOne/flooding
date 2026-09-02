@@ -326,8 +326,8 @@ In baseline forwarding, each hand-off is followed by a sharp drop in delivered t
 \begin{figure}
     \centering
     \subfloat[Consumer throughput under baseline forwarding and OptoFlood]{\includegraphics[width=\columnwidth]{throughput_comparison.pdf}\label{fig:throughput_comparison}}\\
-    \subfloat[Per-handoff service disruption under baseline forwarding and OptoFlood]{\includegraphics[width=\columnwidth]{service_disruption_comparison.pdf}\label{fig:service_disruption_comparison}}
-    \caption{Consumer throughput and per-handoff service disruption under baseline forwarding and OptoFlood}
+    \subfloat[Per-handoff service disruption under baseline forwarding and OptoFlood \ryo{this should be a box plot}]{\includegraphics[width=\columnwidth]{service_disruption_comparison.pdf}\label{fig:service_disruption_comparison}}
+    \caption{Consumer throughput and per-handoff service disruption under baseline forwarding and OptoFlood \ryo{subfigures, not subfloat}}
 \end{figure}
 
 
@@ -399,7 +399,7 @@ Figure~\ref{fig:ext_interval} reports OptoFlood across the request-interval rang
     \subfloat[Per-hand-off service disruption versus request interval.\label{fig:ext_interval_disruption}]{\includegraphics[width=\columnwidth]{results/extended/exp1/exp1_disruption.pdf}}\\
     \subfloat[Deadline-missed frames per hand-off versus request interval.\label{fig:ext_interval_loss}]{\includegraphics[width=\columnwidth]{results/extended/exp1/exp1_frameloss.pdf}}\\
     \subfloat[Flood load per hand-off versus request interval.\label{fig:ext_interval_flood}]{\includegraphics[width=\columnwidth]{results/extended/exp1/exp1_flood.pdf}}
-    \caption{OptoFlood sensitivity to the request interval (stream quality).}
+    \caption{OptoFlood sensitivity to the request interval (stream quality).\ryo{not subfloat, subfigure}}
     \label{fig:ext_interval}
 \end{figure}
 
