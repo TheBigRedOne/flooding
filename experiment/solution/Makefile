@@ -1,5 +1,18 @@
 # Makefile for the SOLUTION experiment, to be run inside the VM.
 
+# Full-solution experiment defaults: result-driven on, event-driven on,
+# Corridor on, Commit-C publication delay 1 s, and event-driven verification
+# timeout 50 ms. NLSR's own nlsr.conf remains conservative (Corridor off,
+# timeout 0/inherit); these env vars are the experiment override.
+# Host ablation examples: SOLUTION_NLSR_CORRIDOR_PRIORITISED_ROUTING=off or
+# SOLUTION_NLSR_EVENT_DRIVEN_VERIFICATION_TIMEOUT_MS=0 map through
+# RUN_IN_VM_REMOTE_MAKE.
+NLSR_RESULT_DRIVEN_ADJ_LSA_BUILD ?= on
+NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION ?= on
+NLSR_CORRIDOR_PRIORITISED_ROUTING ?= on
+NLSR_CORRIDOR_ADJ_LSA_SYNC_PUBLISH_DELAY ?= 1
+NLSR_EVENT_DRIVEN_VERIFICATION_TIMEOUT_MS ?= 50
+
 # --- Target groups ---
 EXPERIMENT_RESULTS = results/consumer_capture.pcap \
                      results/pcap_nodes/core.pcap \
@@ -21,21 +34,25 @@ EXPERIMENT_RESULTS = results/consumer_capture.pcap \
 all: $(EXPERIMENT_RESULTS)
 
 # The experiment script generates the complete raw result set in one run.
-$(EXPERIMENT_RESULTS) &: ../tool/exp.py producer consumer
+$(EXPERIMENT_RESULTS) &: ../tool/exp.py producer consumer optoflood-daemon
 	mkdir -p results
-	# Run the experiment script using sudo, preserving EXPERIMENT_DIR environment.
-	sudo -E env EXPERIMENT_DIR=$(shell pwd) python3 ../tool/exp.py
+	# Pass NLSR switches on the env line so they survive sudo env_reset.
+	sudo -E env EXPERIMENT_DIR=$(shell pwd) NLSR_RESULT_DRIVEN_ADJ_LSA_BUILD=$(NLSR_RESULT_DRIVEN_ADJ_LSA_BUILD) NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION=$(NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION) NLSR_CORRIDOR_PRIORITISED_ROUTING=$(NLSR_CORRIDOR_PRIORITISED_ROUTING) NLSR_CORRIDOR_ADJ_LSA_SYNC_PUBLISH_DELAY=$(NLSR_CORRIDOR_ADJ_LSA_SYNC_PUBLISH_DELAY) NLSR_EVENT_DRIVEN_VERIFICATION_TIMEOUT_MS=$(NLSR_EVENT_DRIVEN_VERIFICATION_TIMEOUT_MS) python3 ../tool/exp.py
 
-# Recipe to compile the producer.
+# Recipe to compile the producer (plain baseline application).
 producer: ../app/producer.cpp
-	g++ -std=c++17 -g -O2 -DSOLUTION_ENABLED -o $@ $< $$(pkg-config --cflags --libs libndn-cxx)
+	g++ -std=c++17 -g -O2 -o $@ $< $$(pkg-config --cflags --libs libndn-cxx)
 
-# Recipe to compile the consumer.
+# Recipe to compile the consumer (plain baseline application).
 consumer: ../app/consumer.cpp
-	g++ -std=c++17 -g -O2 -DSOLUTION_ENABLED -o $@ $< $$(pkg-config --cflags --libs libndn-cxx)
+	g++ -std=c++17 -g -O2 -o $@ $< $$(pkg-config --cflags --libs libndn-cxx)
+
+# Recipe to compile the OptoFlood mobility control daemon (solution control plane).
+optoflood-daemon: ../app/optoflood-daemon.cpp
+	g++ -std=c++17 -g -O2 -o $@ $< $$(pkg-config --cflags --libs libndn-cxx)
 
 # A target to clean up all generated files.
 clean:
-	sudo rm -rf producer consumer results
+	sudo rm -rf producer consumer optoflood-daemon results
 
 .PHONY: all clean

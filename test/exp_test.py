@@ -6,7 +6,60 @@ from minindn.apps.app_manager import AppManager
 from minindn.apps.nfd import Nfd
 from minindn.apps.nlsr import Nlsr
 from mininet.topo import Topo
+from shlex import quote
 import os
+
+
+def _nlsr_switch(env_name, default='on'):
+    """Read an on/off NLSR experiment switch. Solution-test default is on."""
+    value = (os.getenv(env_name) or default).strip().lower()
+    if value not in ('on', 'off'):
+        raise ValueError(f'Invalid value for {env_name}: {value} (expected on or off)')
+    return value
+
+
+def _nlsr_infoedit_changes():
+    """Solution-test defaults: both accelerations on. Ablation via env=off."""
+    return [
+        ('neighbors.result-driven-adj-lsa-build',
+         _nlsr_switch('NLSR_RESULT_DRIVEN_ADJ_LSA_BUILD')),
+        ('neighbors.event-driven-adjacency-verification',
+         _nlsr_switch('NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION')),
+    ]
+
+
+def _write_params_file(results_dir, changes):
+    """Record resolved NLSR switches so a result directory identifies the run."""
+    path = os.path.join(results_dir, 'params.txt')
+    with open(path, 'w', encoding='utf-8') as output_file:
+        for key, value in changes:
+            output_file.write(f'{key}={value}\n')
+
+
+class TunableNlsr(Nlsr):
+    """
+    Nlsr wrapper for the Mini-NDN release installed in the test VM.
+
+    That release creates nlsr.conf in its constructor and does not accept infoedit
+    changes, so they are applied afterwards, against the generated file and before the
+    process starts.
+    """
+
+    def __init__(self, node, infoeditChanges=None, **kwargs):
+        super().__init__(node, **kwargs)
+        self._apply_manual_infoedit_changes(infoeditChanges)
+
+    def _apply_manual_infoedit_changes(self, infoedit_changes):
+        if not infoedit_changes:
+            return
+
+        conf_dir = getattr(self, 'homeDir', self.node.params['params']['homeDir'])
+        conf_file = getattr(self, 'confFile', os.path.join(conf_dir, 'nlsr.conf'))
+        for key, value in infoedit_changes:
+            self.node.cmd(
+                f'cd {quote(conf_dir)} && '
+                f'infoedit -f {quote(os.path.basename(conf_file))} -s {quote(key)} -v {quote(value)}'
+            )
 
 
 class BranchTopo(Topo):
@@ -56,6 +109,13 @@ if __name__ == '__main__':
     pcap_dir = os.path.join(results_dir, 'pcap')
     os.makedirs(pcap_dir, exist_ok=True)
 
+    try:
+        nlsr_changes = _nlsr_infoedit_changes()
+    except ValueError as error:
+        print(f"Error: {error}")
+        exit(1)
+    _write_params_file(results_dir, nlsr_changes)
+
     # Clean and verify Mini-NDN
     Minindn.cleanUp()
     Minindn.verifyDependencies()
@@ -67,7 +127,10 @@ if __name__ == '__main__':
     info('Starting NFD on all nodes\n')
     nfds = AppManager(ndn, ndn.net.hosts, Nfd, logLevel='DEBUG')
     info('Starting NLSR on all nodes\n')
-    nlsrs = AppManager(ndn, ndn.net.hosts, Nlsr)
+    # DEBUG matches the main experiment and is what makes the routing-calculation
+    # scheduling lines available; at the default level NLSR emits nothing.
+    nlsrs = AppManager(ndn, ndn.net.hosts, TunableNlsr, logLevel='DEBUG',
+                       infoeditChanges=nlsr_changes)
 
     # Allow routing to converge
     sleep(30)
@@ -118,14 +181,35 @@ if __name__ == '__main__':
     producer.cmd('ndnsec key-gen /LiveStream >/dev/null 2>&1')
     producer.cmd('ndnsec cert-dump -i /LiveStream > /home/vagrant/flooding/experiment/app/livestream-trust-anchor.cert')
 
+    # Dedicated management identity for the OptoFlood daemon's prefix registration.
+    # NFD tracks command-Interest replay per signing key, so the daemon must not sign
+    # with the producer's key. It is provisioned here rather than by the daemon itself:
+    # creating an identity writes to the PIB, and that write would lock the database
+    # while the producer application is initialising its own KeyChain. -n leaves the
+    # node default identity (/LiveStream) untouched, so Data signing is unaffected.
+    producer.cmd('ndnsec key-gen -n /localhost/optoflood >/dev/null 2>&1')
+
     # Launch producer and consumer apps (built under test/ by Makefile prep)
     producer_exec = os.path.join(experiment_dir, 'producer')
     consumer_exec = os.path.join(experiment_dir, 'consumer')
     producer_log = os.path.join(results_dir, 'producer.log')
     consumer_log = os.path.join(results_dir, 'consumer.log')
 
-    producer.cmd(f"{producer_exec} --solution &> {producer_log} &")
+    producer.cmd(f"{producer_exec} &> {producer_log} &")
     consumer.cmd(f"{consumer_exec} &> {consumer_log} &")
+
+    # OptoFlood mobility control daemon (solution control plane). Producer-side
+    # holds the aggregated guard <prefix>/_guard, detects host mobility via Netlink
+    # and arms the local NFD; consumer-side keeps one guard continuously pending.
+    daemon_exec = os.path.join(experiment_dir, 'optoflood-daemon')
+    producer_daemon_log = os.path.join(results_dir, 'optoflood_producer.log')
+    consumer_daemon_log = os.path.join(results_dir, 'optoflood_consumer.log')
+    daemon_env = "GUARD_PREFIX=/LiveStream EXP_GUARD_INTERVAL_MS=1000"
+    producer_daemon_env = daemon_env
+    if _nlsr_switch('NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION') == 'on':
+        producer_daemon_env += " OPTOFLOOD_NLSR_VERIFY_NOW=1"
+    producer.cmd(f"{producer_daemon_env} {daemon_exec} producer &> {producer_daemon_log} &")
+    consumer.cmd(f"{daemon_env} {daemon_exec} consumer &> {consumer_daemon_log} &")
 
     # Warm-up period, then take T0 snapshot
     sleep(60)
@@ -162,6 +246,57 @@ if __name__ == '__main__':
     r3.cmd("pkill -f 'tcpdump -i any' || true")
     r4.cmd("pkill -f 'tcpdump -i any' || true")
     r5.cmd("pkill -f 'tcpdump -i any' || true")
+
+    # Collect the OptoFlood lines of each router's NFD DEBUG log for TFIB
+    # validation (S3/S5). Only the OptoFlood lines are kept to avoid copying the
+    # full DEBUG log.
+    # Lines mentioning the guard name are kept alongside the OptoFlood lines so that
+    # each hop's handling of every individual guard Interest (forwarded, suppressed,
+    # or never received) can be reconstructed; that is what distinguishes a send-side
+    # from a forwarding-side cause when guards reach the producer less often than they
+    # are expressed. Filtering by name keeps the volume small.
+    for node in (r1, r2, r3, r4, r5):
+        home = node.params['params']['homeDir']
+        node.cmd(f"grep -E 'OptoFlood|_guard' {home}/log/nfd.log"
+                 f" > {results_dir}/{node.name}_nfd.log 2>/dev/null || true")
+
+    # Producer/consumer node NFD logs. Besides the OptoFlood data-path lines, the RIB
+    # and command-authenticator lines are kept: the OptoFlood daemon registers its
+    # guard sub-namespace through standard prefix registration, and a registration
+    # failure is only explained by those subsystems.
+    for node in (producer, consumer):
+        home = node.params['params']['homeDir']
+        node.cmd(f"grep -E 'OptoFlood|RibManager|CommandAuthenticator|_guard' {home}/log/nfd.log"
+                 f" > {results_dir}/{node.name}_nfd.log 2>/dev/null || true")
+
+    # NLSR lines that together decompose the interval between a hand-off and the
+    # moment the routing plane carries the new location:
+    #
+    #   HelloProtocol, Face creation event, with face id
+    #       when the adjacency was noticed, and whether a face event prompted it or
+    #       the periodic Hello did; the old side's timeouts appear here too;
+    #       reciprocal validated success may log an immediate Adj-LSA build
+    #   SequencingManager, LSA sequence number from interest
+    #       when the Adjacency LSA was built and when a neighbour first asked for it
+    #   Sync prefix registered
+    #       when the sync bootstrap fired
+    #   TopologyChangeObserver
+    #       which adjacency change the routing plane acted on
+    #   RoutingTable, calculateLinkStateRoutingPath
+    #       every calculation entry and every run, so a scheduled run surviving a
+    #       cancellation would show up as a run without a matching entry
+    #   Adjacency LSA, own Adj LSA, buildAdjLsa
+    #       every build entry and every build, so an immediate build replacing the
+    #       delayed one is distinguishable from an immediate build added beside it
+    for node in (r1, r2, r3, r4, r5, producer, consumer):
+        home = node.params['params']['homeDir']
+        node.cmd("grep -E 'RoutingTable|TopologyChangeObserver|calculateLinkStateRoutingPath"
+                 "|SequencingManager|LSA sequence number from interest|Sync prefix registered"
+                 "|HelloProtocol|Face creation event|with face id"
+                 "|Adjacency LSA|own Adj LSA|buildAdjLsa|Building Adjacency LSA now"
+                 "|ConfParameter|MOBILITY VERIFICATION|ADJ LSA HOLD"
+                 "|HELLO FLOW SUPERSEDE|HELLO VERIFY RESULT|STALE HELLO'"
+                 f" {home}/log/nlsr.log > {results_dir}/{node.name}_nlsr.log 2>/dev/null || true")
 
     ndn.stop()
 

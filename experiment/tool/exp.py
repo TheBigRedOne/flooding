@@ -27,11 +27,31 @@ from minindn.apps.nlsr import Nlsr
 from mininet.topo import Topo
 
 
-# Map NLSR-override env variables to nlsr.conf keys edited via infoedit.
+# Map NLSR-override env variables to nlsr.conf keys edited via infoedit. The
+# first three keys take seconds; sync-interest-lifetime takes milliseconds, so its
+# variable carries an _MS suffix to keep the unit visible at every call site.
 NLSR_INTERVAL_ENV_TO_KEY = {
     'NLSR_HELLO_INTERVAL': 'neighbors.hello-interval',
     'NLSR_ADJ_LSA_BUILD_INTERVAL': 'neighbors.adj-lsa-build-interval',
     'NLSR_ROUTING_CALC_INTERVAL': 'fib.routing-calc-interval',
+    'NLSR_SYNC_INTEREST_LIFETIME_MS': 'general.sync-interest-lifetime',
+}
+
+# Map optional NLSR feature env variables to nlsr.conf keys. Takes 'on' or 'off'.
+# An unset variable leaves the key at the value shipped in nlsr.conf (off).
+# Only the solution NLSR build defines these keys; setting them for a baseline run
+# would edit keys its NLSR does not read.
+NLSR_FEATURE_ENV_TO_KEY = {
+    'NLSR_RESULT_DRIVEN_ADJ_LSA_BUILD': 'neighbors.result-driven-adj-lsa-build',
+    'NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION': 'neighbors.event-driven-adjacency-verification',
+    'NLSR_CORRIDOR_PRIORITISED_ROUTING': 'neighbors.corridor-prioritised-routing',
+}
+
+# Independent optional integer scalars. Unset leaves nlsr.conf untouched.
+# Not part of NLSR_INTERVAL_ENV_TO_KEY: that loader requires the whole set.
+NLSR_SCALAR_ENV_TO_KEY = {
+    'NLSR_CORRIDOR_ADJ_LSA_SYNC_PUBLISH_DELAY': 'neighbors.corridor-adj-lsa-sync-publish-delay',
+    'NLSR_EVENT_DRIVEN_VERIFICATION_TIMEOUT_MS': 'neighbors.event-driven-verification-timeout-ms',
 }
 
 # Defaults preserve the legacy two-handoff baseline so unchanged callers keep
@@ -49,6 +69,20 @@ DEFAULT_HANDOFF_INTERVAL_JITTER = 0.0
 PRODUCER_IDENTITY = '/LiveStream'
 TRUST_ANCHOR_FILE = '/home/vagrant/flooding/experiment/app/livestream-trust-anchor.cert'
 
+# OptoFlood mobility control daemon binary name and the advertised/movable prefix
+# it manages. The daemon holds the aggregated guard <prefix>/_guard and arms the
+# local NFD for this prefix; the value matches the prefix the producer app
+# registers and advertises into NLSR. The daemon is launched only for solution
+# runs, selected by the presence of its binary in the experiment directory.
+OPTOFLOOD_DAEMON = 'optoflood-daemon'
+ADVERTISED_PREFIX = '/LiveStream'
+
+# Signing identity used only for the daemon's prefix-registration command. NFD tracks
+# command-Interest replay per signing key, so the daemon must not share the producer
+# application's key; it is provisioned by the driver because creating an identity
+# writes to the PIB shared with the concurrently starting applications.
+OPTOFLOOD_MGMT_IDENTITY = '/localhost/optoflood'
+
 # Access points that must start down so the experiment begins with the producer
 # attached only via acc2.
 NON_INITIAL_ACCESS_POINTS: Tuple[str, ...] = ('acc3', 'acc4', 'acc5', 'acc6')
@@ -65,9 +99,10 @@ def _load_nlsr_interval_overrides() -> Tuple[Optional[List[Tuple[str, str]]], Di
     """
     Read optional NLSR interval overrides from the environment.
 
-    The three interval variables must either be provided together or omitted
-    together. When present, values are validated as non-negative integers and
-    converted into Mini-NDN infoeditChanges entries.
+    Every variable in NLSR_INTERVAL_ENV_TO_KEY must be provided together or omitted
+    together, so a tuning profile that adds a timer fails loudly on any call site
+    that still sets the older subset. When present, values are validated as
+    non-negative integers and converted into Mini-NDN infoeditChanges entries.
     """
     raw_values = {
         env_name: (os.getenv(env_name) or '').strip()
@@ -99,6 +134,53 @@ def _load_nlsr_interval_overrides() -> Tuple[Optional[List[Tuple[str, str]]], Di
     profile_name = (os.getenv('NLSR_TUNING_PROFILE') or '').strip()
     if profile_name:
         applied_params['profile'] = profile_name
+
+    return infoedit_changes, applied_params
+
+
+def _load_nlsr_feature_overrides() -> Tuple[List[Tuple[str, str]], Dict[str, str]]:
+    """
+    Read the optional NLSR acceleration switches from the environment.
+
+    Each switch is independent, so an unset variable leaves its key untouched rather
+    than forcing the whole set to be given. Accepted values are 'on' and 'off'.
+    """
+    infoedit_changes: List[Tuple[str, str]] = []
+    applied_params: Dict[str, str] = {}
+    for env_name, config_key in NLSR_FEATURE_ENV_TO_KEY.items():
+        value = (os.getenv(env_name) or '').strip().lower()
+        if not value:
+            continue
+        if value not in ('on', 'off'):
+            raise ValueError(f"Invalid value for {env_name}: {value} (expected 'on' or 'off')")
+        infoedit_changes.append((config_key, value))
+        applied_params[config_key] = value
+
+    return infoedit_changes, applied_params
+
+
+def _load_nlsr_scalar_overrides() -> Tuple[List[Tuple[str, str]], Dict[str, str]]:
+    """
+    Read optional independent NLSR integer scalars from the environment.
+
+    Each scalar is independent of interval-profile completeness and of the on/off
+    feature switches. Unset leaves the nlsr.conf value untouched. Values must be
+    non-negative integers; 0 is valid and there is no experiment-policy maximum.
+    """
+    infoedit_changes: List[Tuple[str, str]] = []
+    applied_params: Dict[str, str] = {}
+    for env_name, config_key in NLSR_SCALAR_ENV_TO_KEY.items():
+        value = (os.getenv(env_name) or '').strip()
+        if not value:
+            continue
+        try:
+            parsed = int(value)
+        except ValueError as exc:
+            raise ValueError(f'Invalid integer for {env_name}: {value}') from exc
+        if parsed < 0:
+            raise ValueError(f'Negative value is not allowed for {env_name}: {value}')
+        infoedit_changes.append((config_key, str(parsed)))
+        applied_params[config_key] = str(parsed)
 
     return infoedit_changes, applied_params
 
@@ -187,6 +269,7 @@ def _write_nlsr_params_file(
     request_interval_ms: int,
     window_frames: int,
     segments_per_frame: int,
+    guard_interval_ms: int,
 ) -> None:
     """Persist NLSR tuning parameters and handoff configuration to params.txt."""
     output_path = os.path.join(results_dir, 'params.txt')
@@ -198,6 +281,7 @@ def _write_nlsr_params_file(
     combined['request_interval_ms'] = str(request_interval_ms)
     combined['window_frames'] = str(window_frames)
     combined['segments_per_frame'] = str(segments_per_frame)
+    combined['guard_interval_ms'] = str(guard_interval_ms)
     with open(output_path, 'w', encoding='utf-8') as output_file:
         for key in sorted(combined):
             output_file.write(f'{key}={combined[key]}\n')
@@ -329,10 +413,16 @@ if __name__ == '__main__':
     os.makedirs(pcap_nodes_dir, exist_ok=True)
 
     try:
-        nlsr_infoedit_changes, nlsr_applied_params = _load_nlsr_interval_overrides()
+        interval_changes, nlsr_applied_params = _load_nlsr_interval_overrides()
+        feature_changes, feature_params = _load_nlsr_feature_overrides()
+        scalar_changes, scalar_params = _load_nlsr_scalar_overrides()
     except ValueError as error:
         print(f"Error: {error}")
         exit(1)
+
+    nlsr_infoedit_changes = (interval_changes or []) + feature_changes + scalar_changes
+    nlsr_applied_params.update(feature_params)
+    nlsr_applied_params.update(scalar_params)
 
     try:
         handoff_count, handoff_base, handoff_jitter, handoff_sequence = _load_handoff_config()
@@ -344,6 +434,7 @@ if __name__ == '__main__':
         request_interval_ms = _load_request_interval_ms()
         window_frames = _load_positive_int_env('EXP_WINDOW_FRAMES', 4)
         segments_per_frame = _load_positive_int_env('EXP_SEGMENTS_PER_FRAME', 1)
+        guard_interval_ms = _load_positive_int_env('EXP_GUARD_INTERVAL_MS', 1000)
     except ValueError as error:
         print(f"Error: {error}")
         exit(1)
@@ -358,6 +449,7 @@ if __name__ == '__main__':
         request_interval_ms,
         window_frames,
         segments_per_frame,
+        guard_interval_ms,
     )
     _init_handoffs_file(handoffs_path)
 
@@ -373,7 +465,7 @@ if __name__ == '__main__':
     nlsr_kwargs: Dict[str, Any] = {'logLevel': 'DEBUG'}
     if nlsr_infoedit_changes:
         nlsr_kwargs['infoeditChanges'] = nlsr_infoedit_changes
-        info(f"Applying NLSR interval overrides: {nlsr_applied_params}\n")
+        info(f"Applying NLSR overrides: {nlsr_applied_params}\n")
     nlsrs = AppManager(ndn, ndn.net.hosts, TunableNlsr, **nlsr_kwargs)
     sleep(30)  # allow NLSR initial convergence
 
@@ -392,6 +484,12 @@ if __name__ == '__main__':
     # disabled here, so changing the default identity does not affect advertisement.
     producer.cmd('ndnsec key-gen {} >/dev/null 2>&1'.format(PRODUCER_IDENTITY))
     producer.cmd('ndnsec cert-dump -i {} > {}'.format(PRODUCER_IDENTITY, TRUST_ANCHOR_FILE))
+
+    # Solution runs only: provision the OptoFlood daemon's management identity before
+    # the applications start. -n leaves the node default identity untouched, so the
+    # producer keeps signing Data under PRODUCER_IDENTITY.
+    if os.path.exists(os.path.join(experiment_dir, OPTOFLOOD_DAEMON)):
+        producer.cmd('ndnsec key-gen -n {} >/dev/null 2>&1'.format(OPTOFLOOD_MGMT_IDENTITY))
 
     consumer_pcap = os.path.join(results_dir, "consumer_capture.pcap")
     tcpdump_log = os.path.join(results_dir, "tcpdump.log")
@@ -419,6 +517,25 @@ if __name__ == '__main__':
     producer.cmd(f"{app_env} {producer_exec} &> {producer_log} &")
     consumer.cmd(f"{app_env} {consumer_exec} &> {consumer_log} &")
 
+    # OptoFlood mobility control daemon (solution runs only). The daemon binary is
+    # built into the solution experiment directory but not the baseline one, so its
+    # presence selects the solution configuration without a separate flag. The
+    # producer-side daemon holds the aggregated guard, detects host mobility and
+    # arms the local NFD; the consumer-side daemon keeps one guard continuously
+    # pending at the producer (PIT aggregation collapses all consumers into one).
+    daemon_exec = os.path.join(experiment_dir, OPTOFLOOD_DAEMON)
+    if os.path.exists(daemon_exec):
+        daemon_env = f"GUARD_PREFIX={ADVERTISED_PREFIX} EXP_GUARD_INTERVAL_MS={guard_interval_ms}"
+        producer_daemon_env = daemon_env
+        # Producer daemon sends localhost verify-now only when Commit2 is enabled.
+        event_driven = (os.getenv('NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION') or '').strip().lower()
+        if event_driven == 'on':
+            producer_daemon_env += " OPTOFLOOD_NLSR_VERIFY_NOW=1"
+        producer_daemon_log = os.path.join(results_dir, "optoflood_producer.log")
+        consumer_daemon_log = os.path.join(results_dir, "optoflood_consumer.log")
+        producer.cmd(f"{producer_daemon_env} {daemon_exec} producer &> {producer_daemon_log} &")
+        consumer.cmd(f"{daemon_env} {daemon_exec} consumer &> {consumer_daemon_log} &")
+
     # The handoff loop runs K randomly-spaced toggles along handoff_sequence.
     # The first interval doubles as application warm-up before handoff #1.
     rng = random.SystemRandom()
@@ -429,10 +546,10 @@ if __name__ == '__main__':
         sleep(interval_s)
         next_node = handoff_sequence[index]
         info(f"Handoff #{index}: producer detaches from {current_node}, attaches to {next_node}\n")
-        ndn.net.configLinkStatus('producer', current_node, 'down')
-        ndn.net.configLinkStatus('producer', next_node, 'up')
         abs_time = wall_time()
         rel_time = abs_time - sequence_start_time
+        ndn.net.configLinkStatus('producer', current_node, 'down')
+        ndn.net.configLinkStatus('producer', next_node, 'up')
         _append_handoff_row(
             handoffs_path,
             index,

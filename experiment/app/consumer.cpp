@@ -3,31 +3,45 @@
 #include <ndn-cxx/face.hpp>
 #include <ndn-cxx/interest.hpp>
 #include <ndn-cxx/encoding/tlv.hpp>
+#include <ndn-cxx/encoding/block-helpers.hpp>
 #include <ndn-cxx/security/validator-config.hpp>
 #include <ndn-cxx/util/scheduler.hpp>
 
 #include <boost/asio/io_context.hpp>
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <iostream>
 #include <map>
+#include <optional>
 #include <set>
 #include <unistd.h>
 
 namespace ndn {
 namespace examples {
 
+// Application-level TLV type carrying the producer's current live-edge frame
+// number in Data MetaInfo. Must match the producer (TLV_LIVE_EDGE / 206).
+constexpr uint32_t TLV_LIVE_EDGE = 206;
+
+// Generic name component marking a live-edge discovery Interest (<stream>/_meta).
+// Must match the producer.
+constexpr char DISCOVERY_MARKER[] = "_meta";
+
 /**
- * @brief Pull-based live-stream consumer with a fixed lookahead window.
+ * @brief Pull-based live-stream consumer that tracks the producer live edge via
+ *        Data feedback (no shared clock).
  *
- * The consumer keeps at most EXP_WINDOW_FRAMES frames in flight (one slot per
- * frame). Each frame is a versioned, segmented object
- * (/<stream>/<version=frame>/<segment>): segment 0 is requested first, its
- * FinalBlockId reveals the segment count K, and the remaining segments are then
- * requested. A frame that is not fully received within the per-frame timeout is
- * declared lost. On either completion or loss the window slides forward by one
- * frame, so the number of outstanding (and producer-parked) Interests stays
- * bounded by the window regardless of the production rate.
+ * On join the consumer discovers the current edge with a MustBeFresh
+ * "<stream>/_meta" Interest. It then keeps a lookahead of EXP_WINDOW_FRAMES
+ * frames ahead of the edge, fetching each frame as a versioned, segmented object
+ * (/<stream>/<version=frame>/<segment>): segment 0 first, its FinalBlockId
+ * reveals the segment count K, then the remaining segments. Every received Data
+ * reports the current edge, so the consumer slides its window forward; after a
+ * disruption it jumps to the latest edge (skipping stale frames), which is the
+ * live-streaming "skip to live" behaviour. The frames requested ahead of the
+ * edge are the producer-parked Interests that OptoFlood floods on a hand-off.
  */
 class Consumer : noncopyable
 {
@@ -41,29 +55,40 @@ public:
     m_streamPrefix = Name(rawStreamPrefix && rawStreamPrefix[0] != '\0'
                           ? rawStreamPrefix : "/LiveStream/v0");
 
+    // Initial lookahead; refined adaptively once the RTT is observed (see
+    // updateRttWindow). Serves as the fallback before the first measurement.
     const char* rawWindow = std::getenv("EXP_WINDOW_FRAMES");
     m_windowFrames = rawWindow ? std::atoi(rawWindow) : 4;
     if (m_windowFrames <= 0) {
       m_windowFrames = 4;
     }
 
-    // Frame production period (ms): used to size the per-frame timeout so that
-    // legitimately parked frames are not declared lost before they can be
-    // produced and delivered.
-    const char* rawInterval = std::getenv("EXP_REQUEST_INTERVAL_MS");
-    int framePeriodMs = rawInterval ? std::atoi(rawInterval) : 20;
-    if (framePeriodMs <= 0) {
-      framePeriodMs = 20;
+    // Target number of Interests kept requested ahead of the producer live edge
+    // (producer-parked Interests that OptoFlood floods on a hand-off). The
+    // effective window is target + ceil(RTT / framePeriod), so the parked count
+    // stays near this target independent of path RTT (topology). This replaces a
+    // topology-dependent fixed window with a topology-independent target.
+    const char* rawParked = std::getenv("EXP_TARGET_PARKED");
+    m_targetParked = rawParked ? std::atoi(rawParked) : 4;
+    if (m_targetParked <= 0) {
+      m_targetParked = 4;
     }
 
-    // Per-frame timeout = lookahead (m_windowFrames * framePeriod) plus a reclaim
-    // margin. It is the Interest lifetime and the slot-reclaim deadline, not a
-    // playout/QoE deadline: it is kept well above any playout deadline evaluated
-    // in post-processing (currently <= 1000 ms) so that late-but-delivered frames
-    // stay observable instead of being dropped here.
-    static constexpr int kReclaimMarginMs = 2000;
-    int timeoutMs = m_windowFrames * framePeriodMs + kReclaimMarginMs;
-    m_frameTimeout = time::milliseconds(timeoutMs);
+    // Frame production period (ms): sizes the per-frame timeout and converts the
+    // measured RTT into a number of frames for the effective window.
+    const char* rawInterval = std::getenv("EXP_REQUEST_INTERVAL_MS");
+    m_framePeriodMs = rawInterval ? std::atoi(rawInterval) : 20;
+    if (m_framePeriodMs <= 0) {
+      m_framePeriodMs = 20;
+    }
+
+    // Per-frame timeout = effective lookahead (frames * framePeriod) plus a
+    // reclaim margin. It is the Interest lifetime and the slot-reclaim deadline,
+    // not a playout/QoE deadline: it is kept well above any playout deadline
+    // evaluated in post-processing (currently <= 1000 ms) so that late-but-
+    // delivered frames stay observable instead of being dropped here.
+    m_effectiveWindow = m_windowFrames;
+    m_frameTimeout = time::milliseconds(m_effectiveWindow * m_framePeriodMs + kReclaimMarginMs);
   }
 
   void
@@ -77,13 +102,11 @@ public:
       return;
     }
 
-    std::cout << "[" << nowNs() << "] STARTUP: window " << m_windowFrames
-              << " frames, frame timeout " << m_frameTimeout.count() << " ms" << std::endl;
+    std::cout << "[" << nowNs() << "] STARTUP: target parked " << m_targetParked
+              << " frames, initial window " << m_effectiveWindow
+              << " frames, frame timeout " << m_frameTimeout.count() << " ms (RTT-adaptive)" << std::endl;
 
-    // Prime the lookahead window.
-    for (int i = 0; i < m_windowFrames; ++i) {
-      startFrame(m_nextFrame++);
-    }
+    sendDiscovery();
 
     m_ioContext.run();
   }
@@ -101,6 +124,132 @@ private:
   nowNs()
   {
     return std::chrono::system_clock::now().time_since_epoch().count();
+  }
+
+  // Extract the producer live edge reported in a Data's MetaInfo, if present.
+  static std::optional<uint64_t>
+  readEdge(const Data& data)
+  {
+    const Block* block = data.getMetaInfo().findAppMetaInfo(TLV_LIVE_EDGE);
+    if (block == nullptr) {
+      return std::nullopt;
+    }
+    try {
+      return readNonNegativeInteger(*block);
+    }
+    catch (const tlv::Error&) {
+      return std::nullopt;
+    }
+  }
+
+  // Discover (or re-acquire) the current live edge. Retried until the producer
+  // responds, which also covers start-up and recovery from a long outage.
+  void
+  sendDiscovery()
+  {
+    Name name(m_streamPrefix);
+    name.append(name::Component(DISCOVERY_MARKER));
+
+    Interest interest(name);
+    interest.setCanBePrefix(false);
+    interest.setMustBeFresh(true);
+    interest.setInterestLifetime(1_s);
+
+    m_discoveries++;
+    uint64_t sentNs = nowNs();
+    std::cout << "[" << sentNs << "] DISCOVER: " << name << std::endl;
+
+    // Capture the send time to measure a park-free round-trip on the response.
+    m_face.expressInterest(interest,
+                           [this, sentNs] (const Interest&, const Data& d) { onDiscoveryData(d, sentNs); },
+                           [this] (const Interest&, const lp::Nack&) { scheduleDiscoveryRetry(); },
+                           [this] (const Interest&) { scheduleDiscoveryRetry(); });
+  }
+
+  void
+  scheduleDiscoveryRetry()
+  {
+    m_scheduler.schedule(200_ms, [this] { sendDiscovery(); });
+  }
+
+  void
+  onDiscoveryData(const Data& data, uint64_t sentNs)
+  {
+    // Discovery is a pure network round-trip (no producer parking), so it yields
+    // a clean RTT estimate for sizing the adaptive lookahead window.
+    updateRttWindow(static_cast<double>(nowNs() - sentNs) / 1000000.0);
+
+    auto edge = readEdge(data);
+    if (!edge) {
+      scheduleDiscoveryRetry();
+      return;
+    }
+    std::cout << "[" << nowNs() << "] DISCOVER: live edge = " << *edge << std::endl;
+    m_edgeKnown = true;
+    if (*edge > m_edge) {
+      m_edge = *edge;
+    }
+    if (m_requestedUpTo < m_edge) {
+      m_requestedUpTo = m_edge;   // start requesting from the live edge
+    }
+    ensureWindow();
+  }
+
+  // Refine the effective lookahead from an observed discovery round-trip so that
+  // the number of Interests parked ahead of the live edge stays near
+  // m_targetParked regardless of path RTT. Discovery RTT is used (not frame
+  // delivery latency) because a parked frame's latency includes producer hold
+  // time, which would otherwise create a window/latency feedback loop.
+  void
+  updateRttWindow(double rttMs)
+  {
+    if (rttMs <= 0.0 || rttMs > kMaxPlausibleRttMs) {
+      return;
+    }
+    m_rttEwmaMs = (m_rttEwmaMs <= 0.0) ? rttMs
+                                       : kRttAlpha * rttMs + (1.0 - kRttAlpha) * m_rttEwmaMs;
+
+    int rttFrames = static_cast<int>(std::ceil(m_rttEwmaMs / m_framePeriodMs));
+    int target = m_targetParked + rttFrames;
+    int minWindow = m_targetParked + 1;
+    target = std::max(minWindow, std::min(target, kMaxWindowFrames));
+
+    if (target != m_effectiveWindow) {
+      m_effectiveWindow = target;
+      m_frameTimeout = time::milliseconds(m_effectiveWindow * m_framePeriodMs + kReclaimMarginMs);
+      std::cout << "[" << nowNs() << "] WINDOW: L=" << m_effectiveWindow
+                << " targetParked=" << m_targetParked
+                << " rttEwma_ms=" << m_rttEwmaMs << std::endl;
+      ensureWindow();
+    }
+  }
+
+  // Keep the lookahead window filled: request every frame in (edge, edge + L]
+  // that has not yet been requested, where L is the effective (RTT-adaptive)
+  // window. Frames that fell behind the edge (after a disruption) are skipped
+  // and counted as lost (live "skip to latest").
+  void
+  ensureWindow()
+  {
+    if (!m_edgeKnown) {
+      return;
+    }
+    if (m_requestedUpTo < m_edge) {
+      m_framesSkipped += (m_edge - m_requestedUpTo);
+      m_requestedUpTo = m_edge;
+    }
+    while (m_requestedUpTo < m_edge + static_cast<uint64_t>(m_effectiveWindow)) {
+      startFrame(++m_requestedUpTo);
+    }
+  }
+
+  void
+  updateEdge(uint64_t edge)
+  {
+    if (edge > m_edge) {
+      m_edge = edge;
+      ensureWindow();
+    }
   }
 
   void
@@ -143,13 +292,18 @@ private:
     auto recvTimestamp = nowNs();
     m_segmentsReceived++;
 
+    // Track the live edge reported by the producer (feedback), regardless of
+    // whether this Data belongs to a frame still in the window.
+    if (auto edge = readEdge(data)) {
+      updateEdge(*edge);
+    }
+
     const Name& name = data.getName();
     uint64_t frame = 0;
     uint64_t segment = 0;
     try {
       if (name.size() < 2 || !name.get(-1).isSegment() || !name.get(-2).isVersion()) {
-        std::cerr << "[" << recvTimestamp << "] ERROR: Unexpected Data name: " << name << std::endl;
-        return;
+        return;  // discovery or unexpected name; edge already consumed above
       }
       frame = name.get(-2).toVersion();
       segment = name.get(-1).toSegment();
@@ -174,7 +328,7 @@ private:
 
     auto it = m_frames.find(frame);
     if (it == m_frames.end()) {
-      return;  // frame already completed or lost (late or duplicate segment)
+      return;  // frame already completed, lost, or skipped
     }
     FrameState& st = it->second;
     st.received.insert(segment);
@@ -211,10 +365,11 @@ private:
 
     std::cout << "[" << nowNs() << "] FRAME: delivered frame=" << frame
               << " latency_ms=" << latencyNs / 1000000.0
-              << " (delivered " << m_framesDelivered << ", lost " << m_framesLost << ")" << std::endl;
+              << " (delivered " << m_framesDelivered << ", lost " << m_framesLost
+              << ", skipped " << m_framesSkipped << ")" << std::endl;
 
-    m_frames.erase(it);          // cancels the per-frame deadline event
-    startFrame(m_nextFrame++);   // slide the window forward
+    m_frames.erase(it);   // cancels the per-frame deadline event
+    ensureWindow();
   }
 
   void
@@ -222,15 +377,22 @@ private:
   {
     auto it = m_frames.find(frame);
     if (it == m_frames.end()) {
-      return;                    // already completed
+      return;   // already completed
     }
     m_framesLost++;
 
     std::cerr << "[" << nowNs() << "] FRAME: lost frame=" << frame
-              << " (timeout; delivered " << m_framesDelivered << ", lost " << m_framesLost << ")" << std::endl;
+              << " (timeout; delivered " << m_framesDelivered << ", lost " << m_framesLost
+              << ", skipped " << m_framesSkipped << ")" << std::endl;
 
     m_frames.erase(it);
-    startFrame(m_nextFrame++);   // slide the window forward
+    if (m_frames.empty()) {
+      // Lost the whole window with no feedback source: re-acquire the live edge.
+      sendDiscovery();
+    }
+    else {
+      ensureWindow();
+    }
   }
 
   void
@@ -256,21 +418,35 @@ private:
   ValidatorConfig m_validator;
   Scheduler m_scheduler;
 
-  Name m_streamPrefix;
-  int m_windowFrames = 4;
-  time::milliseconds m_frameTimeout{200};
+  // Adaptive lookahead tuning constants.
+  static constexpr int kReclaimMarginMs = 2000;
+  static constexpr double kRttAlpha = 0.25;         // EWMA weight for new RTT samples
+  static constexpr double kMaxPlausibleRttMs = 5000.0;  // reject implausible RTT samples
+  static constexpr int kMaxWindowFrames = 64;       // upper bound on effective window
 
-  uint64_t m_nextFrame = 0;
+  Name m_streamPrefix;
+  int m_windowFrames = 4;          // configured initial lookahead (fallback)
+  int m_targetParked = 4;          // desired Interests parked ahead of the live edge
+  int m_framePeriodMs = 20;        // frame period; RTT -> frames conversion
+  int m_effectiveWindow = 4;       // current lookahead = targetParked + RTT/framePeriod
+  double m_rttEwmaMs = 0.0;        // smoothed discovery round-trip time
+  time::milliseconds m_frameTimeout{2000};
+
+  uint64_t m_edge = 0;
+  bool m_edgeKnown = false;
+  uint64_t m_requestedUpTo = 0;
   std::map<uint64_t, FrameState> m_frames;
 
   // Statistics for experiment analysis
   uint64_t m_framesRequested = 0;
   uint64_t m_framesDelivered = 0;
   uint64_t m_framesLost = 0;
+  uint64_t m_framesSkipped = 0;
   uint64_t m_interestsSent = 0;
   uint64_t m_segmentsReceived = 0;
   uint64_t m_nacks = 0;
   uint64_t m_timeouts = 0;
+  uint64_t m_discoveries = 0;
 };
 
 } // namespace examples

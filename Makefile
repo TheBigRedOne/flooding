@@ -26,11 +26,11 @@ include Makefile.solution
 include Makefile.exp1
 
 # Baseline NLSR tuning profile dirs (directory prerequisites only; rules live in Makefile.baseline).
-BASELINE_PROFILE_DIRS = results/baseline/g0-h60-a10-r15 \
-                        results/baseline/g1-h54-a9-r14 \
-                        results/baseline/g2-h48-a8-r12 \
-                        results/baseline/g3-h42-a7-r10 \
-                        results/baseline/g4-h36-a6-r9
+BASELINE_PROFILE_DIRS = results/baseline/g0-h60-a10-r15-s60 \
+                        results/baseline/g1-h54-a9-r14-s54 \
+                        results/baseline/g2-h48-a8-r12-s48 \
+                        results/baseline/g3-h42-a7-r10-s42 \
+                        results/baseline/g4-h36-a6-r9-s36
 
 MAIN_RESULT_OUTPUTS := $(BASELINE_DEFAULT_DIR)/disruption_times.pdf \
                        $(BASELINE_DEFAULT_DIR)/disruption_metrics.txt \
@@ -122,10 +122,11 @@ test: test/.validate_ok
 
 test/.validate_ok: test/Makefile test/Vagrantfile test/exp_test.py test/validate.py \
              experiment/app/producer.cpp experiment/app/consumer.cpp \
+             experiment/app/optoflood-daemon.cpp \
              experiment/app/trust-schema.conf experiment/tool/ndn.lua \
              box/solution/solution.$(PROVIDER).box \
              | $(BASELINE_RAW_OUTPUTS)
-	$(MAKE) -C test PROVIDER=$(PROVIDER) test-all
+	$(MAKE) -C test PROVIDER=$(PROVIDER) SOLUTION_NLSR_RESULT_DRIVEN=$(SOLUTION_NLSR_RESULT_DRIVEN) SOLUTION_NLSR_EVENT_DRIVEN_VERIFICATION=$(SOLUTION_NLSR_EVENT_DRIVEN_VERIFICATION) test-all
 
 # Plot only (reuse existing CSVs; no VM run)
 plot: plot-baseline plot-main

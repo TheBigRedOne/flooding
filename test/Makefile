@@ -1,6 +1,12 @@
 PROVIDER ?= virtualbox
 export PROVIDER
 
+# Canonical host knob (same names as Makefile.solution). Solution-test default ON.
+SOLUTION_NLSR_RESULT_DRIVEN ?= on
+SOLUTION_NLSR_EVENT_DRIVEN_VERIFICATION ?= on
+NLSR_RESULT_DRIVEN_ADJ_LSA_BUILD ?= $(SOLUTION_NLSR_RESULT_DRIVEN)
+NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION ?= $(SOLUTION_NLSR_EVENT_DRIVEN_VERIFICATION)
+
 # Purpose: Run solution VM validations (S1–S5) and manage VM lifecycle
 # Interface: test-all, validate-s[1..5], vm-up|vm-halt|vm-destroy; PROVIDER=kvm|vb
 
@@ -12,6 +18,7 @@ SYNC_INPUTS := \
 	../test/validate.py \
 	../experiment/app/producer.cpp \
 	../experiment/app/consumer.cpp \
+	../experiment/app/optoflood-daemon.cpp \
 	../experiment/app/trust-schema.conf \
 	../experiment/tool/ndn.lua
 
@@ -64,8 +71,9 @@ $(PCAPS) $(RIBS) ../test/results/.validate_ok_vm &: ../test/.sync_solution_$(PRO
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh-config --host solution > .ssh_config_solution
 	# Build apps inside VM from rsynced sources under /home/vagrant/flooding
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh -c 'set -e; test -d /home/vagrant/flooding/experiment/app || (echo "rsync failed: /home/vagrant/flooding/experiment/app missing" && exit 1)'
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh -c 'set -e; cd /home/vagrant/flooding/test && rm -f producer consumer && PKG="$$(pkg-config --cflags --libs libndn-cxx)" && g++ -std=c++17 -g -O2 -DSOLUTION_ENABLED -o producer /home/vagrant/flooding/experiment/app/producer.cpp $$PKG && chmod -v +x producer'
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh -c 'set -e; cd /home/vagrant/flooding/test && PKG="$$(pkg-config --cflags --libs libndn-cxx)" && g++ -std=c++17 -g -O2 -DSOLUTION_ENABLED -o consumer /home/vagrant/flooding/experiment/app/consumer.cpp $$PKG && chmod -v +x consumer'
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh -c 'set -e; cd /home/vagrant/flooding/test && rm -f producer consumer optoflood-daemon && PKG="$$(pkg-config --cflags --libs libndn-cxx)" && g++ -std=c++17 -g -O2 -o producer /home/vagrant/flooding/experiment/app/producer.cpp $$PKG && chmod -v +x producer'
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh -c 'set -e; cd /home/vagrant/flooding/test && PKG="$$(pkg-config --cflags --libs libndn-cxx)" && g++ -std=c++17 -g -O2 -o consumer /home/vagrant/flooding/experiment/app/consumer.cpp $$PKG && chmod -v +x consumer'
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh -c 'set -e; cd /home/vagrant/flooding/test && PKG="$$(pkg-config --cflags --libs libndn-cxx)" && g++ -std=c++17 -g -O2 -o optoflood-daemon /home/vagrant/flooding/experiment/app/optoflood-daemon.cpp $$PKG && chmod -v +x optoflood-daemon'
 	# Ensure trust schema is available beside binaries (fail if missing)
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh -c 'set -e; test -f /home/vagrant/flooding/experiment/app/trust-schema.conf && cp -f /home/vagrant/flooding/experiment/app/trust-schema.conf /home/vagrant/flooding/test/'
 	# Ensure tshark loads updated NDN dissector (ndn.lua)
@@ -73,7 +81,7 @@ $(PCAPS) $(RIBS) ../test/results/.validate_ok_vm &: ../test/.sync_solution_$(PRO
 	# Preflight check for tshark presence
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh -c 'EXPERIMENT_DIR=/home/vagrant/flooding/test WIRESHARK_RUN_FROM_BUILD_DIRECTORY=1 WIRESHARK_PLUGIN_DIR= /usr/bin/sudo -E tshark -v >/dev/null 2>&1'
 	# Run test topology; generate artifacts under /home/vagrant/flooding/test
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh -c 'EXPERIMENT_DIR=/home/vagrant/flooding/test WIRESHARK_RUN_FROM_BUILD_DIRECTORY=1 WIRESHARK_PLUGIN_DIR= LUA_PATH="/usr/local/share/ndn-dissect-wireshark/?.lua;;" LUA_CPATH=";;" /usr/bin/sudo -E python3 /home/vagrant/flooding/test/exp_test.py'
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh -c 'EXPERIMENT_DIR=/home/vagrant/flooding/test NLSR_RESULT_DRIVEN_ADJ_LSA_BUILD=$(NLSR_RESULT_DRIVEN_ADJ_LSA_BUILD) NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION=$(NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION) WIRESHARK_RUN_FROM_BUILD_DIRECTORY=1 WIRESHARK_PLUGIN_DIR= LUA_PATH="/usr/local/share/ndn-dissect-wireshark/?.lua;;" LUA_CPATH=";;" /usr/bin/sudo -E python3 /home/vagrant/flooding/test/exp_test.py'
 	# Ensure result directories exist in VM
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh -c 'mkdir -p /home/vagrant/flooding/test/results/pcap'
 	# Run validation inside VM (uses system python3 + tshark in box)
@@ -117,9 +125,10 @@ validate-s4:
 	@echo "[S4] Validating Interest HopLimit decrement under miss";
 	python3 validate.py s4 || (echo "S4 FAIL" && exit 1)
 
-# S5: Fast-LSA (mgmt command + short-lived RIB with throttling/dedup)
+# S5: TFIB handover in two phases (standby once ordinary forwarding agrees,
+# release on NLSR new-path-calculated + fib-agrees)
 validate-s5:
-	@echo "[S5] Validating Fast-LSA throttle/dedup and short-lived RIB";
+	@echo "[S5] Validating TFIB standby and release on new-path-calculated";
 	python3 validate.py s5 || (echo "S5 FAIL" && exit 1)
 
 .PHONY: kvm vb
