@@ -146,7 +146,7 @@ The baseline experiments use ordinary NDN forwarding and NLSR with OptoFlood dis
 
 Several stages of ordinary routing convergence are affected by configurable timing parameters. We vary four of these parameters in the baseline experiments. The NLSR Hello interval controls periodic neighbour verification. The Adj-LSA build delay controls how long NLSR waits before constructing a scheduled adjacency LSA. The routing calculation delay controls how long NLSR waits before a scheduled route recalculation. The PSync Sync Interest lifetime affects the timing of the synchronisation process used to disseminate routing updates \cite{zhang:2017:psync}.
 
-The four timing parameters are progressively reduced across five configurations. Values are reported in the order of Hello interval, Adj-LSA build delay, routing calculation delay, and PSync Sync Interest lifetime. G0 uses the default values of 60 s, 10 s, 15 s, and 60 s. G1 uses 54 s, 9 s, 14 s, and 54 s; G2 uses 48 s, 8 s, 12 s, and 48 s; G3 uses 42 s, 7 s, 10 s, and 42 s; and G4 uses 36 s, 6 s, 9 s, and 36 s.
+The four timing parameters are progressively reduced across five configurations. Values are reported in the order of Hello interval, Adj-LSA build delay, routing calculation delay, and PSync Sync Interest lifetime. G0 uses the default values of 60 s, 10 s, 15 s, and 60 s. G1 uses 54 s, 9 s, 14 s, and 54 s; G2 uses 48 s, 8 s, 12 s, and 48 s; G3 uses 42 s, 7 s, 10 s, and 42 s; and G4 uses 36 s, 6 s, 9 s, and 36 s. \ryo{this should be a small table}
 
 These baseline measurements use the three-layer access-network topology shown in Figure~\ref{exp_topo}. A fixed consumer retrieves a stream from a producer that performs hand-offs across the access nodes during the run.
 
@@ -157,7 +157,7 @@ Figure~\ref{fig:baseline_nlsr_network_cost_comparison} shows the corresponding f
 \begin{figure}
     \centering
     \includegraphics[width=0.8\columnwidth]{results/baseline/disruption_comparison.pdf}
-    \caption{Service disruption under baseline NDN forwarding with different routing timing parameters; G0 (default) to G4 (lowest tested timing values).}
+    \caption{Service disruption under baseline NDN forwarding with different routing timing parameters; G0 (default) to G4 (lowest tested timing values). \ryo{this should be a box plot and be part of other sub-plots}}
     \label{fig:baseline_nlsr_disruption_comparison}
 \end{figure}
 
