@@ -103,7 +103,7 @@ Producer mobility in NDN can disrupt both Interest forwarding and Data return. A
 \subsection{NDN Forwarding and Routing}
 \label{sec:problem:forwarding}
 
-NDN packet delivery relies on the interaction between the data plane and the control plane. In the data plane, packets are forwarded using content names and forwarding state maintained by NDN forwarders \cite{xylomenos:2014:icn-survey, zhang:2014:ndn}. In NDN, communication relies on two core packet types: Interest Packets, sent by consumers to request data by specifying the content name, and Data Packets, returned in response to Interests and carrying the requested content and related metadata  \cite{jacobson:2009:named-content, zhang:2014:ndn}. Both use Type-Length-Value (TLV) encoding \cite{ndn:packet-format}.
+NDN packet delivery relies on the interaction between the data plane and the control plane. In the data plane, packets are forwarded using content names and forwarding state maintained by NDN forwarders \cite{xylomenos:2014:icn-survey, zhang:2014:ndn}. In NDN, communication relies on two core packet types: Interest Packets, sent by consumers to request data by specifying the content name, and Data Packets, returned in response to Interests and carrying the requested content and related metadata  \cite{jacobson:2009:named-content, zhang:2014:ndn}.
 
 \begin{figure}[t]
     \centering
@@ -114,9 +114,13 @@ NDN packet delivery relies on the interaction between the data plane and the con
 
 NDN forwarders (Figure \ref{fig:NDN Packets Processing Flow}) maintain a Content Store that caches Data packets; a Pending Interest Table (PIT) that records state for forwarded Interests and enables matching Data to be returned along the reverse path; and a Forwarding Information Base (FIB) that guides Interest forwarding \cite{yi:2013:stateful-forwarding, zhang:2014:ndn}.
 
-When an Interest arrives at a forwarder, the forwarder checks the Content Store and returns cached Data if available. Otherwise, the forwarder checks the PIT to determine whether a matching Interest is already pending. If the Interest is new, it is forwarded based on the FIB.
+When an Interest arrives at a forwarder, the forwarder checks the Content Store and returns cached Data if available. Otherwise, the forwarder checks the PIT to determine whether a matching Interest is already pending. If the Interest is new, it is forwarded based on the FIB. The FIB is populated from routing information produced by the Named-Data Link State Routing protocol (NLSR).
 
-In the control plane, the Named-Data Link State Routing protocol (NLSR) disseminates link-state and prefix-reachability information using Link State Advertisements (LSAs). NLSR uses this information to calculate routes, which are subsequently reflected in the FIB. Following a topology change, NLSR verifies the affected adjacency state and constructs updated routing information. The update is disseminated through NLSR's synchronisation process, after which routes are recalculated and the forwarding state is updated \cite{hoque:2013:nlsr}. Neighbour verification, Adj-LSA construction, synchronisation, and route calculation may introduce control-plane waiting.
+In the control plane, NLSR is a link-state routing protocol for NDN. Routers advertise local adjacency state using Adj-LSAs and name-prefix reachability using Name-LSAs. Received LSAs are stored in a local Link State Database (LSDB), from which NLSR calculates routes \cite{hoque:2013}.
+
+NLSR periodically verifies configured neighbours using Hello exchanges. The Hello interval controls the timing of this periodic verification. A change in verified adjacency state causes NLSR to schedule construction of an updated Adj-LSA. The Adj-LSA build delay allows closely spaced adjacency changes to be collected before the updated LSA is constructed.
+
+NLSR uses PSync to synchronise information about available LSA versions \cite{zhang:2017}. A router that learns of a newer LSA version retrieves and validates the corresponding signed LSA before installing it in the LSDB. The PSync Sync Interest lifetime affects the timing of FullSync re-expression. After new topology information is installed, NLSR schedules route calculation and subsequently updates the FIB. The routing calculation delay determines how long a scheduled calculation waits before it runs.
 
 \subsection{Producer Mobility and Routing Convergence}
 \label{sec:problem:mobility}
@@ -142,13 +146,32 @@ These forwarding failures can have several consequences:
 
 Consider a live-video producer that moves between access nodes while maintaining an ongoing stream. Ordinary routing can eventually restore reachability after each hand-off, but convergence takes time. If the producer changes attachment again before routing has converged from the previous movement, the network may still contain forwarding and routing state that reflects an earlier attachment. Ordinary NDN routing is therefore poorly suited to producer-mobility scenarios in which attachment changes occur on a timescale comparable to or shorter than routing convergence.
 
-The baseline experiments use ordinary NDN forwarding and NLSR with OptoFlood disabled. They first quantify the service disruption caused by producer movement under native routing. We then reduce the main NLSR and PSync timing parameters to determine whether more aggressive routing configuration alone can provide sufficiently fast recovery, and to observe the associated control-plane cost.
+To demonstrate this, we measure the disruption caused by producer movement under ordinary NDN forwarding and routing. We first use the default NLSR and PSync configuration, and then repeat the same experiment with progressively reduced timing parameters. This tests whether more aggressive routing configuration alone can provide sufficiently fast recovery, and shows the control-plane cost of doing so.
 
-Several stages of ordinary routing convergence are affected by configurable timing parameters. We vary four of these parameters in the baseline experiments. The NLSR Hello interval controls periodic neighbour verification. The Adj-LSA build delay controls how long NLSR waits before constructing a scheduled adjacency LSA. The routing calculation delay controls how long NLSR waits before a scheduled route recalculation. The PSync Sync Interest lifetime affects the timing of the synchronisation process used to disseminate routing updates \cite{zhang:2017:psync}.
+Only the NLSR Hello interval, Adj-LSA build delay, routing calculation delay, and PSync Sync Interest lifetime are varied between configurations. Table~\ref{tab:baseline_configurations} summarises the five configurations.
 
-The four timing parameters are progressively reduced across five configurations. Values are reported in the order of Hello interval, Adj-LSA build delay, routing calculation delay, and PSync Sync Interest lifetime. G0 uses the default values of 60 s, 10 s, 15 s, and 60 s. G1 uses 54 s, 9 s, 14 s, and 54 s; G2 uses 48 s, 8 s, 12 s, and 48 s; G3 uses 42 s, 7 s, 10 s, and 42 s; and G4 uses 36 s, 6 s, 9 s, and 36 s. \ryo{this should be a small table}
+\begin{table}[t]
+    \centering
+    \caption{Baseline NDN forwarding and routing configurations}
+    \label{tab:baseline_configurations}
+    \begin{tabular}{|c|c|c|c|c|}
+        \hline
+        Config. & Hello & Adj-LSA & Route calc. & Sync lifetime \\
+        \hline
+        G0 & 60 s & 10 s & 15 s & 60 s \\
+        \hline
+        G1 & 54 s & 9 s & 14 s & 54 s \\
+        \hline
+        G2 & 48 s & 8 s & 12 s & 48 s \\
+        \hline
+        G3 & 42 s & 7 s & 10 s & 42 s \\
+        \hline
+        G4 & 36 s & 6 s & 9 s & 36 s \\
+        \hline
+    \end{tabular}
+\end{table}
 
-These baseline measurements use the three-layer access-network topology shown in Figure~\ref{exp_topo}. A fixed consumer retrieves a stream from a producer that performs hand-offs across the access nodes during the run.
+The experiments use the three-layer access-network topology shown in Figure~\ref{exp_topo}. The consumer remains fixed while the producer performs hand-offs between access nodes during an ongoing stream. The same topology, traffic pattern, and hand-off sequence are used for all five configurations so that differences in service disruption and control-plane cost can be attributed to the timing parameters in Table~\ref{tab:baseline_configurations}.
 
 Figure~\ref{fig:baseline_nlsr_disruption_comparison} compares the observed service disruption across the five configurations. G4 reduces disruption relative to the default configuration (G0) for some hand-offs. However, disruption still remains on the order of tens of seconds.
 
