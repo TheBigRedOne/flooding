@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """
-Plot baseline parameter-set network cost comparison from the summary CSV.
+Plot one baseline parameter-set network-cost panel from the summary CSV.
+
+The script emits a single PDF for either full-run FCR or NLSR control traffic,
+using the same summary fields and conversions as the former combined figure.
 """
 
 from __future__ import annotations
@@ -8,28 +11,37 @@ from __future__ import annotations
 import argparse
 import csv
 import os
-from typing import List
+from typing import List, Sequence, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
 
 
 CM_TO_INCH = 1.0 / 2.54
-PAPER_FIGURE_WIDTH_CM = 8.0
-PAPER_FIGURE_HEIGHT_CM = 8.0
+# Sized for one panel in a full-width IEEE three-subfigure figure.
+PAPER_FIGURE_WIDTH_CM = 6.0
+PAPER_FIGURE_HEIGHT_CM = 5.0
 FONT_SIZE = 8
 AXIS_LABEL_SIZE = 8
 AXIS_TITLE_SIZE = 8
 TICK_LABEL_SIZE = 8
 FIGURE_TITLE_SIZE = 8
+FCR_BAR_COLOR = "crimson"
+CONTROL_BAR_COLOR = "slateblue"
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Plot FCR and NLSR control cost across baseline parameter sets."
+        description="Plot one of FCR or NLSR control cost across baseline parameter sets."
     )
     parser.add_argument("--input", required=True, help="Input summary CSV.")
     parser.add_argument("--output", required=True, help="Output PDF path.")
+    parser.add_argument(
+        "--metric",
+        required=True,
+        choices=("fcr", "control"),
+        help="Which single-panel figure to emit.",
+    )
     return parser.parse_args()
 
 
@@ -77,6 +89,37 @@ def _safe_empty_output(path: str) -> None:
     plt.close(fig)
 
 
+def _collect_valid_rows(rows: Sequence[dict]) -> List[Tuple[str, float, float]]:
+    """Return rows where both FCR and control bytes are numeric, preserving CSV order."""
+    valid_rows: List[Tuple[str, float, float]] = []
+    for row in rows:
+        fcr = _to_optional_float(row.get("full_run_fcr"))
+        control = _to_optional_float(row.get("full_run_control_bytes"))
+        if fcr is None or control is None:
+            continue
+        valid_rows.append((row["profile_label"], fcr, control))
+    return valid_rows
+
+
+def _draw_bar_panel(labels: Sequence[str], values: Sequence[float], color: str, ylabel: str, output: str, plain_y: bool) -> None:
+    """Render one labelled bar panel and write it to output."""
+    x = np.arange(len(labels))
+    _configure_paper_style()
+    fig, ax = plt.subplots(figsize=_paper_figure_size())
+    ax.bar(x, values, color=color)
+    ax.set_xlabel("Baseline Parameter Group")
+    ax.set_ylabel(ylabel)
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels)
+    ax.set_ylim(bottom=0)
+    ax.grid(True, axis="y", linestyle="--", alpha=0.7)
+    if plain_y:
+        ax.ticklabel_format(style="plain", axis="y", useOffset=False)
+    fig.tight_layout()
+    plt.savefig(output)
+    plt.close(fig)
+
+
 def main() -> int:
     args = parse_args()
     os.makedirs(os.path.dirname(args.output), exist_ok=True)
@@ -90,54 +133,28 @@ def main() -> int:
         _safe_empty_output(args.output)
         return 0
 
-    valid_rows = [
-        (
-            row,
-            _to_optional_float(row.get("full_run_fcr")),
-            _to_optional_float(row.get("full_run_control_bytes")),
-        )
-        for row in rows
-    ]
-    valid_rows = [(row, fcr, control) for row, fcr, control in valid_rows if fcr is not None and control is not None]
+    valid_rows = _collect_valid_rows(rows)
     if not valid_rows:
         _safe_empty_output(args.output)
         return 0
 
-    labels = [row["profile_label"] for row, _, _ in valid_rows]
-    fcr_values = [fcr for _, fcr, _ in valid_rows]
+    labels = [label for label, _, _ in valid_rows]
+    if args.metric == "fcr":
+        values = [fcr for _, fcr, _ in valid_rows]
+        _draw_bar_panel(labels, values, FCR_BAR_COLOR, "Full-run FCR", args.output, False)
+        return 0
+
     # Display control bytes in MB to suppress matplotlib's 1e6 offset annotation
     # and to keep tick labels readable.
     control_values_mb = [control / 1_000_000.0 for _, _, control in valid_rows]
-    x = np.arange(len(valid_rows))
-
-    _configure_paper_style()
-    fig, (ax_fcr, ax_control) = plt.subplots(
-        2,
-        1,
-        figsize=_paper_figure_size(),
-        gridspec_kw={"height_ratios": [1.0, 1.2]},
+    _draw_bar_panel(
+        labels,
+        control_values_mb,
+        CONTROL_BAR_COLOR,
+        "NLSR Control Bytes (MB)",
+        args.output,
+        True,
     )
-
-    ax_fcr.bar(x, fcr_values, color="crimson")
-    ax_fcr.set_ylabel("Full-run FCR")
-    ax_fcr.set_title("Baseline Parameter-Set Network Cost")
-    ax_fcr.set_xticks(x)
-    ax_fcr.set_xticklabels(labels)
-    ax_fcr.set_ylim(bottom=0)
-    ax_fcr.grid(True, axis="y", linestyle="--", alpha=0.7)
-
-    ax_control.bar(x, control_values_mb, color="slateblue")
-    ax_control.set_xlabel("Baseline Parameter Group")
-    ax_control.set_ylabel("NLSR Control Bytes (MB)")
-    ax_control.set_xticks(x)
-    ax_control.set_xticklabels(labels)
-    ax_control.set_ylim(bottom=0)
-    ax_control.grid(True, axis="y", linestyle="--", alpha=0.7)
-    ax_control.ticklabel_format(style="plain", axis="y", useOffset=False)
-
-    fig.tight_layout()
-    plt.savefig(args.output)
-    plt.close(fig)
     return 0
 
 
