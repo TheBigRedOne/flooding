@@ -1,16 +1,22 @@
 #!/usr/bin/env python3
 """
-Plot disruption-time min/max/mean comparison across baseline parameter sets.
+Plot per-handoff service-disruption box plots across baseline parameter sets.
+
+Each box is the distribution of per-handoff disruption values read from that
+profile's disruption_metrics.txt. Those values are the recorded observations
+for the fixed mobility sequence, not run-to-run replicates.
 """
 
 from __future__ import annotations
 
 import argparse
-import csv
 import os
-from typing import List, Optional, Tuple
+import re
+import sys
+from typing import List, Sequence, Tuple
 
 import matplotlib.pyplot as plt
+from matplotlib.cbook import boxplot_stats
 import numpy as np
 
 
@@ -22,21 +28,32 @@ FONT_SIZE = 8
 AXIS_LABEL_SIZE = 8
 AXIS_TITLE_SIZE = 8
 TICK_LABEL_SIZE = 8
-LEGEND_SIZE = 8
 FIGURE_TITLE_SIZE = 8
-RANGE_BAR_WIDTH = 0.55
-RANGE_BAR_COLOR = "#7fb8e0"
-RANGE_BAR_EDGECOLOR = "#0072B2"
-MEAN_LINE_COLOR = "#0b3d66"
-MEAN_LINE_WIDTH = 1.4
+BOX_WIDTH = 0.55
+BOX_FACECOLOR = "#7fb8e0"
+BOX_EDGECOLOR = "#0072B2"
+MEDIAN_COLOR = "#0b3d66"
+MEDIAN_LINEWIDTH = 1.4
+EXPECTED_PROFILE_COUNT = 5
+EXPECTED_HANDOFF_COUNT = 16
+WHIS = 1.5
+
+
+class DisruptionMetricsError(Exception):
+    """Raised when a profile's disruption_metrics.txt cannot be used for the paper figure."""
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse the summary CSV input and the output PDF path."""
+    """Parse the baseline result root, profile list, and output PDF path."""
     parser = argparse.ArgumentParser(
-        description="Plot min/max/mean disruption across baseline parameter sets."
+        description="Plot per-handoff disruption box plots across baseline parameter sets."
     )
-    parser.add_argument("--input", required=True, help="Input summary CSV.")
+    parser.add_argument("--root-dir", required=True, help="Root directory containing per-profile result folders.")
+    parser.add_argument(
+        "--profiles",
+        required=True,
+        help="Comma-separated profile directory names in the desired output order.",
+    )
     parser.add_argument("--output", required=True, help="Output PDF path.")
     return parser.parse_args()
 
@@ -55,99 +72,150 @@ def _configure_paper_style():
         "axes.titlesize": AXIS_TITLE_SIZE,
         "xtick.labelsize": TICK_LABEL_SIZE,
         "ytick.labelsize": TICK_LABEL_SIZE,
-        "legend.fontsize": LEGEND_SIZE,
         "figure.titlesize": FIGURE_TITLE_SIZE,
     })
     plt.rcParams["pdf.use14corefonts"] = True
     plt.rcParams["font.family"] = "serif"
 
 
-def _read_rows(path: str) -> List[dict]:
-    """Read the summary CSV into a list of row dictionaries."""
-    with open(path, "r", encoding="utf-8", newline="") as input_file:
-        return list(csv.DictReader(input_file))
+def _profile_prefix(profile: str) -> str:
+    """Return the compact profile prefix used as the plot label."""
+    return profile.split("-", 1)[0].upper()
 
 
-def _to_optional_float(raw: str) -> Optional[float]:
-    """Convert a CSV field to float, returning None for 'n/a'/empty."""
-    if raw is None:
-        return None
-    text = raw.strip()
-    if not text or text.lower() == "n/a":
-        return None
-    try:
-        return float(text)
-    except ValueError:
-        return None
+def _load_disruption_values(path: str, profile: str) -> List[float]:
+    """Read per-handoff disruption values (ms) from one metrics text file.
+
+    Every non-empty line must be a parseable disruption observation. Missing files,
+    unparseable records, and counts other than EXPECTED_HANDOFF_COUNT are errors.
+    """
+    if not os.path.exists(path):
+        raise DisruptionMetricsError(f"{profile}: missing {path}")
+
+    values: List[float] = []
+    with open(path, "r", encoding="utf-8") as metrics_file:
+        for line_number, raw_line in enumerate(metrics_file, start=1):
+            text = raw_line.strip()
+            if not text:
+                continue
+            if "Disruption Time:" not in text:
+                raise DisruptionMetricsError(
+                    f"{profile}: line {line_number} is not a disruption observation: {text!r}"
+                )
+            token = text.split("Disruption Time:", 1)[1].strip().split()
+            if not token:
+                raise DisruptionMetricsError(
+                    f"{profile}: line {line_number} has no disruption value: {text!r}"
+                )
+            try:
+                values.append(float(token[0]))
+            except ValueError as exc:
+                raise DisruptionMetricsError(
+                    f"{profile}: line {line_number} has an unparseable disruption value: {text!r}"
+                ) from exc
+
+    if len(values) != EXPECTED_HANDOFF_COUNT:
+        raise DisruptionMetricsError(
+            f"{profile}: n={len(values)} (expected {EXPECTED_HANDOFF_COUNT})"
+        )
+    return values
 
 
-def _safe_empty_output(path: str) -> None:
-    """Write a valid empty PDF placeholder when input data is unusable."""
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    _configure_paper_style()
-    fig, _ = plt.subplots(figsize=_paper_figure_size())
-    fig.savefig(path)
-    plt.close(fig)
-
-
-def _collect_valid_rows(rows: List[dict]) -> List[Tuple[str, float, float, float]]:
-    """Return rows where min/max/mean are all numeric, preserving CSV order."""
-    valid: List[Tuple[str, float, float, float]] = []
-    for row in rows:
-        label = row.get("profile_label", "").strip() or row.get("profile", "").strip()
-        dis_min = _to_optional_float(row.get("disruption_min_ms", ""))
-        dis_max = _to_optional_float(row.get("disruption_max_ms", ""))
-        dis_mean = _to_optional_float(row.get("disruption_mean_ms", ""))
-        if dis_min is None or dis_max is None or dis_mean is None:
+def _collect_profile_series(root_dir: str, profiles: Sequence[str]) -> List[Tuple[str, str, List[float]]]:
+    """Load per-handoff observations for each profile, preserving profile order."""
+    series: List[Tuple[str, str, List[float]]] = []
+    errors: List[str] = []
+    for profile in profiles:
+        path = os.path.join(root_dir, profile, "disruption_metrics.txt")
+        try:
+            values = _load_disruption_values(path, profile)
+        except DisruptionMetricsError as exc:
+            errors.append(str(exc))
             continue
-        valid.append((label, dis_min, dis_max, dis_mean))
-    return valid
+        series.append((profile, _profile_prefix(profile), values))
+    if errors:
+        raise DisruptionMetricsError(
+            "baseline disruption comparison requires exactly "
+            f"{EXPECTED_HANDOFF_COUNT} valid per-handoff observations "
+            f"in each of {EXPECTED_PROFILE_COUNT} profiles:\n  " + "\n  ".join(errors)
+        )
+    return series
+
+
+def _report_series(series: Sequence[Tuple[str, str, List[float]]]) -> None:
+    """Print observation counts and Tukey 1.5-IQR outliers for the audit log."""
+    for profile, label, values in series:
+        stats = boxplot_stats(values, whis=WHIS)[0]
+        fliers = [float(value) for value in stats["fliers"]]
+        print(
+            f"{label} ({profile}): n={len(values)} "
+            f"median={float(stats['med']):.2f} "
+            f"Q1={float(stats['q1']):.2f} Q3={float(stats['q3']):.2f} "
+            f"whislo={float(stats['whislo']):.2f} whishi={float(stats['whishi']):.2f} "
+            f"outliers={fliers}"
+        )
 
 
 def main() -> int:
-    """Render the disruption-range comparison figure."""
+    """Render the per-handoff disruption box-plot comparison figure."""
     args = parse_args()
-    os.makedirs(os.path.dirname(args.output), exist_ok=True)
+    profiles = [profile.strip() for profile in re.split(r"[,\s]+", args.profiles) if profile.strip()]
+    if len(profiles) != EXPECTED_PROFILE_COUNT:
+        print(
+            "baseline disruption comparison requires exactly "
+            f"{EXPECTED_PROFILE_COUNT} profiles, got {len(profiles)}: {profiles}",
+            file=sys.stderr,
+        )
+        return 1
 
-    if not os.path.exists(args.input):
-        _safe_empty_output(args.output)
-        return 0
+    try:
+        series = _collect_profile_series(args.root_dir, profiles)
+    except DisruptionMetricsError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
 
-    rows = _read_rows(args.input)
-    valid_rows = _collect_valid_rows(rows)
-    if not valid_rows:
-        _safe_empty_output(args.output)
-        return 0
+    _report_series(series)
+    parent = os.path.dirname(args.output)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
 
-    labels = [item[0] for item in valid_rows]
-    mins = [item[1] for item in valid_rows]
-    maxs = [item[2] for item in valid_rows]
-    means = [item[3] for item in valid_rows]
-    x = np.arange(len(valid_rows))
+    labels = [label for _, label, _ in series]
+    data = [values for _, _, values in series]
+    x = np.arange(len(series))
 
     _configure_paper_style()
     fig, ax = plt.subplots(figsize=_paper_figure_size())
-
-    heights = [hi - lo for lo, hi in zip(mins, maxs)]
-    ax.bar(
-        x,
-        heights,
-        width=RANGE_BAR_WIDTH,
-        bottom=mins,
-        color=RANGE_BAR_COLOR,
-        edgecolor=RANGE_BAR_EDGECOLOR,
-        linewidth=0.8,
-        label="Min-max range",
-    )
-
-    half_width = RANGE_BAR_WIDTH / 2.0
-    ax.hlines(
-        means,
-        x - half_width,
-        x + half_width,
-        color=MEAN_LINE_COLOR,
-        linewidth=MEAN_LINE_WIDTH,
-        label="Mean",
+    ax.boxplot(
+        data,
+        positions=x,
+        widths=BOX_WIDTH,
+        whis=WHIS,
+        showfliers=True,
+        showmeans=False,
+        patch_artist=True,
+        boxprops={
+            "facecolor": BOX_FACECOLOR,
+            "edgecolor": BOX_EDGECOLOR,
+            "linewidth": 0.8,
+        },
+        medianprops={
+            "color": MEDIAN_COLOR,
+            "linewidth": MEDIAN_LINEWIDTH,
+        },
+        whiskerprops={
+            "color": BOX_EDGECOLOR,
+            "linewidth": 0.8,
+        },
+        capprops={
+            "color": BOX_EDGECOLOR,
+            "linewidth": 0.8,
+        },
+        flierprops={
+            "marker": "o",
+            "markerfacecolor": BOX_FACECOLOR,
+            "markeredgecolor": BOX_EDGECOLOR,
+            "markersize": 3.5,
+        },
     )
 
     ax.set_xlabel("Baseline Parameter Group")
@@ -155,7 +223,6 @@ def main() -> int:
     ax.set_xticks(x)
     ax.set_xticklabels(labels)
     ax.set_ylim(bottom=0)
-    ax.legend(loc="upper right", frameon=False)
     ax.grid(True, axis="y", linestyle="--", alpha=0.7)
     fig.tight_layout()
     plt.savefig(args.output)
