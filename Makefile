@@ -58,8 +58,9 @@ GENERATED_FIGURES := results/throughput_comparison.pdf \
                      results/service_disruption_comparison.pdf \
                      results/unmet_interest_comparison.pdf \
                      $(filter $(BASELINE_DEFAULT_DIR)/overhead_timeseries.pdf $(BASELINE_DEFAULT_DIR)/overhead_summary.pdf results/solution/overhead_timeseries.pdf results/solution/overhead_summary.pdf,$(MAIN_RESULT_OUTPUTS)) \
-                     results/baseline/disruption_comparison.pdf \
-                     results/baseline/network_cost_comparison.pdf
+                     results/baseline_disruption_comparison.pdf \
+                     results/baseline_forwarding_cost_ratio.pdf \
+                     results/baseline_nlsr_control_traffic.pdf
 
 ALL_FIGURES := paper/figures/NDN_Packets_Processing_Flow.pdf \
                paper/figures/NDN_Producer_Mobility_Problem.pdf \

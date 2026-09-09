@@ -173,25 +173,29 @@ Only the NLSR Hello interval, Adj-LSA build delay, routing calculation delay, an
 
 The experiments use the three-layer access-network topology shown in Figure~\ref{exp_topo}. The consumer remains fixed while the producer performs hand-offs between access nodes during an ongoing stream. The same topology, traffic pattern, and hand-off sequence are used for all five configurations so that differences in service disruption and control-plane cost can be attributed to the timing parameters in Table~\ref{tab:baseline_configurations}.
 
-Figure~\ref{fig:baseline_nlsr_disruption_comparison} compares the observed service disruption across the five configurations. G4 reduces disruption relative to the default configuration (G0) for some hand-offs. However, disruption still remains on the order of tens of seconds.
+Figure~\ref{fig:baseline_disruption_comparison} compares the observed service disruption across the five configurations. G4 reduces disruption relative to the default configuration (G0) for some hand-offs. However, disruption still remains on the order of tens of seconds.
 
-Figure~\ref{fig:baseline_nlsr_network_cost_comparison} shows the corresponding forwarding and control-plane cost. The full-run forwarding-cost ratio measures forwarding overhead. It is calculated as the total application bytes forwarded by relay nodes in the core, aggregation, and access layers, divided by the application Data bytes delivered to the consumer over the complete run. A higher value reflects more network transmission effort per delivered byte. Its absolute value is influenced by the consumer-to-producer path length, and hence by the topology and the producer's sequence of attachment points. We therefore treat it as a forwarding-overhead comparison under the same movement pattern. Across the tested configurations, the forwarding-cost ratio remains broadly similar, while routing-control traffic increases as the timing parameters are reduced.
+Figures~\ref{fig:baseline_forwarding_cost_ratio} and~\ref{fig:baseline_nlsr_control_traffic} show the corresponding forwarding and control-plane cost. The full-run forwarding-cost ratio measures forwarding overhead. It is calculated as the total application bytes forwarded by relay nodes in the core, aggregation, and access layers, divided by the application Data bytes delivered to the consumer over the complete run. A higher value reflects more network transmission effort per delivered byte. Its absolute value is influenced by the consumer-to-producer path length, and hence by the topology and the producer's sequence of attachment points. We therefore treat it as a forwarding-overhead comparison under the same movement pattern. Across the tested configurations, the forwarding-cost ratio remains broadly similar, while routing-control traffic increases as the timing parameters are reduced.
 
-\begin{figure}
+\begin{figure*}[t]
     \centering
-    \includegraphics[width=0.8\columnwidth]{results/baseline/disruption_comparison.pdf}
-    \caption{Service disruption under baseline NDN forwarding with different routing timing parameters; G0 (default) to G4 (lowest tested timing values). \ryo{this should be a box plot and be part of other sub-plots}}
-    \label{fig:baseline_nlsr_disruption_comparison}
-\end{figure}
-
-\begin{figure}
-    \centering
-    \includegraphics[width=0.8\columnwidth]{results/baseline/network_cost_comparison.pdf}
-    \caption{Forwarding and NLSR control cost \csp{These should be subfigures}}
-    \label{fig:baseline_nlsr_network_cost_comparison}
-\end{figure}
-
-\csp{Figures 3 and 4 should be combined into a single full page width figure, containing three sub-figures.}
+    \subfloat[Service disruption]{
+        \includegraphics[width=0.31\textwidth]{baseline_disruption_comparison.pdf}
+        \label{fig:baseline_disruption_comparison}
+    }
+    \hfill
+    \subfloat[Forwarding-cost ratio]{
+        \includegraphics[width=0.31\textwidth]{baseline_forwarding_cost_ratio.pdf}
+        \label{fig:baseline_forwarding_cost_ratio}
+    }
+    \hfill
+    \subfloat[NLSR control traffic]{
+        \includegraphics[width=0.31\textwidth]{baseline_nlsr_control_traffic.pdf}
+        \label{fig:baseline_nlsr_control_traffic}
+    }
+    \caption{Baseline NDN forwarding and routing behaviour under the G0--G4 NLSR and PSync timing configurations.}
+    \label{fig:baseline_results}
+\end{figure*}
 
 Reducing routing timing parameters shortens some of the control-plane waiting periods, but does not eliminate the disruption caused by producer mobility. The baseline measurements show that native NDN can still require tens of seconds to restore service after a hand-off. These observations motivate faster service recovery during routing convergence, together with faster convergence of ordinary routing after movement.
 

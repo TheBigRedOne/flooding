@@ -68,8 +68,9 @@ BASELINE_PROFILE_SUMMARY_INPUTS = results/baseline/g0-h60-a10-r15-s60/params.txt
                                   results/baseline/g4-h36-a6-r9-s36/overhead_total.txt
 
 BASELINE_PROFILE_COMPARE_OUTPUTS = results/baseline/summary.csv \
-                                   results/baseline/disruption_comparison.pdf \
-                                   results/baseline/network_cost_comparison.pdf
+                                   results/baseline_disruption_comparison.pdf \
+                                   results/baseline_forwarding_cost_ratio.pdf \
+                                   results/baseline_nlsr_control_traffic.pdf
 
 # Baseline group experiments are chained via order-only prerequisites so that
 # `make -j N` keeps the VM stage strictly sequential (otherwise concurrent
@@ -142,8 +143,11 @@ results/baseline/%/overhead_total.txt: experiment/tool/compute_overhead_metrics.
 results/baseline/summary.csv: $(BASELINE_PROFILE_SUMMARY_INPUTS) experiment/tool/summarise_nlsr_sensitivity.py | results/baseline
 	python3 experiment/tool/summarise_nlsr_sensitivity.py --root-dir results/baseline --profiles "$(BASELINE_PROFILE_NAMES)" --default-profile "$(BASELINE_DEFAULT_PROFILE)" --output "$@"
 
-results/baseline/disruption_comparison.pdf: results/baseline/summary.csv experiment/tool/plot_nlsr_disruption_comparison.py | results/baseline
+results/baseline_disruption_comparison.pdf: results/baseline/summary.csv experiment/tool/plot_nlsr_disruption_comparison.py | results
 	python3 experiment/tool/plot_nlsr_disruption_comparison.py --input results/baseline/summary.csv --output "$@"
 
-results/baseline/network_cost_comparison.pdf: results/baseline/summary.csv experiment/tool/plot_nlsr_network_cost_comparison.py | results/baseline
-	python3 experiment/tool/plot_nlsr_network_cost_comparison.py --input results/baseline/summary.csv --output "$@"
+results/baseline_forwarding_cost_ratio.pdf: results/baseline/summary.csv experiment/tool/plot_nlsr_network_cost_comparison.py | results
+	python3 experiment/tool/plot_nlsr_network_cost_comparison.py --input results/baseline/summary.csv --metric fcr --output "$@"
+
+results/baseline_nlsr_control_traffic.pdf: results/baseline/summary.csv experiment/tool/plot_nlsr_network_cost_comparison.py | results
+	python3 experiment/tool/plot_nlsr_network_cost_comparison.py --input results/baseline/summary.csv --metric control --output "$@"

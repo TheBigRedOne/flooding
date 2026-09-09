@@ -15,8 +15,9 @@ import numpy as np
 
 
 CM_TO_INCH = 1.0 / 2.54
-PAPER_FIGURE_WIDTH_CM = 8.0
-PAPER_FIGURE_HEIGHT_CM = 6.0
+# Sized for one panel in a full-width IEEE three-subfigure figure.
+PAPER_FIGURE_WIDTH_CM = 6.0
+PAPER_FIGURE_HEIGHT_CM = 5.0
 FONT_SIZE = 8
 AXIS_LABEL_SIZE = 8
 AXIS_TITLE_SIZE = 8
@@ -41,7 +42,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def _paper_figure_size():
-    """Return the figure size in inches for a single-column paper figure."""
+    """Return the figure size in inches for one IEEE subfigure panel."""
     return PAPER_FIGURE_WIDTH_CM * CM_TO_INCH, PAPER_FIGURE_HEIGHT_CM * CM_TO_INCH
 
 
@@ -151,7 +152,6 @@ def main() -> int:
 
     ax.set_xlabel("Baseline Parameter Group")
     ax.set_ylabel("Disruption Time (ms)")
-    ax.set_title("Per-Group Disruption Range and Mean")
     ax.set_xticks(x)
     ax.set_xticklabels(labels)
     ax.set_ylim(bottom=0)
