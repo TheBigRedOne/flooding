@@ -216,7 +216,7 @@ As seen in Figure~\ref{fig:baseline_results}, reducing the routing timing parame
 \section{OptoFlood Design}
 \label{sec:design}
 
-When a producer changes its attachment point, newly issued Interest packets may continue towards the previous attachment point until routing converges. Data packets returned for Interest packets received before the move enter the network from the new attachment point and may no longer reach the reverse forwarding path established by those Interest packets. OptoFlood addresses these effects with three complementary mechanisms that can operate concurrently. \emph{Immediate Service Recovery} restores packet delivery and establishes temporary forwarding for subsequent Interest packets. \emph{Service-Prioritised Routing Convergence} uses forwarding observations made during recovery to accelerate routing convergence in service-relevant parts of the network. \emph{Event-Driven Routing Convergence} accelerates NLSR routing convergence by reducing avoidable control-plane waiting after producer movement.
+OptoFlood addresses the producer-mobility issues described in Section~\ref{sec:problem} with three complementary mechanisms that can operate concurrently. \emph{Immediate Service Recovery} restores packet delivery and establishes temporary forwarding for subsequent Interest packets. \emph{Service-Prioritised Routing Convergence} uses forwarding observations made during recovery to accelerate routing convergence in service-relevant parts of the network. \emph{Event-Driven Routing Convergence} accelerates NLSR routing convergence by reducing avoidable control-plane waiting after producer movement.
 
 \begin{figure}
     \centering
@@ -225,12 +225,12 @@ When a producer changes its attachment point, newly issued Interest packets may 
     \label{fig:NDN Producer Mobility Problem Solution}
 \end{figure}
 
-\csp{Need to ensure the terminology, and the description of the protocol, in this section aligns with that in the Introduction.}
+% ------------------------------------------------------------------------------
 
 \subsection{Immediate Service Recovery}
 \label{sec:design:isr}
 
-When the producer changes its attachment point, OptoFlood detects the change. It records Interest packets for the producer's data prefix that were received before the move and remain unsatisfied. Data packets subsequently returned in response to those Interest packets are marked as recovery Data. Each detected attachment change is associated with an increasing mobility generation. Recovery Data associated with the movement carries this generation, allowing forwarding state learned from different movements to be distinguished.
+When the producer changes its attachment point, OptoFlood detects the change. It records Interest packets for the producer's data prefix that were received before the move and remain unsatisfied. Data packets subsequently sent in response to those Interest packets are marked as recovery Data. Each detected attachment change increments a mobility generation number by one. Data packets marked as recovery Data carry the current generation number, allowing state associated with successive movements to be distinguished.
 
 Forwarding-Guided Data Recovery forwards marked Data packets according to the FIB entry for the producer's data prefix, following the direction normally used by Interest packets. If a marked Data packet reaches a matching PIT entry, it follows the PIT-based return path towards the requesting consumer. If no FIB next hop is available, recovery forwarding can expand over eligible neighbouring interfaces within a bounded hop limit.
 
