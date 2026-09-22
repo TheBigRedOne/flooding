@@ -11,16 +11,37 @@
 # at half the lifetime. It bounds how long a freshly built LSA waits before a
 # neighbour asks for it, and so sits on the critical path of baseline recovery
 # alongside the other three timers.
+#
+# Repetition: five independent runs of one producer round trip (8 handoffs).
+# Runs sample NLSR_HANDOFF_INTERVAL_* independently. There is no paired seed.
+# VM recipes are chained by order-only prerequisites so `make -j` stays serial.
+# Order within a profile is r1..r5, then the next profile:
+#   g0/r1 .. g0/r5, g1/r1 .. g1/r5, ..., g4/r1 .. g4/r5.
 
 BASELINE_DEFAULT_DIR = results/baseline/g0-h60-a10-r15-s60
+BASELINE_PROFILE_LIST := g0-h60-a10-r15-s60 g1-h54-a9-r14-s54 g2-h48-a8-r12-s48 g3-h42-a7-r10-s42 g4-h36-a6-r9-s36
 
-BASELINE_PROFILE_NAMES = g0-h60-a10-r15-s60,g1-h54-a9-r14-s54,g2-h48-a8-r12-s48,g3-h42-a7-r10-s42,g4-h36-a6-r9-s36
-BASELINE_DEFAULT_PROFILE = g0-h60-a10-r15-s60
+EXPERIMENT_RUN_IDS := r1 r2 r3 r4 r5
+_of_empty :=
+_of_space := $(_of_empty) $(_of_empty)
+_of_comma := ,
+BASELINE_PROFILE_NAMES := $(subst $(_of_space),$(_of_comma),$(BASELINE_PROFILE_LIST))
+EXPERIMENT_RUN_CSV := $(subst $(_of_space),$(_of_comma),$(EXPERIMENT_RUN_IDS))
 
-# Shared handoff loop configuration: K=16 toggles along a double round trip
-# acc2 -> acc3 -> acc4 -> acc5 -> acc6 -> acc5 -> acc4 -> acc3 -> acc2 (x2).
-BASELINE_HANDOFF_SEQUENCE = acc2,acc3,acc4,acc5,acc6,acc5,acc4,acc3,acc2,acc3,acc4,acc5,acc6,acc5,acc4,acc3,acc2
-BASELINE_HANDOFF_ENV = NLSR_HANDOFF_COUNT='16' NLSR_HANDOFF_INTERVAL_BASE='90' NLSR_HANDOFF_INTERVAL_JITTER='60' NLSR_HANDOFF_SEQUENCE='$(BASELINE_HANDOFF_SEQUENCE)'
+# Shared with Makefile.solution. Makefile.exp1 keeps its own K=16 schedule.
+MAIN_HANDOFF_COUNT := 8
+MAIN_HANDOFF_SEQUENCE := acc2,acc3,acc4,acc5,acc6,acc5,acc4,acc3,acc2
+MAIN_HANDOFF_INTERVAL_BASE := 90
+MAIN_HANDOFF_INTERVAL_JITTER := 60
+MAIN_HANDOFF_ENV := NLSR_HANDOFF_COUNT='$(MAIN_HANDOFF_COUNT)' NLSR_HANDOFF_INTERVAL_BASE='$(MAIN_HANDOFF_INTERVAL_BASE)' NLSR_HANDOFF_INTERVAL_JITTER='$(MAIN_HANDOFF_INTERVAL_JITTER)' NLSR_HANDOFF_SEQUENCE='$(MAIN_HANDOFF_SEQUENCE)'
+
+EXPERIMENT_RUN_FILES := consumer_capture.pcap pcap_nodes/core.pcap pcap_nodes/agg1.pcap pcap_nodes/agg2.pcap pcap_nodes/acc1.pcap pcap_nodes/acc2.pcap pcap_nodes/acc3.pcap pcap_nodes/acc4.pcap pcap_nodes/acc5.pcap pcap_nodes/acc6.pcap pcap_nodes/producer.pcap pcap_nodes/consumer.pcap params.txt handoffs.txt
+
+baseline_run_outputs = $(addprefix results/baseline/$(1)/$(2)/,$(EXPERIMENT_RUN_FILES))
+
+BASELINE_VM_ORDER := $(foreach profile,$(BASELINE_PROFILE_LIST),$(foreach run,$(EXPERIMENT_RUN_IDS),$(profile)/$(run)))
+BASELINE_RAW_OUTPUTS := $(foreach profile,$(BASELINE_PROFILE_LIST),$(foreach run,$(EXPERIMENT_RUN_IDS),$(call baseline_run_outputs,$(profile),$(run))))
+BASELINE_LAST_RUN_OUTPUTS := $(call baseline_run_outputs,$(lastword $(BASELINE_PROFILE_LIST)),$(lastword $(EXPERIMENT_RUN_IDS)))
 
 BASELINE_EXPERIMENT_INPUTS = box/baseline/baseline.$(PROVIDER).box \
                              experiment/app/producer.cpp \
@@ -30,71 +51,29 @@ BASELINE_EXPERIMENT_INPUTS = box/baseline/baseline.$(PROVIDER).box \
                              experiment/baseline/Makefile \
                              experiment/tool/exp.py
 
-BASELINE_EXPERIMENT_OUTPUTS = results/baseline/XXX/consumer_capture.pcap \
-                              results/baseline/XXX/pcap_nodes/core.pcap \
-                              results/baseline/XXX/pcap_nodes/agg1.pcap \
-                              results/baseline/XXX/pcap_nodes/agg2.pcap \
-                              results/baseline/XXX/pcap_nodes/acc1.pcap \
-                              results/baseline/XXX/pcap_nodes/acc2.pcap \
-                              results/baseline/XXX/pcap_nodes/acc3.pcap \
-                              results/baseline/XXX/pcap_nodes/acc4.pcap \
-                              results/baseline/XXX/pcap_nodes/acc5.pcap \
-                              results/baseline/XXX/pcap_nodes/acc6.pcap \
-                              results/baseline/XXX/pcap_nodes/producer.pcap \
-                              results/baseline/XXX/pcap_nodes/consumer.pcap \
-                              results/baseline/XXX/params.txt \
-                              results/baseline/XXX/handoffs.txt
+BASELINE_PROFILE_ENV_g0-h60-a10-r15-s60 := NLSR_HELLO_INTERVAL='60' NLSR_ADJ_LSA_BUILD_INTERVAL='10' NLSR_ROUTING_CALC_INTERVAL='15' NLSR_SYNC_INTEREST_LIFETIME_MS='60000' NLSR_TUNING_PROFILE='g0-h60-a10-r15-s60'
+BASELINE_PROFILE_ENV_g1-h54-a9-r14-s54 := NLSR_HELLO_INTERVAL='54' NLSR_ADJ_LSA_BUILD_INTERVAL='9' NLSR_ROUTING_CALC_INTERVAL='14' NLSR_SYNC_INTEREST_LIFETIME_MS='54000' NLSR_TUNING_PROFILE='g1-h54-a9-r14-s54'
+BASELINE_PROFILE_ENV_g2-h48-a8-r12-s48 := NLSR_HELLO_INTERVAL='48' NLSR_ADJ_LSA_BUILD_INTERVAL='8' NLSR_ROUTING_CALC_INTERVAL='12' NLSR_SYNC_INTEREST_LIFETIME_MS='48000' NLSR_TUNING_PROFILE='g2-h48-a8-r12-s48'
+BASELINE_PROFILE_ENV_g3-h42-a7-r10-s42 := NLSR_HELLO_INTERVAL='42' NLSR_ADJ_LSA_BUILD_INTERVAL='7' NLSR_ROUTING_CALC_INTERVAL='10' NLSR_SYNC_INTEREST_LIFETIME_MS='42000' NLSR_TUNING_PROFILE='g3-h42-a7-r10-s42'
+BASELINE_PROFILE_ENV_g4-h36-a6-r9-s36 := NLSR_HELLO_INTERVAL='36' NLSR_ADJ_LSA_BUILD_INTERVAL='6' NLSR_ROUTING_CALC_INTERVAL='9' NLSR_SYNC_INTEREST_LIFETIME_MS='36000' NLSR_TUNING_PROFILE='g4-h36-a6-r9-s36'
 
-BASELINE_RAW_OUTPUTS = $(subst XXX,g0-h60-a10-r15-s60,$(BASELINE_EXPERIMENT_OUTPUTS)) \
-                       $(subst XXX,g1-h54-a9-r14-s54,$(BASELINE_EXPERIMENT_OUTPUTS)) \
-                       $(subst XXX,g2-h48-a8-r12-s48,$(BASELINE_EXPERIMENT_OUTPUTS)) \
-                       $(subst XXX,g3-h42-a7-r10-s42,$(BASELINE_EXPERIMENT_OUTPUTS)) \
-                       $(subst XXX,g4-h36-a6-r9-s36,$(BASELINE_EXPERIMENT_OUTPUTS))
+# $(1) profile, $(2) run id, $(3) order-only outputs of the previous VM run.
+define emit_baseline_run
+$(if $(BASELINE_PROFILE_ENV_$(1)),,$(error missing baseline profile environment for $(1)))
+$(call baseline_run_outputs,$(1),$(2)) &: scripts/run-in-vm.sh $$(BASELINE_EXPERIMENT_INPUTS)$(if $(3), | $(3))
+	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="$(BASELINE_PROFILE_ENV_$(1)) $$(MAIN_HANDOFF_ENV) make all" sh $$^ $$@
+endef
 
-BASELINE_PROFILE_SUMMARY_INPUTS = results/baseline/g0-h60-a10-r15-s60/params.txt \
-                                  results/baseline/g0-h60-a10-r15-s60/disruption_metrics.txt \
-                                  results/baseline/g0-h60-a10-r15-s60/overhead_total.txt \
-                                  results/baseline/g1-h54-a9-r14-s54/params.txt \
-                                  results/baseline/g1-h54-a9-r14-s54/disruption_metrics.txt \
-                                  results/baseline/g1-h54-a9-r14-s54/overhead_total.txt \
-                                  results/baseline/g2-h48-a8-r12-s48/params.txt \
-                                  results/baseline/g2-h48-a8-r12-s48/disruption_metrics.txt \
-                                  results/baseline/g2-h48-a8-r12-s48/overhead_total.txt \
-                                  results/baseline/g3-h42-a7-r10-s42/params.txt \
-                                  results/baseline/g3-h42-a7-r10-s42/disruption_metrics.txt \
-                                  results/baseline/g3-h42-a7-r10-s42/overhead_total.txt \
-                                  results/baseline/g4-h36-a6-r9-s36/params.txt \
-                                  results/baseline/g4-h36-a6-r9-s36/disruption_metrics.txt \
-                                  results/baseline/g4-h36-a6-r9-s36/overhead_total.txt
+BASELINE_CHAIN_PREV :=
 
-BASELINE_PROFILE_COMPARE_OUTPUTS = results/baseline/summary.csv \
-                                   results/baseline_disruption_comparison.pdf \
-                                   results/baseline_forwarding_cost_ratio.pdf \
-                                   results/baseline_nlsr_control_traffic.pdf
+define queue_baseline_run
+$(eval $(call emit_baseline_run,$(1),$(2),$(BASELINE_CHAIN_PREV)))
+$(eval BASELINE_CHAIN_PREV := $(call baseline_run_outputs,$(1),$(2)))
+endef
 
-# Baseline group experiments are chained via order-only prerequisites so that
-# `make -j N` keeps the VM stage strictly sequential (otherwise concurrent
-# `vagrant up` invocations against the same Vagrantfile race on the lockfile).
-# Order-only prerequisites do not appear in `$^`, so each recipe still receives
-# only the inputs declared on its own line.
+$(foreach profile,$(BASELINE_PROFILE_LIST),$(foreach run,$(EXPERIMENT_RUN_IDS),$(call queue_baseline_run,$(profile),$(run))))
 
-$(subst XXX,g0-h60-a10-r15-s60,$(BASELINE_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(BASELINE_EXPERIMENT_INPUTS)
-	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="NLSR_HELLO_INTERVAL='60' NLSR_ADJ_LSA_BUILD_INTERVAL='10' NLSR_ROUTING_CALC_INTERVAL='15' NLSR_SYNC_INTEREST_LIFETIME_MS='60000' NLSR_TUNING_PROFILE='g0-h60-a10-r15-s60' $(BASELINE_HANDOFF_ENV) make all" sh $^ $@
-
-$(subst XXX,g1-h54-a9-r14-s54,$(BASELINE_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(BASELINE_EXPERIMENT_INPUTS) | $(subst XXX,g0-h60-a10-r15-s60,$(BASELINE_EXPERIMENT_OUTPUTS))
-	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="NLSR_HELLO_INTERVAL='54' NLSR_ADJ_LSA_BUILD_INTERVAL='9' NLSR_ROUTING_CALC_INTERVAL='14' NLSR_SYNC_INTEREST_LIFETIME_MS='54000' NLSR_TUNING_PROFILE='g1-h54-a9-r14-s54' $(BASELINE_HANDOFF_ENV) make all" sh $^ $@
-
-$(subst XXX,g2-h48-a8-r12-s48,$(BASELINE_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(BASELINE_EXPERIMENT_INPUTS) | $(subst XXX,g1-h54-a9-r14-s54,$(BASELINE_EXPERIMENT_OUTPUTS))
-	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="NLSR_HELLO_INTERVAL='48' NLSR_ADJ_LSA_BUILD_INTERVAL='8' NLSR_ROUTING_CALC_INTERVAL='12' NLSR_SYNC_INTEREST_LIFETIME_MS='48000' NLSR_TUNING_PROFILE='g2-h48-a8-r12-s48' $(BASELINE_HANDOFF_ENV) make all" sh $^ $@
-
-$(subst XXX,g3-h42-a7-r10-s42,$(BASELINE_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(BASELINE_EXPERIMENT_INPUTS) | $(subst XXX,g2-h48-a8-r12-s48,$(BASELINE_EXPERIMENT_OUTPUTS))
-	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="NLSR_HELLO_INTERVAL='42' NLSR_ADJ_LSA_BUILD_INTERVAL='7' NLSR_ROUTING_CALC_INTERVAL='10' NLSR_SYNC_INTEREST_LIFETIME_MS='42000' NLSR_TUNING_PROFILE='g3-h42-a7-r10-s42' $(BASELINE_HANDOFF_ENV) make all" sh $^ $@
-
-$(subst XXX,g4-h36-a6-r9-s36,$(BASELINE_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(BASELINE_EXPERIMENT_INPUTS) | $(subst XXX,g3-h42-a7-r10-s42,$(BASELINE_EXPERIMENT_OUTPUTS))
-	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="NLSR_HELLO_INTERVAL='36' NLSR_ADJ_LSA_BUILD_INTERVAL='6' NLSR_ROUTING_CALC_INTERVAL='9' NLSR_SYNC_INTEREST_LIFETIME_MS='36000' NLSR_TUNING_PROFILE='g4-h36-a6-r9-s36' $(BASELINE_HANDOFF_ENV) make all" sh $^ $@
-
-
-# Rules to process outputs from baseline experiments.
+# Host-side inputs for the per-handoff comparison. The % stem is <profile>/<run>.
 
 results/baseline/%/consumer_capture.csv: results/baseline/%/consumer_capture.pcap experiment/tool/ndn.lua
 	tshark -X lua_script:experiment/tool/ndn.lua -r "$<" -T fields -e frame.time_epoch -e frame.len -e ndn.type -e ndn.name -E separator=, -E header=y -E quote=d > "$@"
@@ -113,41 +92,19 @@ results/baseline/%/network_overhead.csv: experiment/tool/extract_overhead_csv.py
                                         results/baseline/%/pcap_nodes/consumer.pcap
 	python3 $^ $@
 
-results/baseline/%/disruption_times.pdf: experiment/tool/plot_latency.py results/baseline/%/disruption_metrics.txt
-	python3 $^ $@
-
 results/baseline/%/disruption_metrics.txt: experiment/tool/compute_latency_metrics.py results/baseline/%/consumer_capture.csv results/baseline/%/handoffs.txt
-	python3 $^ $@
-
-results/baseline/%/loss_comparison.pdf: experiment/tool/plot_loss.py results/baseline/%/loss_ratio.txt
-	python3 $^ $@
-
-results/baseline/%/loss_ratio.txt: experiment/tool/compute_loss_metrics.py results/baseline/%/consumer_capture.csv results/baseline/%/handoffs.txt
-	python3 $^ $@
-
-results/baseline/%/throughput_timeseries.pdf: experiment/tool/plot_throughput.py results/baseline/%/consumer_capture.csv results/baseline/%/handoffs.txt
-	python3 $^ $@
-
-results/baseline/%/throughput_metrics.txt: experiment/tool/compute_throughput_metrics.py results/baseline/%/consumer_capture.csv
-	python3 $^ $@
-
-results/baseline/%/overhead_timeseries.pdf: experiment/tool/plot_overhead.py results/baseline/%/network_overhead.csv results/baseline/%/handoffs.txt
-	python3 $^ $@
-
-results/baseline/%/overhead_summary.pdf: experiment/tool/plot_overhead.py results/baseline/%/network_overhead.csv results/baseline/%/handoffs.txt
 	python3 $^ $@
 
 results/baseline/%/overhead_total.txt: experiment/tool/compute_overhead_metrics.py results/baseline/%/network_overhead.csv results/baseline/%/handoffs.txt | experiment/tool/plot_overhead.py
 	python3 $^ $@
 
-results/baseline/summary.csv: $(BASELINE_PROFILE_SUMMARY_INPUTS) experiment/tool/summarise_nlsr_sensitivity.py | results/baseline
-	python3 experiment/tool/summarise_nlsr_sensitivity.py --root-dir results/baseline --profiles "$(BASELINE_PROFILE_NAMES)" --default-profile "$(BASELINE_DEFAULT_PROFILE)" --output "$@"
+BASELINE_METRIC_INPUTS := $(foreach profile,$(BASELINE_PROFILE_LIST),$(foreach run,$(EXPERIMENT_RUN_IDS),results/baseline/$(profile)/$(run)/disruption_metrics.txt results/baseline/$(profile)/$(run)/overhead_total.txt))
 
-results/baseline_disruption_comparison.pdf: $(filter %/disruption_metrics.txt,$(BASELINE_PROFILE_SUMMARY_INPUTS)) experiment/tool/plot_nlsr_disruption_comparison.py | results
-	python3 experiment/tool/plot_nlsr_disruption_comparison.py --root-dir results/baseline --profiles "$(BASELINE_PROFILE_NAMES)" --output "$@"
+BASELINE_PROFILE_COMPARE_OUTPUTS := results/baseline/handoff_observations.csv \
+                                   results/baseline/handoff_metric_audit.txt \
+                                   results/baseline_disruption_comparison.pdf \
+                                   results/baseline_forwarding_cost_ratio.pdf \
+                                   results/baseline_nlsr_control_traffic.pdf
 
-results/baseline_forwarding_cost_ratio.pdf: results/baseline/summary.csv experiment/tool/plot_nlsr_network_cost_comparison.py | results
-	python3 experiment/tool/plot_nlsr_network_cost_comparison.py --input results/baseline/summary.csv --metric fcr --output "$@"
-
-results/baseline_nlsr_control_traffic.pdf: results/baseline/summary.csv experiment/tool/plot_nlsr_network_cost_comparison.py | results
-	python3 experiment/tool/plot_nlsr_network_cost_comparison.py --input results/baseline/summary.csv --metric control --output "$@"
+$(BASELINE_PROFILE_COMPARE_OUTPUTS) &: experiment/tool/handoff_metric_comparison.py $(BASELINE_METRIC_INPUTS)
+	python3 experiment/tool/handoff_metric_comparison.py baseline --root-dir results/baseline --profiles "$(BASELINE_PROFILE_NAMES)" --runs "$(EXPERIMENT_RUN_CSV)" --observations results/baseline/handoff_observations.csv --audit results/baseline/handoff_metric_audit.txt --disruption-pdf results/baseline_disruption_comparison.pdf --fcr-pdf results/baseline_forwarding_cost_ratio.pdf --control-pdf results/baseline_nlsr_control_traffic.pdf

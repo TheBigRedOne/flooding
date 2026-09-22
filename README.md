@@ -40,50 +40,53 @@ so that all VM stages remain strictly serial under `make -j N`, regardless of
 how many cores are available:
 
 ```
-box/initial -> box/baseline   -> g0 -> g1 -> g2 -> g3 -> g4 -> solution -> test
-            -> box/solution
+box/initial -> box/baseline -> g0/r1 -> ... -> g0/r5 -> g1/r1 -> ... -> g4/r5
+            -> box/solution -> test -> solution/r1 -> ... -> solution/r5 -> exp1
 ```
+
+Baseline tuning is 5 profiles × 5 runs. The OptoFlood comparison is 5 runs.
+Each of those runs is one round trip of 8 hand-offs. Exp 1 keeps its own
+K=16 zero-jitter schedule and runs after the solution runs because it uses the
+same solution VM.
 
 This command automates the entire process. It will:
 1.  Build the necessary Vagrant base images (`.box` files) if they don't exist.
 2.  Provision temporary VMs for the baseline parameter set and the `solution` experiment.
 3.  Compile the C++ applications and run the mobility simulation inside each VM.
-4.  Collect raw experiment artifacts, including `consumer_capture.pcap` and per-node `pcap_nodes/*.pcap`, into each result directory.
+4.  Collect raw experiment artifacts, including `consumer_capture.pcap` and per-node `pcap_nodes/*.pcap`, into each run directory.
 5.  Derive host-side CSV analysis inputs from those raw packet captures.
-6.  Run host-side plotting pipelines for:
-    - baseline parameter-set comparison (`disruption` and `overhead`)
-    - baseline(default) and solution main results (`throughput`, `disruption`, `unmet-interest ratio`, and `overhead`)
-7.  Copy the final figures into the `paper/` directory.
-8.  Compile the LaTeX source to produce `paper/OptoFlood.pdf`.
+6.  Plot three per-handoff box plots for baseline tuning (G0--G4) and the same three for G0 versus OptoFlood: service disruption, forwarding-cost ratio, and NLSR control traffic.
+7.  Compile the LaTeX source to produce `paper/OptoFlood.pdf`.
 
 ## Workflow Targets
 
 - `make experiment-baseline`
-  Runs the configured baseline parameter groups and stores raw capture artifacts under `results/baseline/<profile>/`.
+  Runs the five baseline profiles, five runs each, and stores raw capture artifacts under `results/baseline/<profile>/rN/`.
 - `make experiment-solution`
-  Runs the solution experiment and stores raw capture artifacts under `results/solution/`.
+  Runs the five OptoFlood runs and stores raw capture artifacts under `results/solution/rN/`.
 - `make plot-baseline`
-  Regenerates only the baseline parameter-set comparison outputs from existing raw captures and derived CSV files.
+  Regenerates the G0--G4 per-handoff box plots from existing captures.
 - `make plot-main`
-  Regenerates the baseline(default) and solution four-metric outputs from existing raw captures and derived CSV files.
+  Regenerates the G0-versus-OptoFlood box plots for the same three metrics.
 - `make plot`
   Runs both plotting pipelines without re-running experiments.
 
 ## Baseline Parameter Sets
 
-The baseline parameter groups are declared directly in `Makefile`.
-Each group has an explicit experiment rule and uses the shared
-`results/baseline/%/...` processing rules for host-side analysis.
+The baseline parameter groups and the r1..r5 repetition are declared in
+`Makefile.baseline`. Each run is an explicit grouped target. Host-side
+analysis uses the `results/baseline/%/...` and `results/solution/%/...` rules;
+the `%` stem is `<profile>/rN` or `rN`.
 
 To add a new baseline group:
 
-- add its result directory to `BASELINE_PROFILE_DIRS`;
-- add one grouped experiment target using `$(subst XXX,<group>,$(BASELINE_EXPERIMENT_OUTPUTS))`;
-- set `NLSR_HELLO_INTERVAL`, `NLSR_ADJ_LSA_BUILD_INTERVAL`,
-  `NLSR_ROUTING_CALC_INTERVAL`, and `NLSR_TUNING_PROFILE` in that target.
+- add its name to `BASELINE_PROFILE_LIST`;
+- define `BASELINE_PROFILE_ENV_<name>` with `NLSR_HELLO_INTERVAL`,
+  `NLSR_ADJ_LSA_BUILD_INTERVAL`, `NLSR_ROUTING_CALC_INTERVAL`,
+  `NLSR_SYNC_INTEREST_LIFETIME_MS`, and `NLSR_TUNING_PROFILE`.
 
-`BASELINE_DEFAULT_DIR` identifies the baseline group used for the main
-baseline-versus-solution comparison.
+The run chain picks the new profile up in list order. `BASELINE_DEFAULT_DIR`
+is the G0 directory compared with OptoFlood.
 
 ## Static Typing (optional)
 
