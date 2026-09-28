@@ -55,7 +55,7 @@ This command automates the entire process. It will:
 3.  Compile the C++ applications and run the mobility simulation inside each VM.
 4.  Collect raw experiment artifacts, including `consumer_capture.pcap` and per-node `pcap_nodes/*.pcap`, into each run directory.
 5.  Derive host-side CSV analysis inputs from those raw packet captures.
-6.  Plot three per-handoff box plots for baseline tuning (G0--G4) and the same three for G0 versus OptoFlood: service disruption, forwarding-cost ratio, and NLSR control traffic.
+6.  Decode the raw captures and plot service recovery time, content loss fraction, forwarding-cost ratio, and NLSR control rate for G0--G4 and for G0 versus OptoFlood.
 7.  Compile the LaTeX source to produce `paper/OptoFlood.pdf`.
 
 ## Workflow Targets
@@ -65,11 +65,36 @@ This command automates the entire process. It will:
 - `make experiment-solution`
   Runs the five OptoFlood runs and stores raw capture artifacts under `results/solution/rN/`.
 - `make plot-baseline`
-  Regenerates the G0--G4 per-handoff box plots from existing captures.
+  Regenerates the four G0--G4 mobility-event figures from existing raw captures.
 - `make plot-main`
-  Regenerates the G0-versus-OptoFlood box plots for the same three metrics.
+  Regenerates the four G0-versus-OptoFlood figures from the same event definitions.
 - `make plot`
   Runs both plotting pipelines without re-running experiments.
+- `make plot-exp1`
+  Regenerates the Exp1 service-recovery, content-loss, and explicit-flood figures, plus the delivery timeline.
+- `make mobility-analysis`
+  Regenerates baseline, solution, and Exp1 mobility-event tables and figures from existing captures.
+- `make test-mobility-analysis`
+  Runs the mobility-event unit tests. This is separate from the protocol `test` target.
+
+## Mobility-event analysis
+
+Host-side analysis decodes each run's `pcap_nodes/*.pcap` with one Python decoder. Name equality uses `(component type, raw component bytes)`, not a rendered URI. Baseline is G0--G4, five runs, eight handoffs. The solution comparison is five OptoFlood runs of the same eight-handoff schedule. Exp1 keeps K=16 and zero jitter, and uses the same event parser.
+
+The active metrics are service recovery time, content loss fraction, forwarding-cost ratio, and NLSR control rate. Exp1 plots service recovery time, content loss fraction, and explicit flood rate, and keeps the delivery timeline. Production figures:
+
+- `results/baseline_service_recovery_time.pdf`
+- `results/baseline_content_loss_fraction.pdf`
+- `results/baseline_forwarding_cost_ratio.pdf`
+- `results/baseline_nlsr_control_rate.pdf`
+- `results/solution_service_recovery_time.pdf`
+- `results/solution_content_loss_fraction.pdf`
+- `results/solution_forwarding_cost_ratio.pdf`
+- `results/solution_nlsr_control_rate.pdf`
+- `results/extended/exp1/exp1_service_recovery_time.pdf`
+- `results/extended/exp1/exp1_content_loss_fraction.pdf`
+- `results/extended/exp1/exp1_explicit_flood_rate.pdf`
+- `results/extended/exp1/exp1_delivery_timeline.pdf`
 
 ## Baseline Parameter Sets
 

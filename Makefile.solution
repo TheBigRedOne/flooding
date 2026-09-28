@@ -59,39 +59,16 @@ endef
 
 $(foreach run,$(EXPERIMENT_RUN_IDS),$(call queue_solution_run,$(run)))
 
-# Host-side inputs for the per-handoff comparison. The % stem is the run id.
+# Host-side mobility-event analysis. Raw captures are not Make prerequisites.
 
-results/solution/%/consumer_capture.csv: results/solution/%/consumer_capture.pcap experiment/tool/ndn.lua
-	tshark -X lua_script:experiment/tool/ndn.lua -r "$<" -T fields -e frame.time_epoch -e frame.len -e ndn.type -e ndn.name -E separator=, -E header=y -E quote=d > "$@"
-
-results/solution/%/network_overhead.csv: experiment/tool/extract_overhead_csv.py \
-                                       results/solution/%/pcap_nodes/core.pcap \
-                                       results/solution/%/pcap_nodes/agg1.pcap \
-                                       results/solution/%/pcap_nodes/agg2.pcap \
-                                       results/solution/%/pcap_nodes/acc1.pcap \
-                                       results/solution/%/pcap_nodes/acc2.pcap \
-                                       results/solution/%/pcap_nodes/acc3.pcap \
-                                       results/solution/%/pcap_nodes/acc4.pcap \
-                                       results/solution/%/pcap_nodes/acc5.pcap \
-                                       results/solution/%/pcap_nodes/acc6.pcap \
-                                       results/solution/%/pcap_nodes/producer.pcap \
-                                       results/solution/%/pcap_nodes/consumer.pcap
-	python3 $^ $@
-
-results/solution/%/disruption_metrics.txt: experiment/tool/compute_latency_metrics.py results/solution/%/consumer_capture.csv results/solution/%/handoffs.txt
-	python3 $^ $@
-
-results/solution/%/overhead_total.txt: experiment/tool/compute_overhead_metrics.py results/solution/%/network_overhead.csv results/solution/%/handoffs.txt | experiment/tool/plot_overhead.py
-	python3 $^ $@
-
-G0_METRIC_INPUTS := $(foreach run,$(EXPERIMENT_RUN_IDS),$(BASELINE_DEFAULT_DIR)/$(run)/disruption_metrics.txt $(BASELINE_DEFAULT_DIR)/$(run)/overhead_total.txt)
-SOLUTION_METRIC_INPUTS := $(foreach run,$(EXPERIMENT_RUN_IDS),results/solution/$(run)/disruption_metrics.txt results/solution/$(run)/overhead_total.txt)
-
-SOLUTION_COMPARE_OUTPUTS := results/solution/handoff_observations.csv \
-                            results/solution/handoff_metric_audit.txt \
-                            results/solution_disruption_comparison.pdf \
+SOLUTION_COMPARE_OUTPUTS := results/solution/mobility_events.csv \
+                            results/solution/mobility_event_audit.txt \
+                            results/solution_service_recovery_time.pdf \
+                            results/solution_content_loss_fraction.pdf \
                             results/solution_forwarding_cost_ratio.pdf \
-                            results/solution_nlsr_control_traffic.pdf
+                            results/solution_nlsr_control_rate.pdf
 
-$(SOLUTION_COMPARE_OUTPUTS) &: experiment/tool/handoff_metric_comparison.py $(G0_METRIC_INPUTS) $(SOLUTION_METRIC_INPUTS)
-	python3 experiment/tool/handoff_metric_comparison.py solution --baseline-dir "$(BASELINE_DEFAULT_DIR)" --solution-dir results/solution --baseline-label G0 --solution-label OptoFlood --runs "$(EXPERIMENT_RUN_CSV)" --observations results/solution/handoff_observations.csv --audit results/solution/handoff_metric_audit.txt --disruption-pdf results/solution_disruption_comparison.pdf --fcr-pdf results/solution_forwarding_cost_ratio.pdf --control-pdf results/solution_nlsr_control_traffic.pdf
+$(SOLUTION_COMPARE_OUTPUTS) &: experiment/tool/run_mobility_event_analysis.py \
+                              experiment/tool/mobility_event_metrics.py \
+                              experiment/tool/plot_mobility_event_metrics.py
+	python3 experiment/tool/run_mobility_event_analysis.py analyze-solution

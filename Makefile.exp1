@@ -7,7 +7,6 @@
 # mobility timeline and the comparison isolates the request interval.
 
 EXT1_INTERVALS = 10 20 30 40 50
-EXT1_INTERVALS_CSV = 10,20,30,40,50
 
 EXT1_HANDOFF_SEQUENCE = acc2,acc3,acc4,acc5,acc6,acc5,acc4,acc3,acc2,acc3,acc4,acc5,acc6,acc5,acc4,acc3,acc2
 EXT1_HANDOFF_ENV = NLSR_HANDOFF_COUNT='16' NLSR_HANDOFF_INTERVAL_BASE='90' NLSR_HANDOFF_INTERVAL_JITTER='0' NLSR_HANDOFF_SEQUENCE='$(EXT1_HANDOFF_SEQUENCE)'
@@ -34,26 +33,11 @@ EXT1_RAW_OUTPUTS = $(subst XXX,i10,$(EXT1_EXPERIMENT_OUTPUTS)) \
                    $(subst XXX,i40,$(EXT1_EXPERIMENT_OUTPUTS)) \
                    $(subst XXX,i50,$(EXT1_EXPERIMENT_OUTPUTS))
 
-# Host-side analysis inputs derived per interval.
-EXT1_ANALYSIS_INPUTS = $(foreach v,$(EXT1_INTERVALS),\
-    results/extended/exp1/i$(v)/consumer_capture.csv \
-    results/extended/exp1/i$(v)/network_overhead.csv \
-    results/extended/exp1/i$(v)/handoffs.txt)
-
-EXT1_SENSITIVITY_OUTPUTS = results/extended/exp1/exp1_disruption.pdf \
-                           results/extended/exp1/exp1_frameloss.pdf \
-                           results/extended/exp1/exp1_flood.pdf
+EXT1_SENSITIVITY_OUTPUTS = results/extended/exp1/exp1_service_recovery_time.pdf \
+                           results/extended/exp1/exp1_content_loss_fraction.pdf \
+                           results/extended/exp1/exp1_explicit_flood_rate.pdf
 
 EXT1_TIMELINE_OUTPUT = results/extended/exp1/exp1_delivery_timeline.pdf
-
-# Interval value used for the per-run delivery-timeline illustration.
-EXT1_TIMELINE_DIR = results/extended/exp1/i20
-
-# Budgets (ms) for the late-frame metric, measured as delay added on top of the
-# run's steady-state delivery latency; 25 ms is the primary budget. The values
-# bracket the delay a hand-off introduces, which recovery keeps under about 60 ms.
-EXT1_LATE_BUDGETS = 10,25,50
-EXT1_PRIMARY_BUDGET = 25
 
 # Absolute playout deadline (ms) drawn on the per-frame delivery timeline.
 EXT1_PRIMARY_DEADLINE = 200
@@ -80,36 +64,17 @@ $(subst XXX,i40,$(EXT1_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(SOLUTION_I
 $(subst XXX,i50,$(EXT1_EXPERIMENT_OUTPUTS)) &: scripts/run-in-vm.sh $(SOLUTION_INPUTS) | $(subst XXX,i40,$(EXT1_EXPERIMENT_OUTPUTS))
 	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="EXP_REQUEST_INTERVAL_MS='50' $(EXT1_HANDOFF_ENV) $(SOLUTION_NLSR_ENV) make all" sh $^ $@
 
-# --- Host-side analysis (reuses the shared decode/extract pipeline) ---
+# Host-side mobility-event analysis, including the delivery timeline.
+# The recipe reads existing captures and does not list them as prerequisites.
 
-results/extended/exp1/%/consumer_capture.csv: results/extended/exp1/%/consumer_capture.pcap experiment/tool/ndn.lua
-	tshark -X lua_script:experiment/tool/ndn.lua -r "$<" -T fields -e frame.time_epoch -e frame.len -e ndn.type -e ndn.name -E separator=, -E header=y -E quote=d > "$@"
+EXT1_ANALYSIS_OUTPUTS = $(EXT1_SENSITIVITY_OUTPUTS) \
+                        $(EXT1_TIMELINE_OUTPUT) \
+                        results/extended/exp1/mobility_events.csv \
+                        results/extended/exp1/mobility_event_audit.txt
 
-results/extended/exp1/%/network_overhead.csv: experiment/tool/extract_overhead_csv.py \
-                                              results/extended/exp1/%/pcap_nodes/core.pcap \
-                                              results/extended/exp1/%/pcap_nodes/agg1.pcap \
-                                              results/extended/exp1/%/pcap_nodes/agg2.pcap \
-                                              results/extended/exp1/%/pcap_nodes/acc1.pcap \
-                                              results/extended/exp1/%/pcap_nodes/acc2.pcap \
-                                              results/extended/exp1/%/pcap_nodes/acc3.pcap \
-                                              results/extended/exp1/%/pcap_nodes/acc4.pcap \
-                                              results/extended/exp1/%/pcap_nodes/acc5.pcap \
-                                              results/extended/exp1/%/pcap_nodes/acc6.pcap \
-                                              results/extended/exp1/%/pcap_nodes/producer.pcap \
-                                              results/extended/exp1/%/pcap_nodes/consumer.pcap
-	python3 $^ $@
-
-# Three request-interval sensitivity panels produced in one aggregation pass.
-$(EXT1_SENSITIVITY_OUTPUTS) &: experiment/tool/plot_exp1_sensitivity.py $(EXT1_ANALYSIS_INPUTS)
-	python3 experiment/tool/plot_exp1_sensitivity.py \
-	    --root results/extended/exp1 \
-	    --intervals $(EXT1_INTERVALS_CSV) \
-	    --late-budgets $(EXT1_LATE_BUDGETS) \
-	    --primary-budget $(EXT1_PRIMARY_BUDGET) \
-	    --out-dir results/extended/exp1
-
-# Per-run delivery-latency timeline at the primary interval.
-$(EXT1_TIMELINE_OUTPUT): experiment/tool/plot_delivery_timeline.py \
-                         $(EXT1_TIMELINE_DIR)/consumer_capture.csv \
-                         $(EXT1_TIMELINE_DIR)/handoffs.txt
-	python3 $^ $@ --deadline $(EXT1_PRIMARY_DEADLINE)
+$(EXT1_ANALYSIS_OUTPUTS) &: experiment/tool/run_mobility_event_analysis.py \
+                           experiment/tool/mobility_event_metrics.py \
+                           experiment/tool/plot_mobility_event_metrics.py \
+                           experiment/tool/plot_delivery_timeline.py \
+                           experiment/tool/ndn.lua
+	python3 experiment/tool/run_mobility_event_analysis.py analyze-exp1 --deadline $(EXT1_PRIMARY_DEADLINE)

@@ -73,38 +73,19 @@ endef
 
 $(foreach profile,$(BASELINE_PROFILE_LIST),$(foreach run,$(EXPERIMENT_RUN_IDS),$(call queue_baseline_run,$(profile),$(run))))
 
-# Host-side inputs for the per-handoff comparison. The % stem is <profile>/<run>.
+# Host-side mobility-event analysis.
+# Prerequisites are the analysis programs only. Raw captures are evidence:
+# the recipe checks that they exist and never lists them as Make targets,
+# so a stale PCAP cannot select the VM recipe.
 
-results/baseline/%/consumer_capture.csv: results/baseline/%/consumer_capture.pcap experiment/tool/ndn.lua
-	tshark -X lua_script:experiment/tool/ndn.lua -r "$<" -T fields -e frame.time_epoch -e frame.len -e ndn.type -e ndn.name -E separator=, -E header=y -E quote=d > "$@"
-
-results/baseline/%/network_overhead.csv: experiment/tool/extract_overhead_csv.py \
-                                        results/baseline/%/pcap_nodes/core.pcap \
-                                        results/baseline/%/pcap_nodes/agg1.pcap \
-                                        results/baseline/%/pcap_nodes/agg2.pcap \
-                                        results/baseline/%/pcap_nodes/acc1.pcap \
-                                        results/baseline/%/pcap_nodes/acc2.pcap \
-                                        results/baseline/%/pcap_nodes/acc3.pcap \
-                                        results/baseline/%/pcap_nodes/acc4.pcap \
-                                        results/baseline/%/pcap_nodes/acc5.pcap \
-                                        results/baseline/%/pcap_nodes/acc6.pcap \
-                                        results/baseline/%/pcap_nodes/producer.pcap \
-                                        results/baseline/%/pcap_nodes/consumer.pcap
-	python3 $^ $@
-
-results/baseline/%/disruption_metrics.txt: experiment/tool/compute_latency_metrics.py results/baseline/%/consumer_capture.csv results/baseline/%/handoffs.txt
-	python3 $^ $@
-
-results/baseline/%/overhead_total.txt: experiment/tool/compute_overhead_metrics.py results/baseline/%/network_overhead.csv results/baseline/%/handoffs.txt | experiment/tool/plot_overhead.py
-	python3 $^ $@
-
-BASELINE_METRIC_INPUTS := $(foreach profile,$(BASELINE_PROFILE_LIST),$(foreach run,$(EXPERIMENT_RUN_IDS),results/baseline/$(profile)/$(run)/disruption_metrics.txt results/baseline/$(profile)/$(run)/overhead_total.txt))
-
-BASELINE_PROFILE_COMPARE_OUTPUTS := results/baseline/handoff_observations.csv \
-                                   results/baseline/handoff_metric_audit.txt \
-                                   results/baseline_disruption_comparison.pdf \
+BASELINE_PROFILE_COMPARE_OUTPUTS := results/baseline/mobility_events.csv \
+                                   results/baseline/mobility_event_audit.txt \
+                                   results/baseline_service_recovery_time.pdf \
+                                   results/baseline_content_loss_fraction.pdf \
                                    results/baseline_forwarding_cost_ratio.pdf \
-                                   results/baseline_nlsr_control_traffic.pdf
+                                   results/baseline_nlsr_control_rate.pdf
 
-$(BASELINE_PROFILE_COMPARE_OUTPUTS) &: experiment/tool/handoff_metric_comparison.py $(BASELINE_METRIC_INPUTS)
-	python3 experiment/tool/handoff_metric_comparison.py baseline --root-dir results/baseline --profiles "$(BASELINE_PROFILE_NAMES)" --runs "$(EXPERIMENT_RUN_CSV)" --observations results/baseline/handoff_observations.csv --audit results/baseline/handoff_metric_audit.txt --disruption-pdf results/baseline_disruption_comparison.pdf --fcr-pdf results/baseline_forwarding_cost_ratio.pdf --control-pdf results/baseline_nlsr_control_traffic.pdf
+$(BASELINE_PROFILE_COMPARE_OUTPUTS) &: experiment/tool/run_mobility_event_analysis.py \
+                                      experiment/tool/mobility_event_metrics.py \
+                                      experiment/tool/plot_mobility_event_metrics.py
+	python3 experiment/tool/run_mobility_event_analysis.py analyze-baseline

@@ -28,14 +28,16 @@ include Makefile.exp1
 # Baseline profile directories (parents of r1..r5; rules live in Makefile.baseline).
 BASELINE_PROFILE_DIRS := $(addprefix results/baseline/,$(BASELINE_PROFILE_LIST))
 
-# Active paper figures. Baseline tuning is G0..G4; the solution comparison is
-# G0 versus OptoFlood. Both use per-handoff disruption, FCR, and NLSR control.
-GENERATED_FIGURES := results/baseline_disruption_comparison.pdf \
+# Active paper figures. Baseline tuning is G0..G4. The solution comparison is
+# G0 versus OptoFlood. Both use SRT, content loss fraction, FCR, and NLSR rate.
+GENERATED_FIGURES := results/baseline_service_recovery_time.pdf \
+                     results/baseline_content_loss_fraction.pdf \
                      results/baseline_forwarding_cost_ratio.pdf \
-                     results/baseline_nlsr_control_traffic.pdf \
-                     results/solution_disruption_comparison.pdf \
+                     results/baseline_nlsr_control_rate.pdf \
+                     results/solution_service_recovery_time.pdf \
+                     results/solution_content_loss_fraction.pdf \
                      results/solution_forwarding_cost_ratio.pdf \
-                     results/solution_nlsr_control_traffic.pdf
+                     results/solution_nlsr_control_rate.pdf
 
 ALL_FIGURES := paper/figures/NDN_Packets_Processing_Flow.pdf \
                paper/figures/NDN_Producer_Mobility_Problem.pdf \
@@ -61,13 +63,22 @@ PLOT_TOOL_SRCS := experiment/tool/plot_latency.py \
                   experiment/tool/summarise_nlsr_sensitivity.py \
                   experiment/tool/plot_nlsr_disruption_comparison.py \
                   experiment/tool/plot_nlsr_network_cost_comparison.py \
-                  experiment/tool/handoff_metric_comparison.py \
-                  experiment/tool/test_handoff_metric_comparison.py \
-                  experiment/tool/plot_exp1_sensitivity.py \
+                  experiment/tool/mobility_event_metrics.py \
+                  experiment/tool/plot_mobility_event_metrics.py \
+                  experiment/tool/run_mobility_event_analysis.py \
+                  experiment/tool/test_mobility_event_metrics.py \
+                  experiment/tool/audit_decoder_parity.py \
                   experiment/tool/plot_delivery_timeline.py
 
-# Main target. The test validation is mandatory and gates the solution experiments.
-all: $(BOXES) experiment test/.validate_ok result paper
+# Full workflow. One recipe runs each stage to completion before the next, so
+# `make -j` cannot overlap these stages or start analysis before experiments.
+all:
+	$(MAKE) experiment-baseline
+	$(MAKE) test
+	$(MAKE) experiment-solution
+	$(MAKE) experiment-exp1
+	$(MAKE) mobility-analysis
+	$(MAKE) paper
 
 # High-level orchestration targets (set the provider via `PROVIDER=...` when needed)
 .PHONY: boxes experiment experiment-baseline experiment-solution experiment-exp1 plot-exp1 exp1 \
@@ -82,7 +93,7 @@ experiment-solution: $(SOLUTION_RESULTS)
 # Extended evaluation, Exp 1 (request-interval sweep, solution only).
 experiment-exp1: $(EXT1_RAW_OUTPUTS)
 
-plot-exp1: $(EXT1_SENSITIVITY_OUTPUTS) $(EXT1_TIMELINE_OUTPUT)
+plot-exp1: $(EXT1_ANALYSIS_OUTPUTS)
 
 exp1: experiment-exp1 plot-exp1
 
@@ -90,7 +101,7 @@ exp1: experiment-exp1 plot-exp1
 experiment: experiment-baseline experiment-solution experiment-exp1
 
 # Assemble the active comparison figures and the Exp 1 figures.
-result: $(BASELINE_PROFILE_COMPARE_OUTPUTS) $(SOLUTION_COMPARE_OUTPUTS) $(EXT1_SENSITIVITY_OUTPUTS) $(EXT1_TIMELINE_OUTPUT)
+result: $(BASELINE_PROFILE_COMPARE_OUTPUTS) $(SOLUTION_COMPARE_OUTPUTS) $(EXT1_ANALYSIS_OUTPUTS)
 
 # Run the test experiment
 test: test/.validate_ok
@@ -106,6 +117,17 @@ test/.validate_ok: test/Makefile test/Vagrantfile test/exp_test.py test/validate
 # Plot only (reuse existing captures; no VM run).
 # plot-main is the G0-versus-OptoFlood box plots.
 plot: plot-baseline plot-main
+
+# Analysis-only targets. Their file rules do not depend on experiment outputs,
+# so Make cannot rebuild a stale PCAP by entering a VM recipe.
+.PHONY: mobility-analysis test-mobility-analysis plot-exp1-diagnostic
+mobility-analysis: plot-baseline plot-main plot-exp1
+
+test-mobility-analysis:
+	python3 -m unittest experiment.tool.test_mobility_event_metrics
+
+plot-exp1-diagnostic:
+	python3 experiment/tool/run_mobility_event_analysis.py analyze-exp1 --diagnostic --deadline $(EXT1_PRIMARY_DEADLINE)
 
 plot-baseline: $(BASELINE_PROFILE_COMPARE_OUTPUTS)
 
@@ -190,7 +212,7 @@ vm-clean:
 	PROVIDER=$(PROVIDER) LATEXMK=latexmk sh scripts/cleanup.sh vm-clean
 
 
-.PHONY: all build-boxes boxes clean deep-clean clean-ssh-config box box-initial box-baseline box-solution experiment experiment-baseline experiment-solution experiment-exp1 plot-exp1 exp1 result plot plot-baseline plot-main paper test mypy vm-clean
+.PHONY: all build-boxes boxes clean deep-clean clean-ssh-config box box-initial box-baseline box-solution experiment experiment-baseline experiment-solution experiment-exp1 plot-exp1 exp1 result plot plot-baseline plot-main paper test mypy vm-clean mobility-analysis test-mobility-analysis plot-exp1-diagnostic
 
 .DELETE_ON_ERROR:
 

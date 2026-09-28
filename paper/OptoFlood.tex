@@ -191,21 +191,26 @@ Figures~\ref{fig:baseline_forwarding_cost_ratio} and~\ref{fig:baseline_nlsr_cont
 
 \begin{figure*}[t]
     \centering
-    \subfloat[Service disruption]{
-        \includegraphics[width=0.31\textwidth]{baseline_disruption_comparison.pdf}
-        \label{fig:baseline_disruption_comparison}
+    \subfloat[Service recovery time]{
+        \includegraphics[width=0.48\textwidth]{baseline_service_recovery_time.pdf}
+        \label{fig:baseline_service_recovery_time}
     }
     \hfill
-    \subfloat[Forwarding-cost ratio]{
-        \includegraphics[width=0.31\textwidth]{baseline_forwarding_cost_ratio.pdf}
+    \subfloat[Content loss fraction]{
+        \includegraphics[width=0.48\textwidth]{baseline_content_loss_fraction.pdf}
+        \label{fig:baseline_content_loss_fraction}
+    }
+    \\
+    \subfloat[Forwarding cost ratio]{
+        \includegraphics[width=0.48\textwidth]{baseline_forwarding_cost_ratio.pdf}
         \label{fig:baseline_forwarding_cost_ratio}
     }
     \hfill
-    \subfloat[NLSR control traffic]{
-        \includegraphics[width=0.31\textwidth]{baseline_nlsr_control_traffic.pdf}
-        \label{fig:baseline_nlsr_control_traffic}
+    \subfloat[NLSR control rate]{
+        \includegraphics[width=0.48\textwidth]{baseline_nlsr_control_rate.pdf}
+        \label{fig:baseline_nlsr_control_rate}
     }
-    \caption{Baseline NDN forwarding and routing behaviour under the G0--G4 NLSR and PSync timing configurations.}
+    \caption{Baseline tuning for G0--G4.}
     \label{fig:baseline_results}
 \end{figure*}
 
@@ -343,21 +348,26 @@ In baseline forwarding, each hand-off is followed by a sharp drop in delivered t
 
 \begin{figure*}[t]
     \centering
-    \subfloat[Service disruption]{
-        \includegraphics[width=0.31\textwidth]{solution_disruption_comparison.pdf}
-        \label{fig:solution_disruption_comparison}
+    \subfloat[Service recovery time]{
+        \includegraphics[width=0.48\textwidth]{solution_service_recovery_time.pdf}
+        \label{fig:solution_service_recovery_time}
     }
     \hfill
-    \subfloat[Forwarding-cost ratio]{
-        \includegraphics[width=0.31\textwidth]{solution_forwarding_cost_ratio.pdf}
+    \subfloat[Content loss fraction]{
+        \includegraphics[width=0.48\textwidth]{solution_content_loss_fraction.pdf}
+        \label{fig:solution_content_loss_fraction}
+    }
+    \\
+    \subfloat[Forwarding cost ratio]{
+        \includegraphics[width=0.48\textwidth]{solution_forwarding_cost_ratio.pdf}
         \label{fig:solution_forwarding_cost_ratio}
     }
     \hfill
-    \subfloat[NLSR control traffic]{
-        \includegraphics[width=0.31\textwidth]{solution_nlsr_control_traffic.pdf}
-        \label{fig:solution_nlsr_control_traffic}
+    \subfloat[NLSR control rate]{
+        \includegraphics[width=0.48\textwidth]{solution_nlsr_control_rate.pdf}
+        \label{fig:solution_nlsr_control_rate}
     }
-    \caption{NDN forwarding and routing behaviour under G0 and OptoFlood}
+    \caption{G0 and OptoFlood.}
     \label{fig:solution_results}
 \end{figure*}
 
@@ -394,10 +404,10 @@ Figure~\ref{fig:ext_interval} reports OptoFlood across the request-interval rang
 
 \begin{figure}
     \centering
-    \subfloat[Per-hand-off service disruption versus request interval.\label{fig:ext_interval_disruption}]{\includegraphics[width=\columnwidth]{results/extended/exp1/exp1_disruption.pdf}}\\
-    \subfloat[Deadline-missed frames per hand-off versus request interval.\label{fig:ext_interval_loss}]{\includegraphics[width=\columnwidth]{results/extended/exp1/exp1_frameloss.pdf}}\\
-    \subfloat[Flood load per hand-off versus request interval.\label{fig:ext_interval_flood}]{\includegraphics[width=\columnwidth]{results/extended/exp1/exp1_flood.pdf}}
-    \caption{OptoFlood sensitivity to the request interval (stream quality).\ryo{not subfloat, subfigure}}
+    \subfloat[Service recovery time versus request interval.\label{fig:ext_interval_srt}]{\includegraphics[width=\columnwidth]{results/extended/exp1/exp1_service_recovery_time.pdf}}\\
+    \subfloat[Content loss fraction versus request interval.\label{fig:ext_interval_clf}]{\includegraphics[width=\columnwidth]{results/extended/exp1/exp1_content_loss_fraction.pdf}}\\
+    \subfloat[Explicit flood rate versus request interval.\label{fig:ext_interval_flood}]{\includegraphics[width=\columnwidth]{results/extended/exp1/exp1_explicit_flood_rate.pdf}}
+    \caption{OptoFlood sensitivity to the request interval.}
     \label{fig:ext_interval}
 \end{figure}
 
