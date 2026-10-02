@@ -55,7 +55,7 @@ This command automates the entire process. It will:
 3.  Compile the C++ applications and run the mobility simulation inside each VM.
 4.  Collect raw experiment artifacts, including `consumer_capture.pcap` and per-node `pcap_nodes/*.pcap`, into each run directory.
 5.  Derive host-side CSV analysis inputs from those raw packet captures.
-6.  Decode the raw captures and plot service recovery time, content loss fraction, forwarding-cost ratio, and NLSR control rate for G0--G4 and for G0 versus OptoFlood.
+6.  Decode the raw captures and plot service recovery time, content loss fraction, forwarding-cost ratio, and NLSR control rate for G0--G4 and for G0 versus OptoFlood, then measure routing convergence from the existing logs.
 7.  Compile the LaTeX source to produce `paper/OptoFlood.pdf`.
 
 ## Workflow Targets
@@ -73,9 +73,13 @@ This command automates the entire process. It will:
 - `make plot-exp1`
   Regenerates the Exp1 service-recovery, content-loss, and explicit-flood figures, plus the delivery timeline.
 - `make mobility-analysis`
-  Regenerates baseline, solution, and Exp1 mobility-event tables and figures from existing captures.
+  Regenerates baseline, solution, and Exp1 mobility-event tables and figures, then the routing-convergence tables and figures, from existing captures. Those four steps run one after another, including under `make -j`.
 - `make test-mobility-analysis`
   Runs the mobility-event unit tests. This is separate from the protocol `test` target.
+- `make routing-analysis`
+  Regenerates routing-convergence tables and the two routing figures from existing NLSR logs, NFD logs, handoff records, and mobility packet tables. It does not rerun experiments.
+- `make plot-routing`
+  Same host-side routing analysis as `make routing-analysis`.
 
 ## Mobility-event analysis
 
@@ -95,6 +99,24 @@ The active metrics are service recovery time, content loss fraction, forwarding-
 - `results/extended/exp1/exp1_content_loss_fraction.pdf`
 - `results/extended/exp1/exp1_explicit_flood_rate.pdf`
 - `results/extended/exp1/exp1_delivery_timeline.pdf`
+
+## Routing-convergence analysis
+
+`make routing-analysis` and `make plot-routing` read existing `handoffs.txt`, per-node `nlsr.log` and `nfd.log`, and `mobility_packets.csv`. They do not start a VM. A missing input fails with `required routing evidence missing`.
+
+The measured routing quantities are:
+
+- Complete Mobility-Topology Update Latency: producer-local Adj-LSA build after both sides of the move are definitive.
+- Service-Path LSA Lead: per-handoff median of same-router, same Adj-LSA corridor Data versus NLSR Sync notice. Reported in `results/routing/service_path_lsa_lead.csv`. It has no standalone production figure.
+- Service-Path FIB Convergence Time: latest NFD-confirmed correct `/LiveStream` installation on service-path routers whose next hop must change.
+- Network-Wide FIB Convergence Time: the same NFD-confirmed endpoint over every affected NLSR router. `G1/r1/h8` is right-censored: the event is retained, the convergence cell is blank, and the capture boundary is not used as a convergence time.
+
+Production figures:
+
+- `results/routing_topology_update_latency.pdf`
+- `results/routing_fib_convergence.pdf`
+
+Tables and the audit are under `results/routing/`. `make clean` removes the `results/` tree, including `results/routing/` and the two routing PDFs.
 
 ## Baseline Parameter Sets
 

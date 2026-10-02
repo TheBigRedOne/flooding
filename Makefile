@@ -68,7 +68,10 @@ PLOT_TOOL_SRCS := experiment/tool/plot_latency.py \
                   experiment/tool/run_mobility_event_analysis.py \
                   experiment/tool/test_mobility_event_metrics.py \
                   experiment/tool/audit_decoder_parity.py \
-                  experiment/tool/plot_delivery_timeline.py
+                  experiment/tool/plot_delivery_timeline.py \
+                  experiment/tool/routing_convergence_metrics.py \
+                  experiment/tool/run_routing_convergence_analysis.py \
+                  experiment/tool/test_routing_convergence_metrics.py
 
 # Full workflow. One recipe runs each stage to completion before the next, so
 # `make -j` cannot overlap these stages or start analysis before experiments.
@@ -120,8 +123,22 @@ plot: plot-baseline plot-main
 
 # Analysis-only targets. Their file rules do not depend on experiment outputs,
 # so Make cannot rebuild a stale PCAP by entering a VM recipe.
-.PHONY: mobility-analysis test-mobility-analysis plot-exp1-diagnostic
-mobility-analysis: plot-baseline plot-main plot-exp1
+
+.PHONY: mobility-analysis test-mobility-analysis plot-exp1-diagnostic routing-analysis plot-routing test-routing-analysis
+
+mobility-analysis:
+	$(MAKE) plot-baseline
+	$(MAKE) plot-main
+	$(MAKE) plot-exp1
+	$(MAKE) routing-analysis
+
+routing-analysis:
+	python3 experiment/tool/run_routing_convergence_analysis.py
+
+plot-routing: routing-analysis
+
+test-routing-analysis:
+	python3 -m unittest experiment.tool.test_routing_convergence_metrics
 
 test-mobility-analysis:
 	python3 -m unittest experiment.tool.test_mobility_event_metrics
@@ -212,7 +229,7 @@ vm-clean:
 	PROVIDER=$(PROVIDER) LATEXMK=latexmk sh scripts/cleanup.sh vm-clean
 
 
-.PHONY: all build-boxes boxes clean deep-clean clean-ssh-config box box-initial box-baseline box-solution experiment experiment-baseline experiment-solution experiment-exp1 plot-exp1 exp1 result plot plot-baseline plot-main paper test mypy vm-clean mobility-analysis test-mobility-analysis plot-exp1-diagnostic
+.PHONY: all build-boxes boxes clean deep-clean clean-ssh-config box box-initial box-baseline box-solution experiment experiment-baseline experiment-solution experiment-exp1 plot-exp1 exp1 result plot plot-baseline plot-main paper test mypy vm-clean mobility-analysis test-mobility-analysis plot-exp1-diagnostic routing-analysis plot-routing test-routing-analysis
 
 .DELETE_ON_ERROR:
 

@@ -46,6 +46,7 @@ remove_ssh_configs() {
 
 remove_host_artifacts() {
   remove_ssh_configs
+  # Removes results/routing/, routing PDFs, and the other host-side analysis outputs.
   rm -rf results
   rm -rf "$VENV_DIR"
   "$LATEXMK_CMD" -c "$MAIN_TEX"
