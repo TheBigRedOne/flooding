@@ -66,7 +66,8 @@ SOLUTION_COMPARE_OUTPUTS := results/solution/mobility_events.csv \
                             results/solution_service_recovery_time.pdf \
                             results/solution_content_loss_fraction.pdf \
                             results/solution_forwarding_cost_ratio.pdf \
-                            results/solution_nlsr_control_rate.pdf
+                            results/solution_nlsr_control_rate.pdf \
+                            results/solution_recovery_flooding_volume.pdf
 
 $(SOLUTION_COMPARE_OUTPUTS) &: experiment/tool/run_mobility_event_analysis.py \
                               experiment/tool/mobility_event_metrics.py \

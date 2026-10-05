@@ -8,6 +8,7 @@ import csv
 import math
 import os
 import sys
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import matplotlib
@@ -158,6 +159,81 @@ def draw_boxes(
             f"median={float(stats['med']):.6g} mean={float(stats['mean']):.6g} "
             f"Q1={float(stats['q1']):.6g} Q3={float(stats['q3']):.6g}"
         )
+
+
+@dataclass
+class RecoveryFloodLayout:
+    labels: List[str]
+    x: List[float]
+    y_kb: List[float]
+    median_bytes: float
+    mean_bytes: float
+
+
+def recovery_flood_layout(rows: Sequence[Dict[str, str]]) -> RecoveryFloodLayout:
+    """OptoFlood raw recovery-flood bytes, plotted in kB. Baseline rows are omitted.
+
+    Every observation in one run shares that run's category centre. Horizontal
+    position inside a run is not a variable.
+    """
+    selected = [row for row in rows if row["configuration"] == "OptoFlood"]
+    if len(selected) != 40:
+        raise SystemExit(f"OptoFlood recovery flooding volume: expected 40 events, found {len(selected)}")
+    points: List[Tuple[str, int, float]] = []
+    for row in selected:
+        run_id = row["run_id"].strip()
+        handoff = int(row["handoff_index"])
+        value = _numeric(row["recovery_flood_bytes"])
+        if value is None:
+            raise SystemExit(f"{run_id} handoff {handoff}: recovery_flood_bytes is blank")
+        points.append((run_id, handoff, value))
+    runs = ("r1", "r2", "r3", "r4", "r5")
+    if {run for run, _handoff, _value in points} != set(runs):
+        raise SystemExit("OptoFlood recovery flooding volume: expected runs r1-r5")
+    ordered = sorted(value for _run, _handoff, value in points)
+    median = (ordered[19] + ordered[20]) / 2.0
+    mean = sum(ordered) / 40.0
+    xs: List[float] = []
+    ys: List[float] = []
+    for position, run_id in enumerate(runs, start=1):
+        values = [value for run, _handoff, value in points if run == run_id]
+        if len(values) != 8:
+            raise SystemExit(f"{run_id}: expected 8 handoffs, found {len(values)}")
+        xs.extend([float(position)] * 8)
+        ys.extend(value / 1000.0 for value in values)
+    if set(xs) != {1.0, 2.0, 3.0, 4.0, 5.0}:
+        raise SystemExit(f"recovery flooding volume figure: unexpected x coordinates {set(xs)}")
+    return RecoveryFloodLayout(list(runs), xs, ys, median, mean)
+
+
+def draw_recovery_flooding_volume(rows: Sequence[Dict[str, str]], path: str) -> None:
+    """Raw OptoFlood recovery-flood observations with the global median and mean."""
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    layout = recovery_flood_layout(rows)
+    median_kb = layout.median_bytes / 1000.0
+    mean_kb = layout.mean_bytes / 1000.0
+    fig, ax = plt.subplots(figsize=(6.2, 4.2))
+    ax.scatter(layout.x, layout.y_kb, s=28, color="C0", alpha=0.65, zorder=3, linewidths=0)
+    ax.axhline(median_kb, color="black", linestyle="-", linewidth=1.0, zorder=2, label=f"Median: {median_kb:.3f} kB")
+    ax.axhline(mean_kb, color="black", linestyle="--", linewidth=1.0, zorder=2, label=f"Mean: {mean_kb:.3f} kB")
+    centers = list(range(1, len(layout.labels) + 1))
+    ax.set_xticks(centers)
+    ax.set_xticklabels(layout.labels)
+    ax.set_xlim(0.5, len(layout.labels) + 0.5)
+    ax.set_ylim(5.5, 11.0)
+    ax.set_ylabel("Recovery flooding volume (kB per handoff)")
+    ax.grid(True, axis="y", linestyle="--", alpha=0.6)
+    ax.set_axisbelow(True)
+    ax.legend(loc="center", bbox_to_anchor=(0.5, 0.70), ncol=2, frameon=True, fontsize=8)
+    fig.tight_layout()
+    fig.savefig(path)
+    plt.close(fig)
+    print(
+        f"recovery flooding volume: n=40 "
+        f"median_bytes={layout.median_bytes:.3f} mean_bytes={layout.mean_bytes:.3f}"
+    )
 
 
 def plot_exp1(path: str, rows: Sequence[Dict[str, str]], field: str, ylabel: str, series: Sequence[str]) -> None:

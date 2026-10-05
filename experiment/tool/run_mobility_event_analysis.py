@@ -259,6 +259,7 @@ def aggregate_baseline() -> None:
     _audit(RESULTS / "baseline" / "mobility_event_audit.txt", rows)
     _boxes(destination, "service_recovery_time_ms", "Service recovery time (ms)", "G0,G1,G2,G3,G4", RESULTS / "baseline_service_recovery_time.pdf", False)
     _boxes(destination, "content_loss_fraction", "Content loss fraction", "G0,G1,G2,G3,G4", RESULTS / "baseline_content_loss_fraction.pdf", False)
+    # Legacy manuscript compatibility. FCR is not an active evaluation metric.
     _boxes(destination, "forwarding_cost_ratio", "Forwarding cost ratio", "G0,G1,G2,G3,G4", RESULTS / "baseline_forwarding_cost_ratio.pdf", True)
     _boxes(destination, "nlsr_control_rate_bytes_per_s", "NLSR control rate (bytes/s)", "G0,G1,G2,G3,G4", RESULTS / "baseline_nlsr_control_rate.pdf", True)
 
@@ -274,8 +275,11 @@ def aggregate_solution() -> None:
     _audit(RESULTS / "solution" / "mobility_event_audit.txt", rows)
     _boxes(destination, "service_recovery_time_ms", "Service recovery time (ms)", "G0,OptoFlood", RESULTS / "solution_service_recovery_time.pdf", True)
     _boxes(destination, "content_loss_fraction", "Content loss fraction", "G0,OptoFlood", RESULTS / "solution_content_loss_fraction.pdf", False)
+    # Legacy manuscript compatibility. FCR is not an active evaluation metric.
     _boxes(destination, "forwarding_cost_ratio", "Forwarding cost ratio", "G0,OptoFlood", RESULTS / "solution_forwarding_cost_ratio.pdf", False)
     _boxes(destination, "nlsr_control_rate_bytes_per_s", "NLSR control rate (bytes/s)", "G0,OptoFlood", RESULTS / "solution_nlsr_control_rate.pdf", False)
+    flood_rows = plots.load_rows(str(destination))
+    plots.draw_recovery_flooding_volume(flood_rows, str(RESULTS / "solution_recovery_flooding_volume.pdf"))
 
 
 def aggregate_exp1(diagnostic: bool = False) -> None:

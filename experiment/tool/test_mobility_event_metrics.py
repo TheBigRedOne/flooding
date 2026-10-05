@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Synthetic checks for mobility-event SRT, reliability, and cost."""
+"""Synthetic checks for mobility-event SRT, content loss, and recovery flooding volume."""
 
 from __future__ import annotations
 
@@ -12,8 +12,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import mobility_event_metrics as metrics
 
 
-def packet(time, node, outbound, ptype, name, length=100, interest_flood=False, data_flood=False):
-    return metrics.Packet(time, node, outbound, ptype, name, length, interest_flood, data_flood)
+def packet(time, node, outbound, ptype, name, length=100, interest_flood=False, data_flood=False,
+           interest_hop_limit=False, data_lp_hop_limit=False, data_mobility_flag=False):
+    return metrics.Packet(
+        time, node, outbound, ptype, name, length, interest_flood, data_flood,
+        interest_hop_limit, data_lp_hop_limit, data_mobility_flag,
+    )
 
 
 CONTENT = "/LiveStream/v0/54=%01/50=%00"
@@ -47,7 +51,7 @@ class MobilityEventTest(unittest.TestCase):
         handoffs = [metrics.Handoff(1, 11.0, "acc2", "acc3")]
         rows = metrics.measure_run(packets, handoffs, "G0", "g0", "r1")
         self.assertTrue(rows[0]["recovered"])
-        self.assertAlmostEqual(float(str(rows[0]["service_recovery_time_ms"])), 500.0)
+        self.assertAlmostEqual(float(str(rows[0]["service_recovery_time_ms"])), 200.0)
         self.assertEqual(rows[0]["recovery_name"], CONTENT)
         self.assertEqual(rows[0]["event_end_time"], 20.0)
 
@@ -92,7 +96,59 @@ class MobilityEventTest(unittest.TestCase):
         self.assertEqual(rows[0]["unmet_request_count"], 1)
         self.assertAlmostEqual(float(str(rows[0]["unmet_interest_ratio"])), 0.5)
 
-    def test_fcr_counts_relay_app_bytes_and_excludes_guard_from_delivery(self) -> None:
+    def test_data_return_is_not_required_for_srt(self) -> None:
+        packets = [
+            packet(11.1, "consumer", True, "interest", CONTENT),
+            packet(11.25, "producer", False, "interest", CONTENT),
+        ]
+        rows = metrics.measure_run(packets, [metrics.Handoff(1, 11.0, "acc2", "acc3")], "G0", "g0", "r1")
+        self.assertTrue(rows[0]["recovered"])
+        self.assertAlmostEqual(float(str(rows[0]["service_recovery_time_ms"])), 250.0)
+
+    def test_producer_receipt_before_consumer_send_does_not_recover(self) -> None:
+        packets = [
+            packet(11.3, "consumer", True, "interest", CONTENT),
+            packet(11.1, "producer", False, "interest", CONTENT),
+        ]
+        rows = metrics.measure_run(packets, [metrics.Handoff(1, 11.0, "acc2", "acc3")], "G0", "g0", "r1")
+        self.assertFalse(rows[0]["recovered"])
+
+    def test_next_handoff_boundary_excludes_a_later_interest(self) -> None:
+        packets = [
+            packet(11.1, "consumer", True, "interest", CONTENT),
+            packet(20.0, "producer", False, "interest", CONTENT),
+            packet(21.0, "core", True, "data", OTHER),
+        ]
+        handoffs = [metrics.Handoff(1, 11.0, "acc2", "acc3"), metrics.Handoff(2, 20.0, "acc3", "acc2")]
+        rows = metrics.measure_run(packets, handoffs, "G0", "g0", "r1")
+        self.assertFalse(rows[0]["recovered"])
+
+    def test_final_capture_boundary_includes_producer_receipt(self) -> None:
+        packets = [
+            packet(11.1, "consumer", True, "interest", CONTENT),
+            packet(12.0, "producer", False, "interest", CONTENT),
+        ]
+        rows = metrics.measure_run(packets, [metrics.Handoff(1, 11.0, "acc2", "acc3")], "G0", "g0", "r1")
+        self.assertTrue(rows[0]["recovered"])
+        self.assertEqual(rows[0]["event_end_time"], 12.0)
+
+    def test_recovery_flood_volume_counts_endpoints_and_excludes_flood_id_alone(self) -> None:
+        packets = [
+            packet(11.1, "producer", True, "data", CONTENT, length=15, data_mobility_flag=True),
+            packet(11.2, "core", True, "data", CONTENT, length=15, data_mobility_flag=True),
+            packet(11.3, "consumer", True, "interest", GUARD, length=5, interest_hop_limit=True),
+            packet(11.4, "acc1", True, "data", CONTENT, length=12, data_lp_hop_limit=True),
+            packet(11.5, "acc1", True, "data", CONTENT, length=40, data_flood=True),
+            packet(11.6, "acc1", False, "data", CONTENT, length=15, data_mobility_flag=True),
+            packet(11.7, "acc1", True, "interest", CONTENT, length=9),
+            packet(11.8, "core", True, "data", "/localhop/ndn/nlsr/sync/x", length=30, data_mobility_flag=True),
+        ]
+        rows = metrics.measure_run(packets, [metrics.Handoff(1, 11.0, "acc2", "acc3")], "OptoFlood", "solution", "r1")
+        self.assertEqual(rows[0]["recovery_interest_flood_bytes"], 5)
+        self.assertEqual(rows[0]["recovery_data_flood_bytes"], 42)
+        self.assertEqual(rows[0]["recovery_flood_bytes"], 47)
+
+    def test_legacy_fcr_counts_relay_app_bytes_and_excludes_guard_from_delivery(self) -> None:
         packets = [
             packet(11.1, "core", True, "interest", CONTENT, length=30),
             packet(11.2, "acc3", True, "data", GUARD, length=50),
@@ -256,18 +312,90 @@ class MobilityEventTest(unittest.TestCase):
         self.assertEqual(len(egress), 1)
         self.assertEqual(egress[0].length, 30)
 
+    def test_nlsr_interest_does_not_recover_service(self) -> None:
+        name = "/localhop/ndn/nlsr/LSA/site/%C1.Router/router/NAME"
+        packets = [
+            packet(11.1, "consumer", True, "interest", name),
+            packet(11.2, "producer", False, "interest", name),
+        ]
+        rows = metrics.measure_run(packets, [metrics.Handoff(1, 11.0, "acc2", "acc3")], "G0", "g0", "r1")
+        self.assertFalse(rows[0]["recovered"])
+
+    def test_flood_volume_dedup_cross_node_and_no_duration_scaling(self) -> None:
+        import tempfile
+        header = "node,frame.number,frame.time_epoch,frame.len,sll.pkttype,ndn.type,ndn.name,ndn.hoplimit,ndn.lp.hoplimit,ndn.lp.mobility_flag,ndn.flood_id\n"
+        content = "/LiveStream/v0/54=%01/50=%00"
+        body = (
+            f"producer,1,11.1,10,4,data,{content},,,1,\n"
+            f"producer,1,11.1,10,4,data,{content},,,1,\n"
+            f"core,1,11.2,10,4,data,{content},,,1,\n"
+            f"acc1,2,11.3,7,4,interest,{content},1,,,\n"
+            f"acc1,3,11.4,20,4,data,{content},,,,9\n"
+            f"acc1,4,11.5,20,0,data,{content},,,1,\n"
+            f"consumer,5,11.6,4,4,data,{content},,1,,\n"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "packets.csv"
+            path.write_text(header + body, encoding="utf-8")
+            packets = metrics.load_packets(str(path))
+        handoffs = [metrics.Handoff(1, 11.0, "acc2", "acc3"), metrics.Handoff(2, 40.0, "acc3", "acc2")]
+        rows = metrics.measure_run(packets, handoffs, "OptoFlood", "solution", "r1")
+        self.assertEqual(rows[0]["recovery_interest_flood_bytes"], 7)
+        self.assertEqual(rows[0]["recovery_data_flood_bytes"], 24)
+        self.assertEqual(rows[0]["recovery_flood_bytes"], 31)
+        self.assertNotEqual(rows[0]["recovery_flood_bytes"], 31 / float(str(rows[0]["event_duration_s"])))
+
+    def test_recovery_flood_figure_plots_raw_runs_not_baseline(self) -> None:
+        import plot_mobility_event_metrics as plots
+        rows = []
+        for run_index, run_id in enumerate(("r1", "r2", "r3", "r4", "r5")):
+            for handoff in range(1, 9):
+                rows.append({
+                    "configuration": "OptoFlood",
+                    "run_id": run_id,
+                    "handoff_index": str(handoff),
+                    "recovery_flood_bytes": str(5000 + run_index * 10 + handoff),
+                })
+        rows.append({
+            "configuration": "G0",
+            "run_id": "r1",
+            "handoff_index": "1",
+            "recovery_flood_bytes": "999999",
+        })
+        layout = plots.recovery_flood_layout(rows)
+        self.assertEqual(layout.labels, ["r1", "r2", "r3", "r4", "r5"])
+        self.assertEqual(len(layout.x), 40)
+        self.assertEqual(len(layout.y_kb), 40)
+        self.assertLess(max(layout.y_kb), 10.0)
+        ordered = sorted(layout.y_kb)
+        self.assertAlmostEqual(layout.median_bytes / 1000.0, (ordered[19] + ordered[20]) / 2.0)
+        self.assertAlmostEqual(layout.mean_bytes / 1000.0, sum(layout.y_kb) / 40.0)
+        self.assertEqual(set(layout.x), {1.0, 2.0, 3.0, 4.0, 5.0})
+        for center in (1.0, 2.0, 3.0, 4.0, 5.0):
+            self.assertEqual(sum(x == center for x in layout.x), 8)
+
+    def test_unmarked_baseline_traffic_has_zero_recovery_flood_volume(self) -> None:
+        packets = [
+            packet(11.1, "consumer", True, "interest", CONTENT, length=80),
+            packet(11.2, "core", True, "interest", CONTENT, length=80),
+            packet(11.3, "producer", True, "data", CONTENT, length=200),
+            packet(11.4, "acc1", True, "data", CONTENT, length=200),
+        ]
+        rows = metrics.measure_run(packets, [metrics.Handoff(1, 11.0, "acc2", "acc3")], "G0", "g0", "r1")
+        self.assertEqual(rows[0]["recovery_flood_bytes"], 0)
+        self.assertEqual(rows[0]["recovery_interest_flood_bytes"], 0)
+        self.assertEqual(rows[0]["recovery_data_flood_bytes"], 0)
+
     def test_srt_matches_alternate_uri_spellings(self) -> None:
         interest = "/LiveStream/v0/54=1/50=%00"
         data = "/LiveStream/v0/54=%31/50=%00"
         packets = [
             packet(11.1, "consumer", True, "interest", interest),
-            packet(11.2, "producer", False, "interest", interest),
-            packet(11.3, "producer", True, "data", data),
-            packet(11.4, "consumer", False, "data", data),
+            packet(11.2, "producer", False, "interest", data),
         ]
         rows = metrics.measure_run(packets, [metrics.Handoff(1, 11.0, "acc2", "acc3")], "G0", "g0", "r1")
         self.assertTrue(rows[0]["recovered"])
-        self.assertAlmostEqual(float(str(rows[0]["service_recovery_time_ms"])), 400.0)
+        self.assertAlmostEqual(float(str(rows[0]["service_recovery_time_ms"])), 200.0)
 
 
 if __name__ == "__main__":

@@ -3,6 +3,11 @@
 
 The event interval is [handoff_i, handoff_(i+1)) and, for the last handoff,
 [handoff_K, capture_end]. Capture end is the latest packet timestamp.
+
+Service recovery time ends when the producer receives the first fresh
+post-handoff content Interest. Recovery Flooding Volume is the byte sum of
+flood-marked sender-egress transmissions in that interval. Forwarding cost
+ratio remains only so the current manuscript can still build its old figures.
 """
 
 from __future__ import annotations
@@ -44,8 +49,6 @@ EVENT_FIELDS = [
     "recovery_name",
     "consumer_interest_time",
     "producer_interest_time",
-    "producer_data_time",
-    "consumer_data_time",
     "first_post_handoff_producer_data_arrival_ms",
     "logical_request_count",
     "satisfied_request_count",
@@ -58,6 +61,10 @@ EVENT_FIELDS = [
     "application_forwarding_rate_bytes_per_s",
     "nlsr_control_bytes",
     "nlsr_control_rate_bytes_per_s",
+    "recovery_interest_flood_bytes",
+    "recovery_data_flood_bytes",
+    "recovery_flood_bytes",
+    # Exp1 sensitivity still plots these rates. They are not Recovery Flooding Volume.
     "explicit_flood_bytes",
     "interest_flood_bytes",
     "data_flood_bytes",
@@ -100,6 +107,9 @@ class Packet:
     length: int
     interest_flood: bool
     data_flood: bool
+    interest_hop_limit: bool = False
+    data_lp_hop_limit: bool = False
+    data_mobility_flag: bool = False
 
 
 @dataclass
@@ -313,12 +323,13 @@ def load_packets(path: str) -> List[Packet]:
             except (KeyError, TypeError, ValueError):
                 continue
             ptype = (row.get("ndn.type") or "").strip().lower()
-            interest_flood = ptype == "interest" and _flag(row.get("ndn.hoplimit") or "")
-            data_flood = ptype == "data" and (
-                _flag(row.get("ndn.lp.hoplimit") or "")
-                or _flag(row.get("ndn.lp.mobility_flag") or "")
-                or _flag(row.get("ndn.flood_id") or "")
-            )
+            hop_limit = _flag(row.get("ndn.hoplimit") or "")
+            lp_hop_limit = _flag(row.get("ndn.lp.hoplimit") or "")
+            mobility_flag = _flag(row.get("ndn.lp.mobility_flag") or "")
+            flood_id = _flag(row.get("ndn.flood_id") or "")
+            # Exp1 explicit-flood rates keep the previous marker union, including FloodId.
+            interest_flood = ptype == "interest" and hop_limit
+            data_flood = ptype == "data" and (lp_hop_limit or mobility_flag or flood_id)
             packets.append(Packet(
                 time=timestamp,
                 node=(row.get("node") or "").strip(),
@@ -328,6 +339,9 @@ def load_packets(path: str) -> List[Packet]:
                 length=length,
                 interest_flood=interest_flood,
                 data_flood=data_flood,
+                interest_hop_limit=hop_limit,
+                data_lp_hop_limit=lp_hop_limit,
+                data_mobility_flag=mobility_flag,
             ))
     if not packets:
         raise MobilityMetricError(f"no packets in {path}")
@@ -352,26 +366,23 @@ def _earliest_after(times: Sequence[float], limit: float) -> Optional[float]:
     return times[position]
 
 
-def match_recovery_chain(
+def match_service_recovery_interest(
     handoff_time: float,
     event_end: float,
     consumer_interests: Dict[str, List[float]],
     producer_interests: Dict[str, List[float]],
-    producer_data: Dict[str, List[float]],
-    consumer_data: Dict[str, List[float]],
     inclusive_end: bool = False,
-) -> Optional[Tuple[str, float, float, float, float]]:
-    """Earliest post-handoff content chain inside the event interval.
+) -> Optional[Tuple[str, float, float]]:
+    """Earliest producer receipt of a fresh post-handoff content Interest.
 
-    handoff < consumer Interest <= producer Interest < producer Data <= consumer Data.
+    handoff < consumer Interest <= producer Interest, same canonical name.
+    Data generation and Data return are not part of this endpoint.
     A non-final event ends strictly before the next handoff. The final event includes capture end.
     """
-    best: Optional[Tuple[float, str, float, float, float]] = None
+    best: Optional[Tuple[float, str, float]] = None
     for name, interest_times in consumer_interests.items():
         producer_in = producer_interests.get(name) or []
-        producer_out = producer_data.get(name) or []
-        consumer_in = consumer_data.get(name) or []
-        if not producer_in or not producer_out or not consumer_in:
+        if not producer_in:
             continue
         for consumer_interest_time in interest_times:
             if consumer_interest_time <= handoff_time or not _before_end(consumer_interest_time, event_end, inclusive_end):
@@ -379,24 +390,37 @@ def match_recovery_chain(
             producer_interest_time = _earliest_at_or_after(producer_in, consumer_interest_time)
             if producer_interest_time is None or not _before_end(producer_interest_time, event_end, inclusive_end):
                 continue
-            producer_data_time = _earliest_after(producer_out, producer_interest_time)
-            if producer_data_time is None or not _before_end(producer_data_time, event_end, inclusive_end):
-                continue
-            consumer_data_time = _earliest_at_or_after(consumer_in, producer_data_time)
-            if consumer_data_time is None or not _before_end(consumer_data_time, event_end, inclusive_end):
-                continue
-            if best is None or consumer_data_time < best[0]:
-                best = (
-                    consumer_data_time,
-                    name,
-                    consumer_interest_time,
-                    producer_interest_time,
-                    producer_data_time,
-                )
+            if best is None or producer_interest_time < best[0]:
+                best = (producer_interest_time, name, consumer_interest_time)
     if best is None:
         return None
-    consumer_data_time, name, consumer_interest_time, producer_interest_time, producer_data_time = best
-    return name, consumer_interest_time, producer_interest_time, producer_data_time, consumer_data_time
+    producer_interest_time, name, consumer_interest_time = best
+    return name, consumer_interest_time, producer_interest_time
+
+
+def is_recovery_interest_flood(packet: Packet) -> bool:
+    """Sender-egress application Interest carrying the OptoFlood HopLimit marker."""
+    return (
+        packet.outbound
+        and packet.ptype == "interest"
+        and packet.interest_hop_limit
+        and is_application(packet.name)
+    )
+
+
+def is_recovery_data_flood(packet: Packet) -> bool:
+    """Sender-egress application Data carrying a hop-by-hop flood marker.
+
+    LP MobilityFlag is set on the flood send and removed before PIT unicast
+    satisfaction. LP OptoHopLimit is the same class of tag. MetaInfo FloodId
+    is not used here: it can remain on a later non-flooded copy.
+    """
+    return (
+        packet.outbound
+        and packet.ptype == "data"
+        and (packet.data_mobility_flag or packet.data_lp_hop_limit)
+        and is_application(packet.name)
+    )
 
 
 def _index_times(packets: Iterable[Packet], node: str, outbound: bool, ptype: str, useful_only: bool) -> Dict[str, List[float]]:
@@ -450,6 +474,7 @@ def measure_run(
         Packet(
             packet.time, packet.node, packet.outbound, packet.ptype,
             canonical_name(packet.name), packet.length, packet.interest_flood, packet.data_flood,
+            packet.interest_hop_limit, packet.data_lp_hop_limit, packet.data_mobility_flag,
         )
         for packet in packets
     ]
@@ -479,8 +504,6 @@ def measure_run(
                 "recovery_name": "",
                 "consumer_interest_time": "",
                 "producer_interest_time": "",
-                "producer_data_time": "",
-                "consumer_data_time": "",
                 "first_post_handoff_producer_data_arrival_ms": "",
                 "logical_request_count": 0,
                 "satisfied_request_count": 0,
@@ -493,6 +516,9 @@ def measure_run(
                 "application_forwarding_rate_bytes_per_s": "",
                 "nlsr_control_bytes": 0,
                 "nlsr_control_rate_bytes_per_s": "",
+                "recovery_interest_flood_bytes": 0,
+                "recovery_data_flood_bytes": 0,
+                "recovery_flood_bytes": 0,
                 "explicit_flood_bytes": 0,
                 "interest_flood_bytes": 0,
                 "data_flood_bytes": 0,
@@ -502,13 +528,11 @@ def measure_run(
                 **_blank_cost_fields(frame_period_ms),
             })
             continue
-        chain = match_recovery_chain(
+        recovery = match_service_recovery_interest(
             handoff.abs_time,
             event_end,
             consumer_interests,
             producer_interests,
-            producer_data,
-            consumer_data,
             inclusive_end=last,
         )
         first_arrival = None
@@ -548,10 +572,16 @@ def measure_run(
         nlsr_bytes = 0
         interest_flood = 0
         data_flood = 0
+        recovery_interest = 0
+        recovery_data = 0
         delivered_frames = set()
         for packet in packets:
             if not _in_interval(packet, handoff.abs_time, event_end, last):
                 continue
+            if is_recovery_interest_flood(packet):
+                recovery_interest += packet.length
+            elif is_recovery_data_flood(packet):
+                recovery_data += packet.length
             if packet.outbound and is_nlsr(packet.name) and not is_management(packet.name):
                 nlsr_bytes += packet.length
             if not packet.outbound:
@@ -594,13 +624,11 @@ def measure_run(
             "handoff_time": handoff.abs_time,
             "event_end_time": event_end,
             "event_duration_s": duration,
-            "recovered": chain is not None,
-            "service_recovery_time_ms": "" if chain is None else (chain[4] - handoff.abs_time) * 1000.0,
-            "recovery_name": "" if chain is None else chain[0],
-            "consumer_interest_time": "" if chain is None else chain[1],
-            "producer_interest_time": "" if chain is None else chain[2],
-            "producer_data_time": "" if chain is None else chain[3],
-            "consumer_data_time": "" if chain is None else chain[4],
+            "recovered": recovery is not None,
+            "service_recovery_time_ms": "" if recovery is None else (recovery[2] - handoff.abs_time) * 1000.0,
+            "recovery_name": "" if recovery is None else recovery[0],
+            "consumer_interest_time": "" if recovery is None else recovery[1],
+            "producer_interest_time": "" if recovery is None else recovery[2],
             "first_post_handoff_producer_data_arrival_ms": "" if first_arrival is None else (first_arrival - handoff.abs_time) * 1000.0,
             "logical_request_count": logical,
             "satisfied_request_count": satisfied,
@@ -613,6 +641,9 @@ def measure_run(
             "application_forwarding_rate_bytes_per_s": relay_bytes / duration,
             "nlsr_control_bytes": nlsr_bytes,
             "nlsr_control_rate_bytes_per_s": nlsr_bytes / duration,
+            "recovery_interest_flood_bytes": recovery_interest,
+            "recovery_data_flood_bytes": recovery_data,
+            "recovery_flood_bytes": recovery_interest + recovery_data,
             "explicit_flood_bytes": flood_bytes,
             "interest_flood_bytes": interest_flood,
             "data_flood_bytes": data_flood,
@@ -647,12 +678,19 @@ def write_csv(path: str, rows: Sequence[Dict[str, object]]) -> None:
 
 
 def format_audit(rows: Sequence[Dict[str, object]]) -> str:
-    lines: List[str] = []
+    lines: List[str] = [
+        "SRT endpoint is the producer receipt of the first fresh post-handoff content Interest. Data return is not part of SRT.",
+        "Recovery Flooding Volume is all-node flood-marked sender-egress bytes per handoff. "
+        "Interest flooding uses NDN HopLimit. Data flooding uses LP MobilityFlag or LP OptoHopLimit. "
+        "MetaInfo FloodId alone is not a flood transmission.",
+        "forwarding_cost_ratio is retained only as legacy manuscript compatibility.",
+    ]
     for row in rows:
         identity = f"{row['configuration']}/{row['run_id']} handoff {row['handoff_index']}"
         if float(str(row["event_duration_s"])) <= 0:
             lines.append(f"EMPTY_EVENT {identity}: capture end is not after the handoff")
-        if row["recovered"] is not True and float(str(row["event_duration_s"])) > 0:
+        recovered = row["recovered"] is True or str(row["recovered"]) == "True"
+        if not recovered and float(str(row["event_duration_s"])) > 0:
             boundary_ms = float(str(row["event_duration_s"])) * 1000.0
             lines.append(
                 f"RIGHT_CENSORED {identity}: SRT > {boundary_ms:.6g} ms "
@@ -670,21 +708,17 @@ def format_audit(rows: Sequence[Dict[str, object]]) -> str:
                 )
         if row["forwarding_cost_ratio"] == "":
             lines.append(
-                f"UNDEFINED_FCR {identity}: useful_content_delivered_bytes=0 "
+                f"LEGACY_FCR {identity}: useful_content_delivered_bytes=0 "
                 f"relay_application_forwarded_bytes={row['relay_application_forwarded_bytes']}"
             )
-        if row["recovered"] is True:
+        if recovered:
             lines.append(
                 f"SRT {identity}: name={row['recovery_name']} "
                 f"handoff={row['handoff_time']} "
                 f"consumer_interest={row['consumer_interest_time']} "
                 f"producer_interest={row['producer_interest_time']} "
-                f"producer_data={row['producer_data_time']} "
-                f"consumer_data={row['consumer_data_time']} "
                 f"srt_ms={row['service_recovery_time_ms']}"
             )
-    if not lines:
-        lines.append("No unrecovered events and no undefined FCR values.")
     return "\n".join(lines) + "\n"
 
 

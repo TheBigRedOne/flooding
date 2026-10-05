@@ -55,7 +55,7 @@ This command automates the entire process. It will:
 3.  Compile the C++ applications and run the mobility simulation inside each VM.
 4.  Collect raw experiment artifacts, including `consumer_capture.pcap` and per-node `pcap_nodes/*.pcap`, into each run directory.
 5.  Derive host-side CSV analysis inputs from those raw packet captures.
-6.  Decode the raw captures and plot service recovery time, content loss fraction, forwarding-cost ratio, and NLSR control rate for G0--G4 and for G0 versus OptoFlood, then measure routing convergence from the existing logs.
+6.  Decode the raw captures and plot service recovery time, content loss fraction, recovery flooding volume, and NLSR control rate for G0--G4 and for G0 versus OptoFlood, then measure routing convergence from the existing logs.
 7.  Compile the LaTeX source to produce `paper/OptoFlood.pdf`.
 
 ## Workflow Targets
@@ -85,20 +85,27 @@ This command automates the entire process. It will:
 
 Host-side analysis decodes each run's `pcap_nodes/*.pcap` with one Python decoder. Name equality uses `(component type, raw component bytes)`, not a rendered URI. Baseline is G0--G4, five runs, eight handoffs. The solution comparison is five OptoFlood runs of the same eight-handoff schedule. Exp1 keeps K=16 and zero jitter, and uses the same event parser.
 
-The active metrics are service recovery time, content loss fraction, forwarding-cost ratio, and NLSR control rate. Exp1 plots service recovery time, content loss fraction, and explicit flood rate, and keeps the delivery timeline. Production figures:
+The active main-experiment metrics are service recovery time, content loss fraction, recovery flooding volume, and NLSR control rate. Service recovery time is the time from a handoff until the producer receives the first fresh post-handoff content Interest. Recovery flooding volume is the aggregate bytes of actual OptoFlood flood-marked sender-egress transmissions per handoff. NLSR control rate measures control-plane traffic; recovery flooding volume measures recovery-induced flooding traffic. Exp1 is a separate sensitivity sweep: it plots service recovery time, content loss fraction, and its existing explicit flood rate, and keeps the delivery timeline. Production figures:
 
 - `results/baseline_service_recovery_time.pdf`
 - `results/baseline_content_loss_fraction.pdf`
-- `results/baseline_forwarding_cost_ratio.pdf`
 - `results/baseline_nlsr_control_rate.pdf`
 - `results/solution_service_recovery_time.pdf`
 - `results/solution_content_loss_fraction.pdf`
-- `results/solution_forwarding_cost_ratio.pdf`
+- `results/solution_recovery_flooding_volume.pdf`
 - `results/solution_nlsr_control_rate.pdf`
+
+Exp1 figures:
+
 - `results/extended/exp1/exp1_service_recovery_time.pdf`
 - `results/extended/exp1/exp1_content_loss_fraction.pdf`
 - `results/extended/exp1/exp1_explicit_flood_rate.pdf`
 - `results/extended/exp1/exp1_delivery_timeline.pdf`
+
+Legacy manuscript compatibility, not active evaluation metrics:
+
+- `results/baseline_forwarding_cost_ratio.pdf`
+- `results/solution_forwarding_cost_ratio.pdf`
 
 ## Routing-convergence analysis
 
