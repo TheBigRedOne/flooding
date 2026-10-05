@@ -28,16 +28,19 @@ include Makefile.exp1
 # Baseline profile directories (parents of r1..r5; rules live in Makefile.baseline).
 BASELINE_PROFILE_DIRS := $(addprefix results/baseline/,$(BASELINE_PROFILE_LIST))
 
-# Active paper figures. Baseline tuning is G0..G4. The solution comparison is
-# G0 versus OptoFlood. Both use SRT, content loss fraction, FCR, and NLSR rate.
+# Active paper figures. Baseline tuning is G0..G4: SRT, content loss fraction,
+# and NLSR control rate. The OptoFlood comparison adds recovery flooding volume.
+# Routing convergence figures are produced by routing-analysis. Legacy
+# forwarding-cost-ratio PDFs stay on the lower-level analysis targets only.
 GENERATED_FIGURES := results/baseline_service_recovery_time.pdf \
                      results/baseline_content_loss_fraction.pdf \
-                     results/baseline_forwarding_cost_ratio.pdf \
                      results/baseline_nlsr_control_rate.pdf \
                      results/solution_service_recovery_time.pdf \
                      results/solution_content_loss_fraction.pdf \
-                     results/solution_forwarding_cost_ratio.pdf \
-                     results/solution_nlsr_control_rate.pdf
+                     results/solution_recovery_flooding_volume.pdf \
+                     results/solution_nlsr_control_rate.pdf \
+                     results/routing_topology_update_latency.pdf \
+                     results/routing_fib_convergence.pdf
 
 ALL_FIGURES := paper/figures/NDN_Packets_Processing_Flow.pdf \
                paper/figures/NDN_Producer_Mobility_Problem.pdf \
@@ -132,8 +135,22 @@ mobility-analysis:
 	$(MAKE) plot-exp1
 	$(MAKE) routing-analysis
 
+# One command, used by the explicit routing-analysis target and by the paper
+# PDF rule. The PDF rule must not call $(MAKE): a dry-run would execute that
+# recipe, and a failed grouped-target update can delete the sibling PDF.
+ROUTING_ANALYSIS_CMD = python3 experiment/tool/run_routing_convergence_analysis.py
+
 routing-analysis:
-	python3 experiment/tool/run_routing_convergence_analysis.py
+	$(ROUTING_ANALYSIS_CMD)
+
+# Paper depends on the two routing PDFs. Missing PDFs rerun analysis of
+# existing logs and captures, and do not start a VM.
+ROUTING_PAPER_FIGURES := results/routing_topology_update_latency.pdf \
+                         results/routing_fib_convergence.pdf
+
+$(ROUTING_PAPER_FIGURES) &: experiment/tool/run_routing_convergence_analysis.py \
+                            experiment/tool/routing_convergence_metrics.py
+	$(ROUTING_ANALYSIS_CMD)
 
 plot-routing: routing-analysis
 
@@ -146,9 +163,9 @@ test-mobility-analysis:
 plot-exp1-diagnostic:
 	python3 experiment/tool/run_mobility_event_analysis.py analyze-exp1 --diagnostic --deadline $(EXT1_PRIMARY_DEADLINE)
 
-plot-baseline: $(BASELINE_PROFILE_COMPARE_OUTPUTS)
+plot-baseline: $(BASELINE_PROFILE_COMPARE_OUTPUTS) $(BASELINE_LEGACY_FCR)
 
-plot-main: $(SOLUTION_COMPARE_OUTPUTS)
+plot-main: $(SOLUTION_COMPARE_OUTPUTS) $(SOLUTION_LEGACY_FCR)
 
 # Build the paper PDF (follow dependencies; do not hand-check and exit)
 paper: paper/OptoFlood.pdf

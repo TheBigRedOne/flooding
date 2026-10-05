@@ -65,11 +65,19 @@ SOLUTION_COMPARE_OUTPUTS := results/solution/mobility_events.csv \
                             results/solution/mobility_event_audit.txt \
                             results/solution_service_recovery_time.pdf \
                             results/solution_content_loss_fraction.pdf \
-                            results/solution_forwarding_cost_ratio.pdf \
                             results/solution_nlsr_control_rate.pdf \
                             results/solution_recovery_flooding_volume.pdf
+
+# Legacy manuscript compatibility. Kept off the grouped rule so a missing FCR
+# PDF does not invalidate the active solution figures, including RFV.
+SOLUTION_LEGACY_FCR := results/solution_forwarding_cost_ratio.pdf
 
 $(SOLUTION_COMPARE_OUTPUTS) &: experiment/tool/run_mobility_event_analysis.py \
                               experiment/tool/mobility_event_metrics.py \
                               experiment/tool/plot_mobility_event_metrics.py
+	python3 experiment/tool/run_mobility_event_analysis.py analyze-solution
+
+$(SOLUTION_LEGACY_FCR): experiment/tool/run_mobility_event_analysis.py \
+                        experiment/tool/mobility_event_metrics.py \
+                        experiment/tool/plot_mobility_event_metrics.py
 	python3 experiment/tool/run_mobility_event_analysis.py analyze-solution
