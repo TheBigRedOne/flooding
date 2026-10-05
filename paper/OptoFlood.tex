@@ -179,7 +179,7 @@ To demonstrate this, we measure the disruption caused by producer movement under
 \begin{figure}
     \centering
     \includegraphics[width=1\linewidth]{Topology.pdf}
-	\caption{Experiment topology used in the mobility evaluation.}
+	\caption{Experiment topology used in the mobility evaluation.\ryo{this table should be using booktabs}}
     \label{exp_topo}
 \end{figure}
 
@@ -205,7 +205,7 @@ Figures~\ref{fig:baseline_content_loss_fraction}--\ref{fig:baseline_nlsr_control
         \includegraphics[width=0.48\textwidth]{baseline_nlsr_control_rate.pdf}
         \label{fig:baseline_nlsr_control_rate}
     }
-    \caption{Baseline tuning for G0--G4.}
+    \caption{Baseline tuning for G0--G4.\ryo{width should be 0.3\textwidth}}
     \label{fig:baseline_results}
 \end{figure*}
 
@@ -362,7 +362,7 @@ Network-wide convergence requires the correct FIB state at every affected router
 \begin{figure*}[t]
     \centering
     \includegraphics[width=0.72\textwidth]{routing_fib_convergence.pdf}
-    \caption{Routing convergence after a hand-off using the FIB-installation endpoint. (a)~Latest correct \texttt{/LiveStream} FIB installation on the service path. (b)~Latest correct installation among all affected routers. The right-censored G1 event is marked separately and excluded from the box statistics.}
+    \caption{Routing convergence after a hand-off using the FIB-installation endpoint. (a)~Latest correct \texttt{/LiveStream} FIB installation on the service path. (b)~Latest correct installation among all affected routers. The right-censored G1 event is marked separately and excluded from the box statistics.\ryo{needs to be an actual subfigures, width 0.2\textwidth, and probably can fit side-by-side within the single column actually}
     \label{fig:routing_fib_convergence}
 \end{figure*}
 
@@ -385,7 +385,7 @@ The median NLSR control rate is 1.27~kB/s for G0 and 1.18~kB/s for OptoFlood. In
         \includegraphics[width=0.48\textwidth]{solution_nlsr_control_rate.pdf}
         \label{fig:solution_nlsr_control_rate}
     }
-    \caption{Recovery and control overhead in the main experiment. (a)~OptoFlood flooding volume per hand-off; G0--G4 contribute no recovery-flood bytes. (b)~NLSR control rate for G0 and OptoFlood.}
+    \caption{Recovery and control overhead in the main experiment. (a)~OptoFlood flooding volume per hand-off; G0--G4 contribute no recovery-flood bytes. (b)~NLSR control rate for G0 and OptoFlood.\ryo{these should probably be smaller width, maybe 0.2\textwidth and can fit side-by-side within the single column actually (output must be actually smaller so that it's legible)}}
     \label{fig:solution_overhead}
 \end{figure*}
 
