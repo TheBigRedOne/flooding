@@ -119,7 +119,7 @@ NDN packet delivery relies on the interaction between the data plane and the con
 
 NDN forwarders (Figure \ref{fig:NDN Packets Processing Flow}) maintain a Content Store that caches Data packets; a Pending Interest Table (PIT) that records state for forwarded Interest packets and enables matching Data packets to be returned along the reverse path; and a Forwarding Information Base (FIB) that guides Interest forwarding \cite{yi:2013:stateful-forwarding, zhang:2014:ndn}.
 
-When an Interest packet arrives at a forwarder, the forwarder checks the Content Store and returns a cached Data packet if available. Otherwise, the forwarder checks the PIT to determine whether a matching Interest packet is already pending. If the Interest packet is new, it is forwarded based on the FIB. The FIB is populated from routing information produced by the Named-Data Link State Routing protocol (NLSR).
+When an Interest packet arrives at a forwarder, the forwarder checks the Content Store and returns a cached Data packet if available. Otherwise, the forwarder checks the PIT to determine whether a matching Interest packet is already pending. If the Interest packet is new, it is forwarded based on the FIB. The FIB is populated from routing information produced by NLSR.
 
 In the control plane, NLSR is a link-state routing protocol for NDN. Routers advertise local adjacency state using adjacency Link State Advertisements (Adj-LSAs) and name-prefix reachability using Name Link State Advertisements (Name-LSAs). Received LSAs are stored in a local Link State Database (LSDB), from which NLSR calculates routes \cite{hoque:2013:nlsr}.
 
