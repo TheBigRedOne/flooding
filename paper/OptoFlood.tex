@@ -91,7 +91,7 @@ In this paper, we introduce OptoFlood to restore packet delivery after producer 
 Previous work on NDN producer mobility primarily restores producer reachability by establishing mobility-specific forwarding state. KITE \cite{zhang:2018:kite} creates rendezvous-based hop-by-hop traces and retransmits pending Interest packets when new forwarding information becomes available, while MAP-Me \cite{auge:2018:map-me} propagates hop-by-hop forwarding updates and uses local discovery to redirect Interest packets towards the producer's new attachment. OptoFlood takes a different approach to immediate recovery: Data packets sent in response to Interest packets received before movement are used to restore the outstanding exchange and to establish temporary producer-facing forwarding for subsequent Interest packets. OptoFlood then uses information obtained during recovery to prioritise NLSR routing convergence, while separate event-driven mechanisms reduce avoidable waiting in NLSR operations.
 
 \todo{Update this paragraph after the KITE and MAP-Me reproduction experiments are complete.}
-Our evaluation shows that OptoFlood reduces service recovery time after producer hand-off from tens of seconds under native NDN routing to around one hundred milliseconds. KITE and MAP-Me also provide rapid producer-mobility recovery through mobility-specific forwarding mechanisms. We evaluate OptoFlood against these approaches using consumer-visible service recovery, delivery reliability, and recovery overhead under the same mobility workload. OptoFlood additionally accelerates NLSR convergence after the same mobility event.
+Our evaluation shows that OptoFlood reduces service recovery time after producer hand-off from tens of seconds under native NDN routing to around one hundred milliseconds. KITE and MAP-Me also provide rapid producer-mobility recovery through mobility-specific forwarding mechanisms. We evaluate OptoFlood against these approaches using service recovery, delivery reliability, and recovery overhead under the same mobility workload. OptoFlood additionally accelerates NLSR convergence after the same mobility event.
 
 % Paragraph 5: Roadmap.
 We structure the remainder of this paper as follows. Section II describes NDN forwarding and routing and characterises the producer-mobility problem, including baseline routing-convergence behaviour. Section III presents the OptoFlood design and its three complementary mechanisms for service recovery and routing convergence. Section IV describes the experimental methodology and evaluation of OptoFlood. Section V discusses related work. Finally, Section VI concludes the paper.
@@ -199,11 +199,6 @@ Figures~\ref{fig:baseline_content_loss_fraction}--\ref{fig:baseline_nlsr_control
     \subfloat[Content loss fraction]{
         \includegraphics[width=0.48\textwidth]{baseline_content_loss_fraction.pdf}
         \label{fig:baseline_content_loss_fraction}
-    }
-    \\
-    \subfloat[Forwarding cost ratio]{
-        \includegraphics[width=0.48\textwidth]{baseline_forwarding_cost_ratio.pdf}
-        \label{fig:baseline_forwarding_cost_ratio}
     }
     \hfill
     \subfloat[NLSR control rate]{
