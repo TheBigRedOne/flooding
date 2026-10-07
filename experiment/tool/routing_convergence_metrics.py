@@ -1339,8 +1339,8 @@ def write_summary(
 
 
 # Each FIB panel is included at about 0.22\textwidth. The previous production
-# panel was 7.2 in wide at 0.72\textwidth. Extra height leaves room for
-# vertical category labels without changing Matplotlib point sizes.
+# panel was 7.2 in wide at 0.72\textwidth. Width keeps the same on-page type
+# size. Category labels stay horizontal; OptoFlood is split onto two lines.
 ROUTING_COLUMN_FIGSIZE = (7.2 * 0.22 / 0.72, 2.35)
 
 
@@ -1380,9 +1380,13 @@ def _draw_log_boxes(axis, labels, data, totals, censor_marks, ylabel: str, compa
         )
     axis.set_xticks(list(range(len(labels))))
     if compact:
-        # Six category names do not fit horizontally at this canvas width
-        # without shrinking the type. Vertical labels keep the point size.
-        axis.set_xticklabels(tick_labels, rotation=90)
+        # OptoFlood is wider than one category slot. A line break keeps every
+        # label horizontal at the existing canvas width.
+        shown = ["Opto-\nFlood" if label == "OptoFlood" else label for label in tick_labels]
+        arts = axis.set_xticklabels(shown, rotation=0, fontsize=8)
+        # Grow the long label into the right margin instead of into G4.
+        arts[-1].set_ha("left")
+        arts[-1].set_clip_on(False)
     else:
         axis.set_xticklabels(tick_labels)
     axis.set_ylabel(ylabel)
