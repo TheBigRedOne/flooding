@@ -24,6 +24,7 @@ from minindn.util import MiniNDNCLI  # noqa: F401 (kept for interactive use)
 from minindn.apps.app_manager import AppManager
 from minindn.apps.nfd import Nfd
 from minindn.apps.nlsr import Nlsr
+from minindn.helpers.nfdc import Nfdc
 from mininet.topo import Topo
 
 
@@ -306,11 +307,51 @@ def _append_handoff_row(
         )
 
 
+# Producer mobility attachments. Faces for all of them are created while the
+# links are up; acc3..acc6 are then taken down before NLSR starts.
+PRODUCER_MOBILITY_ATTACHMENTS: Tuple[str, ...] = ('acc2', 'acc3', 'acc4', 'acc5', 'acc6')
+
+
 def _sample_interval(base_seconds: float, jitter_seconds: float, rng: random.SystemRandom) -> float:
     """Draw a single handoff interval from base + Uniform(0, jitter)."""
     if jitter_seconds <= 0:
         return base_seconds
     return base_seconds + rng.uniform(0.0, jitter_seconds)
+
+
+def _require_permanent_udp_face(node, remote_ip: str, label: str) -> None:
+    """Create one permanent UDP face. Nfdc.createFace returns -1 on failure."""
+    face_id = Nfdc.createFace(
+        node,
+        remote_ip,
+        Nfdc.PROTOCOL_UDP,
+        isPermanent=True,
+        allowExisting=True,
+    )
+    if face_id == -1:
+        raise RuntimeError(f'mobility face preparation failed: {label} udp://{remote_ip}')
+
+
+def _prepare_producer_mobility_faces(ndn) -> None:
+    """Prepare producer<->acc2..acc6 UDP faces before those links are taken down.
+
+    NLSR is not running. Addresses come from the Mininet interfaces on each link.
+    """
+    producer = ndn.net['producer']
+    for access_name in PRODUCER_MOBILITY_ATTACHMENTS:
+        access = ndn.net[access_name]
+        connections = producer.connectionsTo(access)
+        if len(connections) != 1:
+            raise RuntimeError(
+                f'producer--{access_name}: expected one link, found {len(connections)}'
+            )
+        producer_intf, access_intf = connections[0]
+        producer_ip = producer_intf.IP()
+        access_ip = access_intf.IP()
+        if not producer_ip or not access_ip:
+            raise RuntimeError(f'producer--{access_name}: missing interface address')
+        _require_permanent_udp_face(producer, access_ip, f'producer->{access_name}')
+        _require_permanent_udp_face(access, producer_ip, f'{access_name}->producer')
 
 
 class TunableNlsr(Nlsr):
@@ -319,12 +360,38 @@ class TunableNlsr(Nlsr):
 
     The baseline tuning study targets the installed 2024-08 Mini-NDN release,
     where NLSR is created first and then adjusted through infoedit against the
-    generated nlsr.conf before the process starts.
+    generated nlsr.conf before the process starts. Neighbor face creation uses
+    Mini-NDN's allowExisting=True behaviour and aborts if a face cannot be created.
     """
 
     def __init__(self, node, infoeditChanges=None, **kwargs):
         super().__init__(node, **kwargs)
         self._apply_manual_infoedit_changes(infoeditChanges)
+
+    def createFaces(self):
+        for location in self.neighborLocations:
+            if self.faceType == Nfdc.PROTOCOL_ETHER:
+                local_intf = self.interfaceForNeighbor[location]
+                face_id = Nfdc.createFace(
+                    self.node,
+                    location,
+                    self.faceType,
+                    localInterface=local_intf,
+                    isPermanent=True,
+                    allowExisting=True,
+                )
+            else:
+                face_id = Nfdc.createFace(
+                    self.node,
+                    location,
+                    self.faceType,
+                    isPermanent=True,
+                    allowExisting=True,
+                )
+            if face_id == -1:
+                raise RuntimeError(
+                    f'[{self.node.name}] NLSR neighbor face creation failed for {location}'
+                )
 
     def _apply_manual_infoedit_changes(self, infoedit_changes):
         if not infoedit_changes:
@@ -453,14 +520,16 @@ if __name__ == '__main__':
     ndn = Minindn(topo=CustomTopo())
     ndn.start()
 
-    # Leave only producer--acc2 active before NFD/NLSR start.
+    info('Starting NFD on nodes\n')
+    nfds = AppManager(ndn, ndn.net.hosts, Nfd, logLevel='DEBUG')
+    _prepare_producer_mobility_faces(ndn)
+
+    # Leave only producer--acc2 active before NLSR start.
     ndn.net.configLinkStatus('producer', 'acc3', 'down')
     ndn.net.configLinkStatus('producer', 'acc4', 'down')
     ndn.net.configLinkStatus('producer', 'acc5', 'down')
     ndn.net.configLinkStatus('producer', 'acc6', 'down')
 
-    info('Starting NFD on nodes\n')
-    nfds = AppManager(ndn, ndn.net.hosts, Nfd, logLevel='DEBUG')
     info('Starting NLSR on nodes\n')
     nlsr_kwargs: Dict[str, Any] = {'logLevel': 'DEBUG'}
     if nlsr_infoedit_changes:
