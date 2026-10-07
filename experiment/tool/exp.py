@@ -4,7 +4,7 @@ Mini-NDN experiment driver for the baseline / solution mobility study.
 Topology: six access points (acc1..acc6) connected via two aggregation switches
 (agg1/agg2) to a core; consumer is fixed on acc1 and producer owns pre-built
 producer-acc{2..6} links so that handoffs can be emulated by toggling link
-status. acc2 is the initial active producer attachment; acc3..acc6 start down.
+status. producer--acc3..acc6 are pre-built for later hand-offs.
 
 Behaviour is parameterised through environment variables (see _load_handoff_config
 and _load_nlsr_interval_overrides) so the same driver supports the legacy
@@ -82,10 +82,6 @@ ADVERTISED_PREFIX = '/LiveStream'
 # application's key; it is provisioned by the driver because creating an identity
 # writes to the PIB shared with the concurrently starting applications.
 OPTOFLOOD_MGMT_IDENTITY = '/localhost/optoflood'
-
-# Access points that must start down so the experiment begins with the producer
-# attached only via acc2.
-NON_INITIAL_ACCESS_POINTS: Tuple[str, ...] = ('acc3', 'acc4', 'acc5', 'acc6')
 
 # Per-node packet capture nodes used for downstream overhead analysis.
 OVERHEAD_NODES: Tuple[str, ...] = (
@@ -359,8 +355,7 @@ class CustomTopo(Topo):
 
     consumer is fixed on acc1. The producer owns pre-built producer-acc{2..6}
     links so that mobility events are emulated by toggling link status at
-    runtime. acc2 is the initial active attachment; acc3..acc6 are taken down
-    before the application traffic starts.
+    runtime. producer--acc3..acc6 are pre-built for later hand-offs.
     """
 
     def build(self):
@@ -391,8 +386,7 @@ class CustomTopo(Topo):
         self.addLink(agg2, acc6, bw=500, delay='5ms')
 
         self.addLink(consumer, acc1, bw=100, delay='5ms')
-        self.addLink(producer, acc2, bw=100, delay='5ms')  # initial active link
-        # Pre-built alternative producer attachments (initially down) for handoffs.
+        self.addLink(producer, acc2, bw=100, delay='5ms')
         self.addLink(producer, acc3, bw=100, delay='5ms')
         self.addLink(producer, acc4, bw=100, delay='5ms')
         self.addLink(producer, acc5, bw=100, delay='5ms')
@@ -459,6 +453,12 @@ if __name__ == '__main__':
     ndn = Minindn(topo=CustomTopo())
     ndn.start()
 
+    # Leave only producer--acc2 active before NFD/NLSR start.
+    ndn.net.configLinkStatus('producer', 'acc3', 'down')
+    ndn.net.configLinkStatus('producer', 'acc4', 'down')
+    ndn.net.configLinkStatus('producer', 'acc5', 'down')
+    ndn.net.configLinkStatus('producer', 'acc6', 'down')
+
     info('Starting NFD on nodes\n')
     nfds = AppManager(ndn, ndn.net.hosts, Nfd, logLevel='DEBUG')
     info('Starting NLSR on nodes\n')
@@ -468,10 +468,6 @@ if __name__ == '__main__':
         info(f"Applying NLSR overrides: {nlsr_applied_params}\n")
     nlsrs = AppManager(ndn, ndn.net.hosts, TunableNlsr, **nlsr_kwargs)
     sleep(30)  # allow NLSR initial convergence
-
-    # Leave only producer-acc2 active before the experiment starts.
-    for ap in NON_INITIAL_ACCESS_POINTS:
-        ndn.net.configLinkStatus('producer', ap, 'down')
 
     producer = ndn.net['producer']
     consumer = ndn.net['consumer']
