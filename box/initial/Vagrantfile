@@ -37,6 +37,11 @@ $INSTALL_BASE = <<EOF
                 sysvinit-utils tcpdump telnet time tmux tnftp tshark \
                 ubuntu-minimal ufw wget wireless-tools xfsprogs xterm xz-utils"
 
+  # HTTPS reaches the Ubuntu archive from this experiment host; HTTP/80 does not.
+  sudo sed -i \
+    's|http://us.archive.ubuntu.com/ubuntu|https://us.archive.ubuntu.com/ubuntu|g' \
+    /etc/apt/sources.list
+
   # Update and install dependencies
   sudo DEBIAN_FRONTEND=noninteractive apt-get update
   sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends $PKGS_MININDN
