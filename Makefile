@@ -40,7 +40,8 @@ GENERATED_FIGURES := results/baseline_service_recovery_time.pdf \
                      results/solution_recovery_flooding_volume.pdf \
                      results/solution_nlsr_control_rate.pdf \
                      results/routing_topology_update_latency.pdf \
-                     results/routing_fib_convergence.pdf
+                     results/routing_service_path_fib_convergence.pdf \
+                     results/routing_network_fib_convergence.pdf
 
 ALL_FIGURES := paper/figures/NDN_Packets_Processing_Flow.pdf \
                paper/figures/NDN_Producer_Mobility_Problem.pdf \
@@ -143,10 +144,13 @@ ROUTING_ANALYSIS_CMD = python3 experiment/tool/run_routing_convergence_analysis.
 routing-analysis:
 	$(ROUTING_ANALYSIS_CMD)
 
-# Paper depends on the two routing PDFs. Missing PDFs rerun analysis of
-# existing logs and captures, and do not start a VM.
+# Paper depends on the topology-update PDF and the two FIB subfigure PDFs.
+# The stacked routing_fib_convergence.pdf remains a diagnostic side effect of
+# the analysis command and is not a paper input. Missing a paper PDF reruns
+# analysis of existing logs and captures, and does not start a VM.
 ROUTING_PAPER_FIGURES := results/routing_topology_update_latency.pdf \
-                         results/routing_fib_convergence.pdf
+                         results/routing_service_path_fib_convergence.pdf \
+                         results/routing_network_fib_convergence.pdf
 
 $(ROUTING_PAPER_FIGURES) &: experiment/tool/run_routing_convergence_analysis.py \
                             experiment/tool/routing_convergence_metrics.py

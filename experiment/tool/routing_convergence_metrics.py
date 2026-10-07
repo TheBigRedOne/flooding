@@ -1338,7 +1338,13 @@ def write_summary(
     path_txt.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def _draw_log_boxes(axis, labels, data, totals, censor_marks, ylabel: str) -> None:
+# Each FIB panel is included at about 0.22\textwidth. The previous production
+# panel was 7.2 in wide at 0.72\textwidth. Extra height leaves room for
+# vertical category labels without changing Matplotlib point sizes.
+ROUTING_COLUMN_FIGSIZE = (7.2 * 0.22 / 0.72, 2.35)
+
+
+def _draw_log_boxes(axis, labels, data, totals, censor_marks, ylabel: str, compact: bool = False) -> None:
     from matplotlib.cbook import boxplot_stats
     from plot_mobility_event_metrics import MEANPROPS, WHIS, positive_log_bounds
 
@@ -1354,10 +1360,11 @@ def _draw_log_boxes(axis, labels, data, totals, censor_marks, ylabel: str) -> No
     visible: List[float] = []
     labeled = False
     for index, (label, values) in enumerate(zip(labels, data)):
-        text = f"{label}\nn={totals[index]}"
+        text = label if compact else f"{label}\nn={totals[index]}"
         marks = censor_marks[index]
-        if marks:
+        if marks and not compact:
             text += f"\n{len(marks)} right-censored"
+        if marks:
             axis.scatter(
                 [index] * len(marks), marks, marker="v", s=36, color="crimson", zorder=5,
                 label=None if labeled else "right-censored",
@@ -1372,13 +1379,20 @@ def _draw_log_boxes(axis, labels, data, totals, censor_marks, ylabel: str) -> No
             f"median={float(stats['med']):.6g}"
         )
     axis.set_xticks(list(range(len(labels))))
-    axis.set_xticklabels(tick_labels)
+    if compact:
+        # Six category names do not fit horizontally at this canvas width
+        # without shrinking the type. Vertical labels keep the point size.
+        axis.set_xticklabels(tick_labels, rotation=90)
+    else:
+        axis.set_xticklabels(tick_labels)
     axis.set_ylabel(ylabel)
     low, high = positive_log_bounds(visible)
     axis.set_yscale("log")
     axis.set_ylim(low, high)
     axis.grid(True, axis="y", linestyle="--", alpha=0.6)
-    if labeled:
+    # The column panel's caption identifies the censor marker. An in-axes
+    # legend covers the boxes at this canvas size.
+    if labeled and not compact:
         axis.legend(loc="best")
 
 
@@ -1426,6 +1440,29 @@ def plot_production_figures(results: Path, rows: Sequence[Dict[str, Any]]) -> No
     axes[1].set_title("(b) Network-wide FIB convergence")
     figure.tight_layout()
     figure.savefig(results / "routing_fib_convergence.pdf")
+    plt.close(figure)
+
+    # Paper panels. The stacked PDF above remains a diagnostic output.
+    _save_routing_column_panel(
+        results / "routing_service_path_fib_convergence.pdf",
+        labels, service_data, [[] for _ in labels],
+    )
+    _save_routing_column_panel(
+        results / "routing_network_fib_convergence.pdf",
+        labels, network_data, network_marks,
+    )
+
+
+def _save_routing_column_panel(path: Path, labels, data, censor_marks) -> None:
+    import matplotlib.pyplot as plt
+
+    figure, axis = plt.subplots(figsize=ROUTING_COLUMN_FIGSIZE)
+    _draw_log_boxes(
+        axis, labels, data, [40] * len(labels), censor_marks,
+        "FIB convergence (ms)", compact=True,
+    )
+    figure.tight_layout()
+    figure.savefig(path)
     plt.close(figure)
 
 

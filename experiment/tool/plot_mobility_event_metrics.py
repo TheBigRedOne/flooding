@@ -85,6 +85,17 @@ def groups_for(rows: Sequence[Dict[str, str]], labels: Sequence[str], field: str
     return kept, data, notes, counts
 
 
+# Baseline Figure 4 is included at 0.30\textwidth; the generic canvas is sized
+# for 0.48\textwidth. Shrink only that canvas so Matplotlib point sizes keep
+# approximately the same size on the page.
+BASELINE_COMPACT_FIGSIZE = (6.2 * 0.30 / 0.48, 4.2 * 0.30 / 0.48)
+
+# Section IV-D panels are included near 0.22\textwidth inside one column.
+# The canvas shrinks by that ratio from the 0.48\textwidth / 6.2 in design
+# so point sizes stay about the same size on the page.
+COLUMN_PAIR_FIGSIZE = (6.2 * 0.22 / 0.48, 4.2 * 0.22 / 0.48)
+
+
 def draw_boxes(
     path: str,
     labels: Sequence[str],
@@ -94,11 +105,19 @@ def draw_boxes(
     event_counts: Optional[Sequence[int]] = None,
     censor_marks: Optional[Sequence[Sequence[float]]] = None,
     censor_note: str = "right-censored",
+    compact: bool = False,
+    column_pair: bool = False,
 ) -> None:
     parent = os.path.dirname(path)
     if parent:
         os.makedirs(parent, exist_ok=True)
-    fig, ax = plt.subplots(figsize=(6.2, 4.2))
+    if column_pair:
+        figsize = COLUMN_PAIR_FIGSIZE
+    elif compact:
+        figsize = BASELINE_COMPACT_FIGSIZE
+    else:
+        figsize = (6.2, 4.2)
+    fig, ax = plt.subplots(figsize=figsize)
     drawn = ax.boxplot(
         list(data),
         positions=list(range(len(labels))),
@@ -117,10 +136,13 @@ def draw_boxes(
     censor_labeled = False
     for index, (label, values) in enumerate(zip(labels, data)):
         total = event_counts[index] if event_counts is not None else len(values)
-        text = f"{label}\nn={total}"
+        # Compact panels keep the category only. The event count and the
+        # right-censor explanation belong in the figure caption.
+        text = label if compact else f"{label}\nn={total}"
         marks = list(censor_marks[index]) if censor_marks is not None else []
-        if marks:
+        if marks and not compact:
             text += f"\n{len(marks)} {censor_note}"
+        if marks:
             ax.scatter(
                 [index] * len(marks),
                 marks,
@@ -143,7 +165,12 @@ def draw_boxes(
         ax.set_yscale("log")
         ax.set_ylim(low, high)
     else:
-        ax.set_ylim(bottom=0)
+        # Compact baseline SRT is the linear panel that carries a censor mark.
+        # Include that mark; other linear panels keep the boxplot's own top.
+        if compact and censor_labeled and visible:
+            ax.set_ylim(0, max(visible) * 1.08)
+        else:
+            ax.set_ylim(bottom=0)
     ax.grid(True, axis="y", linestyle="--", alpha=0.6)
     if censor_labeled:
         ax.legend(loc="best")
@@ -206,7 +233,7 @@ def recovery_flood_layout(rows: Sequence[Dict[str, str]]) -> RecoveryFloodLayout
     return RecoveryFloodLayout(list(runs), xs, ys, median, mean)
 
 
-def draw_recovery_flooding_volume(rows: Sequence[Dict[str, str]], path: str) -> None:
+def draw_recovery_flooding_volume(rows: Sequence[Dict[str, str]], path: str, column_pair: bool = False) -> None:
     """Raw OptoFlood recovery-flood observations with the global median and mean."""
     parent = os.path.dirname(path)
     if parent:
@@ -214,7 +241,7 @@ def draw_recovery_flooding_volume(rows: Sequence[Dict[str, str]], path: str) -> 
     layout = recovery_flood_layout(rows)
     median_kb = layout.median_bytes / 1000.0
     mean_kb = layout.mean_bytes / 1000.0
-    fig, ax = plt.subplots(figsize=(6.2, 4.2))
+    fig, ax = plt.subplots(figsize=COLUMN_PAIR_FIGSIZE if column_pair else (6.2, 4.2))
     ax.scatter(layout.x, layout.y_kb, s=28, color="C0", alpha=0.65, zorder=3, linewidths=0)
     ax.axhline(median_kb, color="black", linestyle="-", linewidth=1.0, zorder=2, label=f"Median: {median_kb:.3f} kB")
     ax.axhline(mean_kb, color="black", linestyle="--", linewidth=1.0, zorder=2, label=f"Mean: {mean_kb:.3f} kB")
@@ -223,11 +250,24 @@ def draw_recovery_flooding_volume(rows: Sequence[Dict[str, str]], path: str) -> 
     ax.set_xticklabels(layout.labels)
     ax.set_xlim(0.5, len(layout.labels) + 0.5)
     ax.set_ylim(5.5, 11.0)
-    ax.set_ylabel("Recovery flooding volume (kB per handoff)")
+    # The full ylabel is longer than the column canvas. The subcaption names
+    # the metric; the axis keeps the unit. The legend sits below the axes.
+    if column_pair:
+        ax.set_ylabel("kB per hand-off")
+        ax.legend(
+            loc="upper center",
+            bbox_to_anchor=(0.5, -0.34),
+            ncol=1,
+            frameon=False,
+            fontsize=8,
+        )
+        fig.subplots_adjust(left=0.24, right=0.98, bottom=0.40, top=0.97)
+    else:
+        ax.set_ylabel("Recovery flooding volume (kB per handoff)")
+        ax.legend(loc="center", bbox_to_anchor=(0.5, 0.70), ncol=2, frameon=True, fontsize=8)
+        fig.tight_layout()
     ax.grid(True, axis="y", linestyle="--", alpha=0.6)
     ax.set_axisbelow(True)
-    ax.legend(loc="center", bbox_to_anchor=(0.5, 0.70), ncol=2, frameon=True, fontsize=8)
-    fig.tight_layout()
     fig.savefig(path)
     plt.close(fig)
     print(
@@ -293,6 +333,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     boxes.add_argument("--labels", required=True)
     boxes.add_argument("--output", required=True)
     boxes.add_argument("--log-y", action="store_true")
+    boxes.add_argument("--compact", action="store_true")
+    boxes.add_argument("--column-pair", action="store_true")
     exp1 = sub.add_parser("exp1")
     exp1.add_argument("--input", required=True)
     exp1.add_argument("--field", required=True)
@@ -320,7 +362,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     if duration is not None and duration > 0 and str(row.get("recovered", "")).lower() != "true":
                         marks.append(duration * 1000.0)
                 censors.append(marks)
-        draw_boxes(args.output, kept, data, args.ylabel, args.log_y, event_counts=counts, censor_marks=censors)
+        draw_boxes(
+            args.output,
+            kept,
+            data,
+            args.ylabel,
+            args.log_y,
+            event_counts=counts,
+            censor_marks=censors,
+            compact=args.compact,
+            column_pair=args.column_pair,
+        )
         return 0
     series = [item.strip() for item in args.series.split(",") if item.strip()] or [args.field]
     plot_exp1(args.output, rows, args.field, args.ylabel, series)

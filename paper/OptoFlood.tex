@@ -8,6 +8,7 @@
 \usepackage[caption=false,font=footnotesize]{subfig}
 \usepackage{textcomp}
 \usepackage{xcolor}
+\usepackage{booktabs}
 \usepackage{url}
 \usepackage{hyperref}
 \newcommand{\todo}[1]{\textbf{\textcolor{red}{To do: #1}}}
@@ -143,36 +144,34 @@ When a producer changes its attachment point, routing must converge to reflect t
 
 Interest packets received before the movement leave PIT state along the pre-movement path. Data packets sent in response to those Interest packets after the movement enter the network at the new attachment point. Unless the new attachment point lies on the previously established reverse forwarding path towards the requesting consumers, such Data packets will not be correctly delivered.
 
-These forwarding failures can have several consequences:
+These forwarding failures have three consequences for the mobility evaluation:
 
 \begin{itemize}
-    \item \textbf{Service Disruption:} Until routing converges to reflect the producer's new attachment point, newly issued Interest packets may not reach the producer. This can interrupt service during routing convergence.
-    \item \textbf{Unsatisfied Interests:} Interest packets may expire unsatisfied when newly issued Interest packets cannot reach the producer or when Data packets sent in response to pre-movement Interest packets cannot reach the requester.
-    \item \textbf{Increased Retransmissions:} Unsatisfied Interests may be retransmitted, increasing bandwidth and processing overhead.
+    \item \textbf{Slow Service Recovery:} Fresh post-handoff Interest packets may continue to follow stale forwarding state and fail to reach the producer until a usable request path is restored.
+    \item \textbf{Content Loss:} During this interval, newly issued Interest packets can remain unsatisfied, while Data packets generated for pre-movement Interest packets may fail to follow the established reverse path. In the live-stream workload, these forwarding failures can result in missing content frames.
+    \item \textbf{Slow Routing Convergence and Control Cost:} NLSR must detect the changed adjacencies, disseminate the updated topology state, recalculate routes, and install the resulting forwarding state. More aggressive routing timers can shorten parts of this process, but they can also increase sustained routing-control traffic.
 \end{itemize}
+
+These consequences motivate the evaluation metrics. Service Recovery Time measures request-path recovery, while Content Loss Fraction measures delivery reliability over each mobility event. NLSR control rate measures sustained native routing-control traffic. Section~\ref{sec:evaluation:routing} evaluates service-path and network-wide routing convergence using the FIB-installation endpoint. For OptoFlood, Recovery Flooding Volume quantifies the network-wide data-plane volume of flood-marked recovery traffic.
 
 Consider a live-video producer that moves between access nodes while maintaining an ongoing stream. NLSR routing can eventually restore reachability after each hand-off, but convergence takes time. If the producer changes attachment again before routing has converged from the previous movement, the network may still contain forwarding and routing state that reflects an earlier attachment. Native NDN routing is therefore poorly suited to producer-mobility scenarios in which attachment changes occur on a timescale comparable to or shorter than routing convergence.
 
-To demonstrate this, we measure the disruption caused by producer movement under native NDN forwarding and routing. We first use the default NLSR and PSync configuration, and then repeat the same experiment with progressively reduced timing parameters: the NLSR Hello interval, Adj-LSA build delay, routing calculation delay, and PSync Sync Interest lifetime. This tests whether more aggressive routing configuration alone can provide sufficiently fast recovery and shows the control-plane cost of doing so. Table~\ref{tab:baseline_configurations} summarises the five configurations.
+To demonstrate this, we measure service recovery, content loss, routing convergence, and routing-control cost under native NDN forwarding and routing. We first use the default NLSR and PSync configuration, and then repeat the same experiment with progressively reduced timing parameters: the NLSR Hello interval, Adj-LSA build delay, routing calculation delay, and PSync Sync Interest lifetime. This tests whether more aggressive routing configuration alone can provide sufficiently fast recovery and shows the control-plane cost of doing so. Table~\ref{tab:baseline_configurations} summarises the five configurations.
 
 \begin{table}[t]
     \centering
-    \caption{Baseline NDN forwarding and routing configurations \ryo{this table should be using booktabs}}
+    \caption{Baseline NDN forwarding and routing configurations}
     \label{tab:baseline_configurations}
-    \begin{tabular}{|c|c|c|c|c|}
-        \hline
+    \begin{tabular}{ccccc}
+        \toprule
         Config. & Hello & Adj-LSA & Route calc. & Sync lifetime \\
-        \hline
+        \midrule
         G0 & 60 s & 10 s & 15 s & 60 s \\
-        \hline
         G1 & 54 s & 9 s & 14 s & 54 s \\
-        \hline
         G2 & 48 s & 8 s & 12 s & 48 s \\
-        \hline
         G3 & 42 s & 7 s & 10 s & 42 s \\
-        \hline
         G4 & 36 s & 6 s & 9 s & 36 s \\
-        \hline
+        \bottomrule
     \end{tabular}
 \end{table}
 
@@ -191,21 +190,18 @@ Figures~\ref{fig:baseline_content_loss_fraction}--\ref{fig:baseline_nlsr_control
 
 \begin{figure*}[t]
     \centering
-    \subfloat[Service recovery time]{
-        \includegraphics[width=0.48\textwidth]{baseline_service_recovery_time.pdf}
-        \label{fig:baseline_service_recovery_time}
-    }
+    \subfloat[Service recovery time]{%
+        \includegraphics[width=0.30\textwidth]{baseline_service_recovery_time.pdf}%
+        \label{fig:baseline_service_recovery_time}}
     \hfill
-    \subfloat[Content loss fraction]{
-        \includegraphics[width=0.48\textwidth]{baseline_content_loss_fraction.pdf}
-        \label{fig:baseline_content_loss_fraction}
-    }
+    \subfloat[Content loss fraction]{%
+        \includegraphics[width=0.30\textwidth]{baseline_content_loss_fraction.pdf}%
+        \label{fig:baseline_content_loss_fraction}}
     \hfill
-    \subfloat[NLSR control rate]{
-        \includegraphics[width=0.48\textwidth]{baseline_nlsr_control_rate.pdf}
-        \label{fig:baseline_nlsr_control_rate}
-    }
-    \caption{Baseline tuning for G0--G4.\ryo{width should be 0.3\textwidth}}
+    \subfloat[NLSR control rate]{%
+        \includegraphics[width=0.30\textwidth]{baseline_nlsr_control_rate.pdf}%
+        \label{fig:baseline_nlsr_control_rate}}
+    \caption{Baseline tuning for G0--G4. Each configuration contains 40 mobility events from five runs. One G1 event is right-censored; the marker shows its censoring bound and is excluded from the box statistics.}
     \label{fig:baseline_results}
 \end{figure*}
 
@@ -230,13 +226,15 @@ OptoFlood addresses the producer-mobility issues described in Section~\ref{sec:p
 \subsection{Immediate Service Recovery}
 \label{sec:design:isr}
 
-When the producer changes its attachment point, OptoFlood detects the change. It records Interest packets for the producer's data prefix that were received before the move and remain unsatisfied. Data packets subsequently sent in response to those Interest packets are marked as recovery Data. Each detected attachment change increments a mobility generation number by one. Data packets marked as recovery Data carry the current generation number as a recovery metadata value.
+Immediate Service Recovery separates endpoint mobility control from forwarding-plane recovery. The live-stream applications contain no OptoFlood-specific mobility logic, while a standalone OptoFlood daemon runs at the producer and consumer endpoints. The producer-side daemon detects attachment changes and triggers recovery, while the consumer-side daemon maintains the Guard Interest described below. The forwarding actions themselves are implemented in OptoFlood extensions to NFD, which process recovery Data and maintain temporary forwarding state.
 
-Forwarding-Guided Data Recovery processes Data packets marked as recovery Data using the FIB direction normally used by Interest packets. Recovery forwarding does not replace PIT-based Data delivery. After the recovery-forwarding step, a matching PIT entry can also return the Data packet towards the requesting consumer. If the FIB entry has no next hops, the forwarder falls back to neighbouring point-to-point interfaces, excluding the incoming interface, local interfaces, and interfaces represented by matching PIT state. In this case, the current recovery HopLimit restricts forwarding to one additional hop.
+When the producer changes its attachment point, the producer-side daemon detects the change and advances the mobility generation. It then arms the local NFD for the data prefix. Some Interest packets received before the move may still be pending when the attachment changes. Data packets subsequently generated for those requests are treated as recovery Data and carry the current mobility generation.
+
+The producer's NFD and subsequent relay forwarders apply Forwarding-Guided Data Recovery to Data packets marked as recovery Data, using the FIB direction normally used by Interest packets. Recovery forwarding does not replace PIT-based Data delivery. After the recovery-forwarding step, a matching PIT entry can also return the Data packet towards the requesting consumer. If the FIB entry has no next hops, the forwarder falls back to neighbouring point-to-point interfaces, excluding the incoming interface, local interfaces, and interfaces represented by matching PIT state. In this case, the current recovery HopLimit restricts forwarding to one additional hop.
 
 At each forwarder, the interface on which recovery Data arrives identifies a direction back towards the producer's new attachment point. OptoFlood records this direction and the associated mobility generation number separately from the FIB in a Temporary FIB (TFIB). While a TFIB entry is active, subsequent Interest packets for the data prefix follow this temporary direction. When recovery Data updates TFIB state, the forwarder compares its mobility generation number with the value stored in the existing entry. State associated with a higher generation number can replace state from a lower generation number. An earlier generation number cannot overwrite a later entry.
 
-Recovery normally relies on an unsatisfied Interest packet remaining from before the move. When application traffic does not provide such an Interest, the consumer maintains pending Guard Interest packets under a dedicated name within the data prefix. Guard Interest packets do not request application payload. After producer movement, the producer returns empty-payload Guard Data carrying the current mobility generation. Guard Data enters the same Forwarding-Guided Data Recovery process and can therefore establish the same temporary forwarding state.
+Recovery normally relies on an unsatisfied Interest packet remaining from before the move. When application traffic does not provide such an Interest packet, the consumer-side OptoFlood daemon periodically re-expresses a Guard Interest under a dedicated name within the data prefix so that a guard remains pending at the producer. Guard Interest packets do not request application payload. After producer movement, the producer-side daemon returns empty-payload Guard Data carrying the current mobility generation. Guard Data enters the same Forwarding-Guided Data Recovery process and can therefore establish the same temporary forwarding state.
 
 When the FIB consistently selects the same forwarding direction as the active TFIB entry for the data prefix, forwarding control returns to the FIB. This agreement does not necessarily mean that routing has fully stabilised, because later routing updates may still withdraw the route or change its next hop. The TFIB entry therefore remains temporarily available as a standby fallback. If the FIB subsequently becomes unusable or changes direction before the temporary state expires, the TFIB entry can resume active forwarding.
 
@@ -285,7 +283,7 @@ We evaluate OptoFlood on the producer-mobility workload introduced in Section~\r
 
 \subsubsection{Experimental Setup and Procedure}
 
-The experiments are run in Mini-NDN 0.7.0 \cite{lantz:2010:mininet}. We consider producer micro-mobility within a single access domain. The producer continues to serve an ongoing stream while changing its attachment point, returning Data in response to received Interest packets. This setting stresses the interval between the physical move and routing convergence.
+The experiments are run in Mini-NDN 0.7.0 \cite{lantz:2010:mininet}. We consider producer micro-mobility within a single access domain for a continuously generated, delay-sensitive live-media stream. The producer continues to serve the stream while changing its attachment point, stressing the interval between physical movement and routing convergence.
 
 The evaluation uses the three-layer access-network topology shown in Figure~\ref{exp_topo}. It has one core node, two aggregation nodes, and six access nodes. The consumer remains attached to acc1. The producer is initially attached to the neighbouring access node acc2 and then moves from one access node to the next. The links are configured as follows:
 \begin{itemize}
@@ -296,9 +294,9 @@ The evaluation uses the three-layer access-network topology shown in Figure~\ref
 
 The core, aggregation, and access nodes form the in-network forwarding fabric and are referred to throughout the evaluation as \textbf{relay nodes}. Each relay runs NFD and NLSR, forwards application Interest packets towards the producer through FIB lookups, and returns Data along the reverse PIT path to the consumer.
 
-The consumer requests one segment per frame at 20~ms intervals and maintains a window of four frames. Interest packets are issued with MustBeFresh. Their lifetime is adaptive and is initially about 2.08~s. The consumer validates returned Data with the experiment trust schema. Returned Data has a freshness period of 10~s, and the producer advertises the content prefix through NLSR.
+The workload emulates a continuously generated, delay-sensitive live-media stream. The consumer requests one-segment frames at 20~ms intervals and maintains a small look-ahead of outstanding Interest packets, adapting its request window to the measured round-trip time. Interest packets use MustBeFresh.
 
-Section~\ref{sec:problem:mobility} evaluates native forwarding and routing under the G0--G4 timer profiles in Table~\ref{tab:baseline_configurations}. Here, G0 is the native reference. OptoFlood uses the G0 NLSR and PSync timing configuration while enabling the three mechanisms of Section~\ref{sec:design}. Each configuration uses five independent runs of eight hand-offs, giving 40 mobility-event observations per configuration. The attachment sequence is acc2--acc3--acc4--acc5--acc6--acc5--acc4--acc3--acc2, returning to the initial attachment after one round trip. The interval between consecutive hand-offs is $90 + U(0,60)$~s, where $U(0,60)$ is a uniform draw from 0 to 60~s. Each run draws its own intervals, so the configurations share the sequence and the interval distribution.
+We use the same topology, workload, attachment sequence, and hand-off procedure for native NDN and OptoFlood. OptoFlood retains the default NLSR and PSync timing while enabling all three mechanisms in Section~\ref{sec:design}. Native NDN uses the G0--G4 timer profiles defined in Table~\ref{tab:baseline_configurations}; G0 is the reference for the direct OptoFlood comparison. Each configuration uses five independent runs of eight hand-offs, giving 40 mobility-event observations per configuration. The attachment sequence is acc2--acc3--acc4--acc5--acc6--acc5--acc4--acc3--acc2, returning to the initial attachment after one round trip. The interval between consecutive hand-offs is $90 + U(0,60)$~s, where $U(0,60)$ is a uniform draw from 0 to 60~s. Each run draws its own intervals, so the configurations share the sequence and the interval distribution.
 
 In each run, all nodes start NFD and NLSR and are given 30~s for initial convergence. The producer links to acc3--acc6 are then taken down, leaving acc2 as the only producer attachment. The applications are then launched. A further interval from the same distribution elapses before the first hand-off. Packet captures are retained on every endpoint and relay node, together with the NLSR and NFD logs and the hand-off records used for the routing measurements.
 
@@ -307,11 +305,13 @@ In each run, all nodes start NFD and NLSR and are given 30~s for initial converg
 
 Each mobility event begins at a hand-off. For every hand-off except the last, the event interval is $[t_i, t_{i+1})$. The final event ends at the end of the packet capture.
 
-Service Recovery Time (SRT) measures restoration of the request path. It is the time from the hand-off until the producer receives the first fresh normal-content Interest packet issued after the hand-off. The consumer-issued Interest packet and the Interest packet received by the producer must carry the same canonical \texttt{/LiveStream/v0} content name. Guard and meta Interest packets, NLSR traffic, and management traffic do not complete SRT. Data generation and return to the consumer lie outside this endpoint. SRT therefore does not measure consumer Data-delivery latency. If no qualifying Interest packet reaches the producer before the event boundary, SRT is right-censored at the event length. The censoring bound is not treated as an observed SRT and is excluded from the numerical box statistics.
+For each mobility event, we measure service recovery and content delivery using SRT and CLF, and recovery and control overhead using RFV and NLSR control rate. Routing acceleration is evaluated using service-path and network-wide FIB convergence. Complete Mobility-Topology Update Latency and Service-Path LSA Lead provide supporting timing evidence for this convergence process.
+
+Service Recovery Time (SRT) measures restoration of the request path. It is the time from the hand-off until the producer receives the first fresh normal-content Interest packet issued by the consumer after the hand-off. The consumer transmission and producer receipt are matched by content name, so the endpoint marks the first successful post-handoff request at the producer's new attachment. If no qualifying Interest packet reaches the producer before the event boundary, SRT is right-censored at the event length. The censoring bound is not treated as an observed SRT and is excluded from the numerical box statistics.
 
 Content Loss Fraction (CLF) is computed over the whole mobility event. Nominal frame opportunities equal the event duration divided by the 20~ms request interval. A delivered frame is a unique normal live-stream frame received by the consumer during the event; repeated copies of the same frame count once. Guard, meta, NLSR, and management traffic are excluded. CLF is one minus the ratio of delivered unique frames to nominal frame opportunities.
 
-Recovery Flooding Volume (RFV) is the recovery-induced flooding volume on the data plane, summed over the event and reported per hand-off. It counts sender-egress bytes of flood-marked application transmissions. An Interest transmission is included when it carries the OptoFlood HopLimit marker. A Data transmission is included when it carries an LP MobilityFlag or an LP OptoHopLimit. A MetaInfo FloodId remaining on a later copy does not, by itself, identify that copy as a flooded transmission. Sender-egress copies at different nodes are counted separately because they represent distinct link transmissions. RFV is not divided by the event duration. Figures show it in kilobytes per hand-off.
+Recovery Flooding Volume (RFV) is the recovery-induced flooding volume on the data plane, summed over the event and reported per hand-off. It counts sender-egress bytes of flood-marked recovery transmissions. An Interest transmission is included when it carries the OptoFlood HopLimit marker. A Data transmission is included when it carries an LP MobilityFlag or an LP OptoHopLimit. A MetaInfo FloodId remaining on a later copy does not, by itself, identify that copy as a flooded transmission. Sender-egress copies at different nodes are counted separately because they represent distinct link transmissions. RFV is not divided by the event duration. Figures show it in kilobytes per hand-off.
 
 NLSR control rate is the network-wide sum of sender-egress NLSR bytes during the event, divided by the event duration. The unit is bytes per second.
 
@@ -359,12 +359,18 @@ Median service-path routing convergence is 49.0~s under G0 and 254~ms under Opto
 
 Network-wide convergence requires the correct FIB state at every affected router, including routers outside the service path. Median network-wide routing convergence is 49.0~s under G0 and 1.47~s under OptoFlood. The OptoFlood observations lie between 1.26~s and 1.60~s. The service path therefore reaches the correct FIB state before convergence is complete across all affected routers: its median convergence time is 254~ms, compared with 1.47~s network-wide. One G1 event is right-censored because an affected router had not completed installation before the observation window ended. The event remains in the 40-event G1 sample. Its censoring bound is marked separately in Figure~\ref{fig:routing_fib_convergence}(b) and is not treated as a convergence time.
 
-\begin{figure*}[t]
+\begin{figure}[t]
     \centering
-    \includegraphics[width=0.72\textwidth]{routing_fib_convergence.pdf}
-    \caption{Routing convergence after a hand-off using the FIB-installation endpoint. (a)~Latest correct \texttt{/LiveStream} FIB installation on the service path. (b)~Latest correct installation among all affected routers. The right-censored G1 event is marked separately and excluded from the box statistics.\ryo{needs to be an actual subfigures, width 0.2\textwidth, and probably can fit side-by-side within the single column actually}
+    \subfloat[Service-path convergence]{%
+        \includegraphics[width=0.45\columnwidth]{routing_service_path_fib_convergence.pdf}%
+        \label{fig:routing_service_path_fib_convergence}}
+    \hfill
+    \subfloat[Network-wide convergence]{%
+        \includegraphics[width=0.45\columnwidth]{routing_network_fib_convergence.pdf}%
+        \label{fig:routing_network_fib_convergence}}
+    \caption{Routing convergence after a hand-off using the FIB-installation endpoint. Each configuration contains 40 mobility events. (a)~Service-path convergence. (b)~Network-wide convergence. The G1 marker in (b) is the right-censor observation boundary and is excluded from the box statistics.}
     \label{fig:routing_fib_convergence}
-\end{figure*}
+\end{figure}
 
 % ------------------------------------------------------------------------------
 \subsection{Recovery and Control Overhead}
@@ -374,20 +380,18 @@ Figure~\ref{fig:solution_overhead} reports the data-plane recovery overhead and 
 
 The median NLSR control rate is 1.27~kB/s for G0 and 1.18~kB/s for OptoFlood. In this experiment, sustained NLSR control traffic under OptoFlood remains of the same order of magnitude as under default G0. Section~\ref{sec:problem:mobility} shows that more aggressive native timer profiles tend to increase this rate.
 
-\begin{figure*}[t]
+\begin{figure}[t]
     \centering
-    \subfloat[Recovery flooding volume]{
-        \includegraphics[width=0.48\textwidth]{solution_recovery_flooding_volume.pdf}
-        \label{fig:solution_recovery_flooding_volume}
-    }
+    \subfloat[Recovery flooding volume]{%
+        \includegraphics[width=0.45\columnwidth]{solution_recovery_flooding_volume.pdf}%
+        \label{fig:solution_recovery_flooding_volume}}
     \hfill
-    \subfloat[NLSR control rate]{
-        \includegraphics[width=0.48\textwidth]{solution_nlsr_control_rate.pdf}
-        \label{fig:solution_nlsr_control_rate}
-    }
-    \caption{Recovery and control overhead in the main experiment. (a)~OptoFlood flooding volume per hand-off; G0--G4 contribute no recovery-flood bytes. (b)~NLSR control rate for G0 and OptoFlood.\ryo{these should probably be smaller width, maybe 0.2\textwidth and can fit side-by-side within the single column actually (output must be actually smaller so that it's legible)}}
+    \subfloat[NLSR control rate]{%
+        \includegraphics[width=0.45\columnwidth]{solution_nlsr_control_rate.pdf}%
+        \label{fig:solution_nlsr_control_rate}}
+    \caption{Recovery and control overhead in the main experiment. (a)~OptoFlood flooding volume per hand-off; G0--G4 contribute no recovery-flood bytes. (b)~NLSR control rate for G0 and OptoFlood.}
     \label{fig:solution_overhead}
-\end{figure*}
+\end{figure}
 
 % ------------------------------------------------------------------------------
 \subsection{Extended Evaluation}

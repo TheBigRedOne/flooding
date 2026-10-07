@@ -173,10 +173,23 @@ def _audit(path: Path, rows: Sequence[Dict[str, object]], extra: str = "") -> No
     path.write_text(text, encoding="utf-8")
 
 
-def _boxes(source: Path, field: str, ylabel: str, labels: str, output: Path, log_y: bool) -> None:
+def _boxes(
+    source: Path,
+    field: str,
+    ylabel: str,
+    labels: str,
+    output: Path,
+    log_y: bool,
+    compact: bool = False,
+    column_pair: bool = False,
+) -> None:
     argv = ["boxes", "--input", str(source), "--field", field, "--ylabel", ylabel, "--labels", labels, "--output", str(output)]
     if log_y:
         argv.append("--log-y")
+    if compact:
+        argv.append("--compact")
+    if column_pair:
+        argv.append("--column-pair")
     plots.main(argv)
 
 
@@ -257,11 +270,11 @@ def aggregate_baseline() -> None:
     destination = RESULTS / "baseline" / "mobility_events.csv"
     _write_rows(destination, rows)
     _audit(RESULTS / "baseline" / "mobility_event_audit.txt", rows)
-    _boxes(destination, "service_recovery_time_ms", "Service recovery time (ms)", "G0,G1,G2,G3,G4", RESULTS / "baseline_service_recovery_time.pdf", False)
-    _boxes(destination, "content_loss_fraction", "Content loss fraction", "G0,G1,G2,G3,G4", RESULTS / "baseline_content_loss_fraction.pdf", False)
+    _boxes(destination, "service_recovery_time_ms", "Service recovery time (ms)", "G0,G1,G2,G3,G4", RESULTS / "baseline_service_recovery_time.pdf", False, compact=True)
+    _boxes(destination, "content_loss_fraction", "Content loss fraction", "G0,G1,G2,G3,G4", RESULTS / "baseline_content_loss_fraction.pdf", False, compact=True)
     # Legacy manuscript compatibility. FCR is not an active evaluation metric.
     _boxes(destination, "forwarding_cost_ratio", "Forwarding cost ratio", "G0,G1,G2,G3,G4", RESULTS / "baseline_forwarding_cost_ratio.pdf", True)
-    _boxes(destination, "nlsr_control_rate_bytes_per_s", "NLSR control rate (bytes/s)", "G0,G1,G2,G3,G4", RESULTS / "baseline_nlsr_control_rate.pdf", True)
+    _boxes(destination, "nlsr_control_rate_bytes_per_s", "NLSR control rate (bytes/s)", "G0,G1,G2,G3,G4", RESULTS / "baseline_nlsr_control_rate.pdf", True, compact=True)
 
 
 def aggregate_solution() -> None:
@@ -277,9 +290,9 @@ def aggregate_solution() -> None:
     _boxes(destination, "content_loss_fraction", "Content loss fraction", "G0,OptoFlood", RESULTS / "solution_content_loss_fraction.pdf", False)
     # Legacy manuscript compatibility. FCR is not an active evaluation metric.
     _boxes(destination, "forwarding_cost_ratio", "Forwarding cost ratio", "G0,OptoFlood", RESULTS / "solution_forwarding_cost_ratio.pdf", False)
-    _boxes(destination, "nlsr_control_rate_bytes_per_s", "NLSR control rate (bytes/s)", "G0,OptoFlood", RESULTS / "solution_nlsr_control_rate.pdf", False)
+    _boxes(destination, "nlsr_control_rate_bytes_per_s", "NLSR control rate (bytes/s)", "G0,OptoFlood", RESULTS / "solution_nlsr_control_rate.pdf", False, column_pair=True)
     flood_rows = plots.load_rows(str(destination))
-    plots.draw_recovery_flooding_volume(flood_rows, str(RESULTS / "solution_recovery_flooding_volume.pdf"))
+    plots.draw_recovery_flooding_volume(flood_rows, str(RESULTS / "solution_recovery_flooding_volume.pdf"), column_pair=True)
 
 
 def aggregate_exp1(diagnostic: bool = False) -> None:
