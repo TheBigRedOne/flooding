@@ -1338,10 +1338,10 @@ def write_summary(
     path_txt.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-# Each FIB panel is included at about 0.22\textwidth. The previous production
-# panel was 7.2 in wide at 0.72\textwidth. Width keeps the same on-page type
-# size. Category labels stay horizontal; OptoFlood is split onto two lines.
-ROUTING_COLUMN_FIGSIZE = (7.2 * 0.22 / 0.72, 2.35)
+# The three Section IV-C panels share one row at about 0.31\textwidth.
+# Width follows the old 7.2 in / 0.72\textwidth scale so type stays readable.
+# A little extra height holds the two-line OptoFlood label.
+ROUTING_ROW_FIGSIZE = (7.2 * 0.31 / 0.72, 4.4 * 0.31 / 0.72 + 0.28)
 
 
 def _draw_log_boxes(axis, labels, data, totals, censor_marks, ylabel: str, compact: bool = False) -> None:
@@ -1383,10 +1383,7 @@ def _draw_log_boxes(axis, labels, data, totals, censor_marks, ylabel: str, compa
         # OptoFlood is wider than one category slot. A line break keeps every
         # label horizontal at the existing canvas width.
         shown = ["Opto-\nFlood" if label == "OptoFlood" else label for label in tick_labels]
-        arts = axis.set_xticklabels(shown, rotation=0, fontsize=8)
-        # Grow the long label into the right margin instead of into G4.
-        arts[-1].set_ha("left")
-        arts[-1].set_clip_on(False)
+        axis.set_xticklabels(shown, rotation=0)
     else:
         axis.set_xticklabels(tick_labels)
     axis.set_ylabel(ylabel)
@@ -1410,14 +1407,11 @@ def plot_production_figures(results: Path, rows: Sequence[Dict[str, Any]]) -> No
     for label in labels:
         selected = [row for row in rows if row["configuration"] == label]
         topology.append(numeric(selected, "topology_update_latency_ms"))
-    figure, axis = plt.subplots(figsize=(7.2, 4.4))
-    _draw_log_boxes(
-        axis, labels, topology, [40] * 6, [[] for _ in labels],
-        "Complete mobility-topology update latency (ms)",
+    _save_routing_column_panel(
+        results / "routing_topology_update_latency.pdf",
+        labels, topology, [[] for _ in labels],
+        "Topology update latency (ms)",
     )
-    figure.tight_layout()
-    figure.savefig(results / "routing_topology_update_latency.pdf")
-    plt.close(figure)
 
     service_data = []
     network_data = []
@@ -1450,20 +1444,22 @@ def plot_production_figures(results: Path, rows: Sequence[Dict[str, Any]]) -> No
     _save_routing_column_panel(
         results / "routing_service_path_fib_convergence.pdf",
         labels, service_data, [[] for _ in labels],
+        "FIB convergence (ms)",
     )
     _save_routing_column_panel(
         results / "routing_network_fib_convergence.pdf",
         labels, network_data, network_marks,
+        "FIB convergence (ms)",
     )
 
 
-def _save_routing_column_panel(path: Path, labels, data, censor_marks) -> None:
+def _save_routing_column_panel(path: Path, labels, data, censor_marks, ylabel: str) -> None:
     import matplotlib.pyplot as plt
 
-    figure, axis = plt.subplots(figsize=ROUTING_COLUMN_FIGSIZE)
+    figure, axis = plt.subplots(figsize=ROUTING_ROW_FIGSIZE)
     _draw_log_boxes(
         axis, labels, data, [40] * len(labels), censor_marks,
-        "FIB convergence (ms)", compact=True,
+        ylabel, compact=True,
     )
     figure.tight_layout()
     figure.savefig(path)

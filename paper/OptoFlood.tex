@@ -330,12 +330,12 @@ The median CLF is 0.434 for G0 and 0.00049 for OptoFlood. The largest OptoFlood 
 \begin{figure*}[t]
     \centering
     \subfloat[Service recovery time]{
-        \includegraphics[width=0.48\textwidth]{solution_service_recovery_time.pdf}
+        \includegraphics[width=0.41\textwidth]{solution_service_recovery_time.pdf}
         \label{fig:solution_service_recovery_time}
     }
     \hfill
     \subfloat[Content loss fraction]{
-        \includegraphics[width=0.48\textwidth]{solution_content_loss_fraction.pdf}
+        \includegraphics[width=0.41\textwidth]{solution_content_loss_fraction.pdf}
         \label{fig:solution_content_loss_fraction}
     }
     \caption{Request-path recovery and content loss for G0 and OptoFlood. Each box summarises 40 hand-off events.}
@@ -346,31 +346,28 @@ The median CLF is 0.434 for G0 and 0.00049 for OptoFlood. The largest OptoFlood 
 \subsection{Routing Convergence}
 \label{sec:evaluation:routing}
 
-Figure~\ref{fig:routing_fib_convergence} reports service-path and network-wide routing convergence for G0--G4 and OptoFlood using the FIB-installation endpoint defined in Section~\ref{sec:evaluation:measurement}. The G1--G4 profiles provide routing-convergence context for the timer study in Section~\ref{sec:problem:mobility}, while G0 remains the native reference for the OptoFlood comparison. The OptoFlood results are for the complete system with all three mechanisms of Section~\ref{sec:design} enabled.
+Figure~\ref{fig:routing_convergence} reports producer-side topology update together with service-path and network-wide routing convergence for G0--G4 and OptoFlood. The FIB panels use the installation endpoint defined in Section~\ref{sec:evaluation:measurement}. The G1--G4 profiles provide routing-convergence context for the timer study in Section~\ref{sec:problem:mobility}, while G0 remains the native reference for the OptoFlood comparison. The OptoFlood results are for the complete system with all three mechanisms of Section~\ref{sec:design} enabled.
 
-Median service-path routing convergence is 49.0~s under G0 and 254~ms under OptoFlood. The OptoFlood observations lie between 242~ms and 300~ms. Figure~\ref{fig:routing_topology_update} shows the preceding producer-side topology update. The median Complete Mobility-Topology Update Latency is 41.9~s under G0 and 166~ms under OptoFlood, ending when the updated Adj-LSA has been constructed. The dissemination timing provides a second view of the service-relevant routing update. Across all 170 matched same-router, same-version observations, the service-prioritised Adj-LSA Data packet arrives before the corresponding NLSR Sync notification. The median event-level Service-Path LSA Lead is 1.13~s. These supporting measurements use endpoints distinct from the final FIB installation reported in Figure~\ref{fig:routing_fib_convergence}(a).
+Median service-path routing convergence is 49.0~s under G0 and 254~ms under OptoFlood. The OptoFlood observations lie between 242~ms and 300~ms. Figure~\ref{fig:routing_convergence}(a) shows the preceding producer-side topology update. The median Complete Mobility-Topology Update Latency is 41.9~s under G0 and 166~ms under OptoFlood, ending when the updated Adj-LSA has been constructed. The dissemination timing provides a second view of the service-relevant routing update. Across all 170 matched same-router, same-version observations, the service-prioritised Adj-LSA Data packet arrives before the corresponding NLSR Sync notification. The median event-level Service-Path LSA Lead is 1.13~s. These supporting measurements use endpoints distinct from the final FIB installation reported in Figure~\ref{fig:routing_convergence}(b).
 
-\begin{figure}[t]
+Network-wide convergence requires the correct FIB state at every affected router, including routers outside the service path. Median network-wide routing convergence is 49.0~s under G0 and 1.47~s under OptoFlood. The OptoFlood observations lie between 1.26~s and 1.60~s. The service path therefore reaches the correct FIB state before convergence is complete across all affected routers: its median convergence time is 254~ms, compared with 1.47~s network-wide. One G1 event is right-censored because an affected router had not completed installation before the observation window ended. The event remains in the 40-event G1 sample. Its censoring bound is marked separately in Figure~\ref{fig:routing_convergence}(c) and is not treated as a convergence time.
+
+\begin{figure*}[t]
     \centering
-    \includegraphics[width=\columnwidth]{routing_topology_update_latency.pdf}
-    \caption{Complete mobility-topology update latency, from the hand-off until the producer-side router constructs the updated Adj-LSA after the former and new adjacency states are definitive.}
-    \label{fig:routing_topology_update}
-\end{figure}
-
-Network-wide convergence requires the correct FIB state at every affected router, including routers outside the service path. Median network-wide routing convergence is 49.0~s under G0 and 1.47~s under OptoFlood. The OptoFlood observations lie between 1.26~s and 1.60~s. The service path therefore reaches the correct FIB state before convergence is complete across all affected routers: its median convergence time is 254~ms, compared with 1.47~s network-wide. One G1 event is right-censored because an affected router had not completed installation before the observation window ended. The event remains in the 40-event G1 sample. Its censoring bound is marked separately in Figure~\ref{fig:routing_fib_convergence}(b) and is not treated as a convergence time.
-
-\begin{figure}[t]
-    \centering
-    \subfloat[Service-path convergence]{%
-        \includegraphics[width=0.45\columnwidth]{routing_service_path_fib_convergence.pdf}%
+    \subfloat[Topology update]{%
+        \includegraphics[width=0.31\textwidth]{routing_topology_update_latency.pdf}%
+        \label{fig:routing_topology_update}}
+    \hfill
+    \subfloat[Service-path FIB convergence]{%
+        \includegraphics[width=0.31\textwidth]{routing_service_path_fib_convergence.pdf}%
         \label{fig:routing_service_path_fib_convergence}}
     \hfill
-    \subfloat[Network-wide convergence]{%
-        \includegraphics[width=0.45\columnwidth]{routing_network_fib_convergence.pdf}%
+    \subfloat[Network-wide FIB convergence]{%
+        \includegraphics[width=0.31\textwidth]{routing_network_fib_convergence.pdf}%
         \label{fig:routing_network_fib_convergence}}
-    \caption{Routing convergence after a hand-off using the FIB-installation endpoint. Each configuration contains 40 mobility events. (a)~Service-path convergence. (b)~Network-wide convergence. The G1 marker in (b) is the right-censor observation boundary and is excluded from the box statistics.}
-    \label{fig:routing_fib_convergence}
-\end{figure}
+    \caption{Routing behaviour after a hand-off. Each configuration contains 40 mobility events. (a)~Complete producer-side mobility-topology update. (b)~Service-path FIB convergence. (c)~Network-wide FIB convergence. The G1 marker in (c) is the right-censor observation boundary and is excluded from the box statistics.}
+    \label{fig:routing_convergence}
+\end{figure*}
 
 % ------------------------------------------------------------------------------
 \subsection{Recovery and Control Overhead}
@@ -380,18 +377,18 @@ Figure~\ref{fig:solution_overhead} reports the data-plane recovery overhead and 
 
 The median NLSR control rate is 1.27~kB/s for G0 and 1.18~kB/s for OptoFlood. In this experiment, sustained NLSR control traffic under OptoFlood remains of the same order of magnitude as under default G0. Section~\ref{sec:problem:mobility} shows that more aggressive native timer profiles tend to increase this rate.
 
-\begin{figure}[t]
+\begin{figure*}[t]
     \centering
     \subfloat[Recovery flooding volume]{%
-        \includegraphics[width=0.45\columnwidth]{solution_recovery_flooding_volume.pdf}%
+        \includegraphics[width=0.40\textwidth]{solution_recovery_flooding_volume.pdf}%
         \label{fig:solution_recovery_flooding_volume}}
     \hfill
     \subfloat[NLSR control rate]{%
-        \includegraphics[width=0.45\columnwidth]{solution_nlsr_control_rate.pdf}%
+        \includegraphics[width=0.40\textwidth]{solution_nlsr_control_rate.pdf}%
         \label{fig:solution_nlsr_control_rate}}
     \caption{Recovery and control overhead in the main experiment. (a)~OptoFlood flooding volume per hand-off; G0--G4 contribute no recovery-flood bytes. (b)~NLSR control rate for G0 and OptoFlood.}
     \label{fig:solution_overhead}
-\end{figure}
+\end{figure*}
 
 % ------------------------------------------------------------------------------
 \subsection{Extended Evaluation}

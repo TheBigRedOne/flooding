@@ -90,10 +90,13 @@ def groups_for(rows: Sequence[Dict[str, str]], labels: Sequence[str], field: str
 # approximately the same size on the page.
 BASELINE_COMPACT_FIGSIZE = (6.2 * 0.30 / 0.48, 4.2 * 0.30 / 0.48)
 
-# Section IV-D panels are included near 0.22\textwidth inside one column.
-# The canvas shrinks by that ratio from the 0.48\textwidth / 6.2 in design
-# so point sizes stay about the same size on the page.
-COLUMN_PAIR_FIGSIZE = (6.2 * 0.22 / 0.48, 4.2 * 0.22 / 0.48)
+# Section IV-B panels are included at 0.41\textwidth. The canvas follows that
+# ratio from the 0.48\textwidth / 6.2 in design so on-page type stays similar
+# while the panels are shorter.
+SERVICE_PAIR_FIGSIZE = (6.2 * 0.41 / 0.48, 4.2 * 0.41 / 0.48)
+
+# Section IV-D panels are included at 0.40\textwidth across a figure*.
+OVERHEAD_PAIR_FIGSIZE = (6.2 * 0.40 / 0.48, 4.2 * 0.40 / 0.48)
 
 
 def draw_boxes(
@@ -107,12 +110,15 @@ def draw_boxes(
     censor_note: str = "right-censored",
     compact: bool = False,
     column_pair: bool = False,
+    service_pair: bool = False,
 ) -> None:
     parent = os.path.dirname(path)
     if parent:
         os.makedirs(parent, exist_ok=True)
-    if column_pair:
-        figsize = COLUMN_PAIR_FIGSIZE
+    if service_pair:
+        figsize = SERVICE_PAIR_FIGSIZE
+    elif column_pair:
+        figsize = OVERHEAD_PAIR_FIGSIZE
     elif compact:
         figsize = BASELINE_COMPACT_FIGSIZE
     else:
@@ -241,7 +247,7 @@ def draw_recovery_flooding_volume(rows: Sequence[Dict[str, str]], path: str, col
     layout = recovery_flood_layout(rows)
     median_kb = layout.median_bytes / 1000.0
     mean_kb = layout.mean_bytes / 1000.0
-    fig, ax = plt.subplots(figsize=COLUMN_PAIR_FIGSIZE if column_pair else (6.2, 4.2))
+    fig, ax = plt.subplots(figsize=OVERHEAD_PAIR_FIGSIZE if column_pair else (6.2, 4.2))
     ax.scatter(layout.x, layout.y_kb, s=28, color="C0", alpha=0.65, zorder=3, linewidths=0)
     ax.axhline(median_kb, color="black", linestyle="-", linewidth=1.0, zorder=2, label=f"Median: {median_kb:.3f} kB")
     ax.axhline(mean_kb, color="black", linestyle="--", linewidth=1.0, zorder=2, label=f"Mean: {mean_kb:.3f} kB")
@@ -256,12 +262,12 @@ def draw_recovery_flooding_volume(rows: Sequence[Dict[str, str]], path: str, col
         ax.set_ylabel("kB per hand-off")
         ax.legend(
             loc="upper center",
-            bbox_to_anchor=(0.5, -0.34),
-            ncol=1,
+            bbox_to_anchor=(0.5, -0.16),
+            ncol=2,
             frameon=False,
             fontsize=8,
         )
-        fig.subplots_adjust(left=0.24, right=0.98, bottom=0.40, top=0.97)
+        fig.subplots_adjust(left=0.14, right=0.98, bottom=0.20, top=0.97)
     else:
         ax.set_ylabel("Recovery flooding volume (kB per handoff)")
         ax.legend(loc="center", bbox_to_anchor=(0.5, 0.70), ncol=2, frameon=True, fontsize=8)
@@ -335,6 +341,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     boxes.add_argument("--log-y", action="store_true")
     boxes.add_argument("--compact", action="store_true")
     boxes.add_argument("--column-pair", action="store_true")
+    boxes.add_argument("--service-pair", action="store_true")
     exp1 = sub.add_parser("exp1")
     exp1.add_argument("--input", required=True)
     exp1.add_argument("--field", required=True)
@@ -372,6 +379,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             censor_marks=censors,
             compact=args.compact,
             column_pair=args.column_pair,
+            service_pair=args.service_pair,
         )
         return 0
     series = [item.strip() for item in args.series.split(",") if item.strip()] or [args.field]
