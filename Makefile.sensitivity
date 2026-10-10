@@ -8,40 +8,43 @@ SENSITIVITY_INTERVAL_FILE := experiment/extended/sensitivity_handoff_intervals.t
 SENSITIVITY_INTERVALS := $(strip $(file < $(SENSITIVITY_INTERVAL_FILE)))
 SENSITIVITY_SEQUENCE := acc2,acc3,acc4,acc5,acc6,acc5,acc4,acc3,acc2
 SENSITIVITY_COMMON_ENV := NLSR_HANDOFF_COUNT='8' NLSR_HANDOFF_SEQUENCE='$(SENSITIVITY_SEQUENCE)' NLSR_HANDOFF_INTERVALS='$(SENSITIVITY_INTERVALS)' EXP_REQUEST_INTERVAL_MS='20'
+SENSITIVITY_FEATURE_ENV := NLSR_RESULT_DRIVEN_ADJ_LSA_BUILD='on' NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION='on' NLSR_CORRIDOR_PRIORITISED_ROUTING='on'
+SENSITIVITY_DRIVER_PREREQS := experiment/tool/handoff_schedule.py
 
 SENSITIVITY_SYNC_ROOT := results/extended/exp1/sync-delay
 SENSITIVITY_TIMEOUT_ROOT := results/extended/exp1/verification-timeout
 
 sensitivity_cell_outputs = $(addprefix $(1)/,$(EXPERIMENT_RUN_FILES))
 
-# $(1) result directory, $(2) order-only predecessor outputs, $(3) overrides after SOLUTION_NLSR_ENV
+# $(1) result directory, $(2) order-only predecessor outputs,
+# $(3) sync publication delay in seconds, $(4) verification timeout in ms.
 define emit_sensitivity_cell
-$(call sensitivity_cell_outputs,$(1)) &: scripts/run-in-vm.sh $$(SOLUTION_INPUTS)$(if $(2), | $(2))
-	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="$$(SENSITIVITY_COMMON_ENV) $$(SOLUTION_NLSR_ENV) $(3) make all" sh $$^ $$@
+$(call sensitivity_cell_outputs,$(1)) &: scripts/run-in-vm.sh $$(SOLUTION_INPUTS) $(SENSITIVITY_DRIVER_PREREQS) $(SENSITIVITY_INTERVAL_FILE)$(if $(2), | $(2))
+	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="$$(SENSITIVITY_COMMON_ENV) $$(SENSITIVITY_FEATURE_ENV) NLSR_CORRIDOR_ADJ_LSA_SYNC_PUBLISH_DELAY='$(3)' NLSR_EVENT_DRIVEN_VERIFICATION_TIMEOUT_MS='$(4)' make all" sh $$^ $$@
 endef
 
-$(call sensitivity_cell_outputs,results/extended/exp1/smoke) &: scripts/run-in-vm.sh $(SOLUTION_INPUTS)
-	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="NLSR_HANDOFF_COUNT='1' NLSR_HANDOFF_SEQUENCE='acc2,acc3' NLSR_HANDOFF_INTERVALS='6,6' EXP_REQUEST_INTERVAL_MS='20' $(SOLUTION_NLSR_ENV) NLSR_CORRIDOR_ADJ_LSA_SYNC_PUBLISH_DELAY='2' NLSR_EVENT_DRIVEN_VERIFICATION_TIMEOUT_MS='100' make all" sh $^ $@
+$(call sensitivity_cell_outputs,results/extended/exp1/smoke) &: scripts/run-in-vm.sh $(SOLUTION_INPUTS) $(SENSITIVITY_DRIVER_PREREQS)
+	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="NLSR_HANDOFF_COUNT='1' NLSR_HANDOFF_SEQUENCE='acc2,acc3' NLSR_HANDOFF_INTERVALS='6,6' EXP_REQUEST_INTERVAL_MS='20' $(SENSITIVITY_FEATURE_ENV) NLSR_CORRIDOR_ADJ_LSA_SYNC_PUBLISH_DELAY='2' NLSR_EVENT_DRIVEN_VERIFICATION_TIMEOUT_MS='100' make all" sh $^ $@
 
 SENSITIVITY_SYNC_PREV :=
-$(eval $(call emit_sensitivity_cell,$(SENSITIVITY_SYNC_ROOT)/d0,$(SENSITIVITY_SYNC_PREV),NLSR_CORRIDOR_ADJ_LSA_SYNC_PUBLISH_DELAY='0'))
+$(eval $(call emit_sensitivity_cell,$(SENSITIVITY_SYNC_ROOT)/d0,$(SENSITIVITY_SYNC_PREV),0,50))
 $(eval SENSITIVITY_SYNC_PREV := $(call sensitivity_cell_outputs,$(SENSITIVITY_SYNC_ROOT)/d0))
-$(eval $(call emit_sensitivity_cell,$(SENSITIVITY_SYNC_ROOT)/d1,$(SENSITIVITY_SYNC_PREV),NLSR_CORRIDOR_ADJ_LSA_SYNC_PUBLISH_DELAY='1'))
+$(eval $(call emit_sensitivity_cell,$(SENSITIVITY_SYNC_ROOT)/d1,$(SENSITIVITY_SYNC_PREV),1,50))
 $(eval SENSITIVITY_SYNC_PREV := $(call sensitivity_cell_outputs,$(SENSITIVITY_SYNC_ROOT)/d1))
-$(eval $(call emit_sensitivity_cell,$(SENSITIVITY_SYNC_ROOT)/d2,$(SENSITIVITY_SYNC_PREV),NLSR_CORRIDOR_ADJ_LSA_SYNC_PUBLISH_DELAY='2'))
+$(eval $(call emit_sensitivity_cell,$(SENSITIVITY_SYNC_ROOT)/d2,$(SENSITIVITY_SYNC_PREV),2,50))
 $(eval SENSITIVITY_SYNC_PREV := $(call sensitivity_cell_outputs,$(SENSITIVITY_SYNC_ROOT)/d2))
-$(eval $(call emit_sensitivity_cell,$(SENSITIVITY_SYNC_ROOT)/d4,$(SENSITIVITY_SYNC_PREV),NLSR_CORRIDOR_ADJ_LSA_SYNC_PUBLISH_DELAY='4'))
+$(eval $(call emit_sensitivity_cell,$(SENSITIVITY_SYNC_ROOT)/d4,$(SENSITIVITY_SYNC_PREV),4,50))
 
 SENSITIVITY_TIMEOUT_PREV :=
-$(eval $(call emit_sensitivity_cell,$(SENSITIVITY_TIMEOUT_ROOT)/t10,$(SENSITIVITY_TIMEOUT_PREV),NLSR_EVENT_DRIVEN_VERIFICATION_TIMEOUT_MS='10'))
+$(eval $(call emit_sensitivity_cell,$(SENSITIVITY_TIMEOUT_ROOT)/t10,$(SENSITIVITY_TIMEOUT_PREV),1,10))
 $(eval SENSITIVITY_TIMEOUT_PREV := $(call sensitivity_cell_outputs,$(SENSITIVITY_TIMEOUT_ROOT)/t10))
-$(eval $(call emit_sensitivity_cell,$(SENSITIVITY_TIMEOUT_ROOT)/t25,$(SENSITIVITY_TIMEOUT_PREV),NLSR_EVENT_DRIVEN_VERIFICATION_TIMEOUT_MS='25'))
+$(eval $(call emit_sensitivity_cell,$(SENSITIVITY_TIMEOUT_ROOT)/t25,$(SENSITIVITY_TIMEOUT_PREV),1,25))
 $(eval SENSITIVITY_TIMEOUT_PREV := $(call sensitivity_cell_outputs,$(SENSITIVITY_TIMEOUT_ROOT)/t25))
-$(eval $(call emit_sensitivity_cell,$(SENSITIVITY_TIMEOUT_ROOT)/t50,$(SENSITIVITY_TIMEOUT_PREV),NLSR_EVENT_DRIVEN_VERIFICATION_TIMEOUT_MS='50'))
+$(eval $(call emit_sensitivity_cell,$(SENSITIVITY_TIMEOUT_ROOT)/t50,$(SENSITIVITY_TIMEOUT_PREV),1,50))
 $(eval SENSITIVITY_TIMEOUT_PREV := $(call sensitivity_cell_outputs,$(SENSITIVITY_TIMEOUT_ROOT)/t50))
-$(eval $(call emit_sensitivity_cell,$(SENSITIVITY_TIMEOUT_ROOT)/t100,$(SENSITIVITY_TIMEOUT_PREV),NLSR_EVENT_DRIVEN_VERIFICATION_TIMEOUT_MS='100'))
+$(eval $(call emit_sensitivity_cell,$(SENSITIVITY_TIMEOUT_ROOT)/t100,$(SENSITIVITY_TIMEOUT_PREV),1,100))
 $(eval SENSITIVITY_TIMEOUT_PREV := $(call sensitivity_cell_outputs,$(SENSITIVITY_TIMEOUT_ROOT)/t100))
-$(eval $(call emit_sensitivity_cell,$(SENSITIVITY_TIMEOUT_ROOT)/t250,$(SENSITIVITY_TIMEOUT_PREV),NLSR_EVENT_DRIVEN_VERIFICATION_TIMEOUT_MS='250'))
+$(eval $(call emit_sensitivity_cell,$(SENSITIVITY_TIMEOUT_ROOT)/t250,$(SENSITIVITY_TIMEOUT_PREV),1,250))
 
 .PHONY: experiment-exp1-smoke experiment-exp1-sync-delay experiment-exp1-verification-timeout experiment-exp1-sensitivity \
         analyze-exp1-sync-delay analyze-exp1-verification-timeout analyze-exp1-sensitivity
