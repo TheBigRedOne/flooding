@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Host-side OptoFlood parameter-sensitivity summaries.
 
-Calls the production mobility-event and routing measure_run functions.
-It does not start a VM and does not change those metric definitions.
+SPRC Sync publication-delay sensitivity and EDRC verification-timeout
+sensitivity. Each study calls the production mobility-event and routing
+measure_run functions.
 """
 
 from __future__ import annotations
@@ -49,6 +50,29 @@ PRIMARY_FIELDS = {
         ("topology_update_latency_ms", "Complete mobility-topology update latency (ms)"),
         ("service_path_fib_convergence_ms", "Service-path FIB convergence time (ms)"),
         ("network_fib_convergence_ms", "Network-wide FIB convergence time (ms)"),
+    ),
+}
+
+PAPER_FIGURES = {
+    "sync-delay": RESULTS / "exp1_sync_delay_sensitivity.pdf",
+    "verification-timeout": RESULTS / "exp1_verification_timeout_sensitivity.pdf",
+}
+
+PAPER_XLABEL = {
+    "sync-delay": "Sync publication delay (s)",
+    "verification-timeout": "Verification timeout (ms)",
+}
+
+PAPER_PANELS = {
+    "sync-delay": (
+        ("service_path_lsa_lead_ms", "Service-Path LSA Lead"),
+        ("service_path_fib_convergence_ms", "Service-Path FIB Convergence"),
+        ("network_fib_convergence_ms", "Network-Wide FIB Convergence"),
+    ),
+    "verification-timeout": (
+        ("topology_update_latency_ms", "Complete Mobility-Topology Update Latency"),
+        ("service_path_fib_convergence_ms", "Service-Path FIB Convergence"),
+        ("network_fib_convergence_ms", "Network-Wide FIB Convergence"),
     ),
 }
 
@@ -288,7 +312,7 @@ def _read_csv(path: Path) -> List[Dict[str, str]]:
 
 
 def write_default_cross_check(repo: Path) -> List[str]:
-    """Read stored main and sensitivity CSVs. Does not recompute production metrics."""
+    """Read the stored production and sensitivity CSVs and compare their recorded values."""
     paths = {
         "mobility": repo / "results" / "solution" / "mobility_events.csv",
         "routing": repo / "results" / "routing" / "routing_events.csv",
@@ -354,28 +378,64 @@ def _summary_lines(study: str, rows: Sequence[Dict[str, object]], cells: Sequenc
     return lines
 
 
-def _plot(path: Path, rows: Sequence[Dict[str, object]], cells: Sequence[Tuple[str, str]], field: str, ylabel: str) -> None:
+def parameter_coordinates(cells: Sequence[Tuple[str, str]]) -> List[float]:
+    """Configured numeric parameter for each cell, in cell order."""
+    return [float(parameter) for _cell, parameter in cells]
+
+
+def _marker_half_width(coordinates: Sequence[float]) -> float:
+    gaps = [right - left for left, right in zip(coordinates, coordinates[1:]) if right > left]
+    if not gaps:
+        return 0.15
+    return min(gaps) * 0.12
+
+
+def _draw_parameter_panel(axis: Any, rows: Sequence[Mapping[str, object]], cells: Sequence[Tuple[str, str]], field: str, title: str, xlabel: str) -> None:
+    """Eight handoff observations at the configured parameter, plus median and IQR."""
+    coordinates = parameter_coordinates(cells)
+    half = _marker_half_width(coordinates)
+    for x, (cell, _parameter) in zip(coordinates, cells):
+        values = routing.numeric(_as_dicts([row for row in rows if str(row["cell"]) == cell]), field)
+        axis.scatter([x] * len(values), values, s=22, color="C0", alpha=0.65, linewidths=0, zorder=3)
+        if not values:
+            continue
+        q1, median, q3 = routing.quantiles(values)
+        axis.plot([x - half, x + half], [median, median], color="black", linewidth=1.4, zorder=4)
+        if len(values) >= 2:
+            axis.plot([x + half * 1.8, x + half * 1.8], [q1, q3], color="black", linewidth=1.0, zorder=2)
+    axis.set_title(title, loc="left", fontsize=9)
+    axis.set_xlabel(xlabel)
+    axis.set_ylabel("Time (ms)")
+    axis.grid(True, axis="y", linestyle="--", alpha=0.6)
+    axis.set_axisbelow(True)
+
+
+def _plot(path: Path, rows: Sequence[Mapping[str, object]], cells: Sequence[Tuple[str, str]], field: str, ylabel: str, xlabel: str) -> None:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     path.parent.mkdir(parents=True, exist_ok=True)
     figure, axis = plt.subplots(figsize=(6.2, 4.2))
-    for position, (cell, _parameter) in enumerate(cells):
-        values = routing.numeric([row for row in rows if row["cell"] == cell], field)
-        axis.scatter([position] * len(values), values, s=28, color="C0", alpha=0.65, linewidths=0, zorder=3)
-        if not values:
-            continue
-        _q1, median, _q3 = routing.quantiles(values)
-        axis.plot([position - 0.18, position + 0.18], [median, median], color="black", linewidth=1.4, zorder=4)
-        if len(values) >= 2:
-            q1, _median, q3 = routing.quantiles(values)
-            axis.plot([position + 0.22, position + 0.22], [q1, q3], color="black", linewidth=1.0, zorder=2)
-    axis.set_xticks(list(range(len(cells))))
-    axis.set_xticklabels([cell for cell, _parameter in cells])
+    _draw_parameter_panel(axis, rows, cells, field, ylabel, xlabel)
+    axis.set_title("")
     axis.set_ylabel(ylabel)
-    axis.grid(True, axis="y", linestyle="--", alpha=0.6)
-    axis.set_axisbelow(True)
+    figure.tight_layout()
+    figure.savefig(path)
+    plt.close(figure)
+
+
+def plot_production_figure(path: Path, study: str, rows: Sequence[Mapping[str, object]]) -> None:
+    """Three-panel figure of the eight handoffs from one sensitivity run."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    figure, axes = plt.subplots(1, 3, figsize=(9.6, 3.4))
+    letters = "abc"
+    for axis, letter, (field, title) in zip(axes, letters, PAPER_PANELS[study]):
+        _draw_parameter_panel(axis, rows, STUDIES[study], field, f"({letter}) {title}", PAPER_XLABEL[study])
     figure.tight_layout()
     figure.savefig(path)
     plt.close(figure)
@@ -391,7 +451,8 @@ def analyze(study: str) -> None:
     summary = _summary_lines(study, rows, cells)
     (destination / "sensitivity_summary.txt").write_text("\n".join(summary) + "\n", encoding="utf-8")
     for field, ylabel in PRIMARY_FIELDS[study]:
-        _plot(destination / f"{field}.pdf", rows, cells, field, ylabel)
+        _plot(destination / f"{field}.pdf", rows, cells, field, ylabel, PAPER_XLABEL[study])
+    plot_production_figure(PAPER_FIGURES[study], study, rows)
     print("\n".join(summary))
 
 

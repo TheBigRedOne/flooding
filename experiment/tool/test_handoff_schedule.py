@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Host-side checks for explicit handoff interval lists. No Mini-NDN import."""
+"""Host-side checks for explicit handoff interval lists.
+
+Imports the pure-Python schedule parser.
+"""
 
 from __future__ import annotations
 
@@ -32,7 +35,7 @@ class HandoffScheduleTest(unittest.TestCase):
         self.assertIsNone(schedule.intervals_from_env(None, 8))
         self.assertIsNone(schedule.intervals_from_env("  ", 8))
 
-    def test_smoke_list_matches_one_handoff_plus_tail(self) -> None:
+    def test_one_handoff_requires_warmup_and_tail(self) -> None:
         self.assertEqual(schedule.parse_explicit_intervals("6,6", 1), [6.0, 6.0])
 
     def test_length_must_include_the_tail(self) -> None:
@@ -157,6 +160,46 @@ class SensitivityRetentionTest(unittest.TestCase):
         mobility = repo / "results" / "solution" / "mobility_events.csv"
         self.assertEqual(mobility, sensitivity.ROOT / "results" / "solution" / "mobility_events.csv")
         self.assertNotEqual(mobility, Path(repo.anchor) / "results" / "solution" / "mobility_events.csv")
+
+    def test_production_figures_use_numeric_parameter_axes(self) -> None:
+        self.assertEqual(sensitivity.parameter_coordinates(sensitivity.SYNC_CELLS), [0.0, 1.0, 2.0, 4.0])
+        self.assertEqual(sensitivity.parameter_coordinates(sensitivity.TIMEOUT_CELLS), [10.0, 25.0, 50.0, 100.0, 250.0])
+        self.assertEqual(
+            sensitivity.PAPER_FIGURES["sync-delay"],
+            sensitivity.RESULTS / "exp1_sync_delay_sensitivity.pdf",
+        )
+        self.assertEqual(
+            sensitivity.PAPER_FIGURES["verification-timeout"],
+            sensitivity.RESULTS / "exp1_verification_timeout_sensitivity.pdf",
+        )
+        self.assertEqual(
+            [title for _field, title in sensitivity.PAPER_PANELS["sync-delay"]],
+            ["Service-Path LSA Lead", "Service-Path FIB Convergence", "Network-Wide FIB Convergence"],
+        )
+        self.assertEqual(
+            [title for _field, title in sensitivity.PAPER_PANELS["verification-timeout"]],
+            [
+                "Complete Mobility-Topology Update Latency",
+                "Service-Path FIB Convergence",
+                "Network-Wide FIB Convergence",
+            ],
+        )
+        rows = []
+        for cell, parameter in sensitivity.SYNC_CELLS:
+            for index in range(8):
+                rows.append({
+                    "cell": cell,
+                    "parameter_value": parameter,
+                    "service_path_lsa_lead_ms": str(1000 * float(parameter) + index),
+                    "service_path_fib_convergence_ms": str(200 + index),
+                    "network_fib_convergence_ms": str(1000 + 100 * float(parameter) + index),
+                })
+        with tempfile.TemporaryDirectory() as tmp:
+            destination = Path(tmp) / "exp1_sync_delay_sensitivity.pdf"
+            sensitivity.plot_production_figure(destination, "sync-delay", rows)
+            self.assertTrue(destination.is_file())
+            self.assertGreater(destination.stat().st_size, 0)
+            self.assertNotEqual(destination.parent, sensitivity.RESULTS)
 
 
 if __name__ == "__main__":

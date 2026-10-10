@@ -41,13 +41,17 @@ how many cores are available:
 
 ```
 box/initial -> box/baseline -> g0/r1 -> ... -> g0/r5 -> g1/r1 -> ... -> g4/r5
-            -> box/solution -> test -> solution/r1 -> ... -> solution/r5 -> exp1
+            -> box/solution -> test -> solution/r1 -> ... -> solution/r5
+            -> exp1 sync-delay d0 -> d1 -> d2 -> d4
+            -> exp1 verification-timeout t10 -> t25 -> t50 -> t100 -> t250
 ```
 
 Baseline tuning is 5 profiles × 5 runs. The OptoFlood comparison is 5 runs.
-Each of those runs is one round trip of 8 hand-offs. Exp 1 keeps its own
-K=16 zero-jitter schedule and runs after the solution runs because it uses the
-same solution VM.
+Each of those runs is one round trip of 8 hand-offs. Exp1 is the OptoFlood
+parameter-sensitivity study: one SPRC Sync publication-delay sweep and one
+EDRC verification-timeout sweep. Every full cell is one run of the same eight
+handoffs and the same explicit interval list. It uses the solution VM and
+runs after the solution runs.
 
 This command automates the entire process. It will:
 1.  Build the necessary Vagrant base images (`.box` files) if they don't exist.
@@ -71,9 +75,9 @@ This command automates the entire process. It will:
 - `make plot`
   Runs both plotting pipelines without re-running experiments.
 - `make plot-exp1`
-  Regenerates the Exp1 service-recovery, content-loss, and explicit-flood figures, plus the delivery timeline.
+  Regenerates the two Exp1 parameter-sensitivity figures from existing captures.
 - `make mobility-analysis`
-  Regenerates baseline, solution, and Exp1 mobility-event tables and figures, then the routing-convergence tables and figures, from existing captures. Those four steps run one after another, including under `make -j`.
+  Regenerates baseline and solution mobility-event tables and figures, then the routing-convergence tables and figures, then the Exp1 sensitivity figures, from existing captures. Those steps run one after another, including under `make -j`.
 - `make test-mobility-analysis`
   Runs the mobility-event unit tests. This is separate from the protocol `test` target.
 - `make routing-analysis`
@@ -83,9 +87,9 @@ This command automates the entire process. It will:
 
 ## Mobility-event analysis
 
-Host-side analysis decodes each run's `pcap_nodes/*.pcap` with one Python decoder. Name equality uses `(component type, raw component bytes)`, not a rendered URI. Baseline is G0--G4, five runs, eight handoffs. The solution comparison is five OptoFlood runs of the same eight-handoff schedule. Exp1 keeps K=16 and zero jitter, and uses the same event parser.
+Host-side analysis decodes each run's `pcap_nodes/*.pcap` with one Python decoder. Name equality uses `(component type, raw component bytes)`, not a rendered URI. Baseline is G0--G4, five runs, eight handoffs. The solution comparison is five OptoFlood runs of the same eight-handoff schedule. Exp1 reuses those mobility-event and routing measurements on one explicit eight-handoff schedule.
 
-The active main-experiment metrics are service recovery time, content loss fraction, recovery flooding volume, and NLSR control rate. Service recovery time is the time from a handoff until the producer receives the first fresh post-handoff content Interest. Recovery flooding volume is the aggregate bytes of actual OptoFlood flood-marked sender-egress transmissions per handoff. NLSR control rate measures control-plane traffic; recovery flooding volume measures recovery-induced flooding traffic. Exp1 is a separate sensitivity sweep: it plots service recovery time, content loss fraction, and its existing explicit flood rate, and keeps the delivery timeline. Production figures:
+The active main-experiment metrics are service recovery time, content loss fraction, recovery flooding volume, and NLSR control rate. Service recovery time is the time from a handoff until the producer receives the first fresh post-handoff content Interest. Recovery flooding volume is the aggregate bytes of actual OptoFlood flood-marked sender-egress transmissions per handoff. NLSR control rate measures control-plane traffic; recovery flooding volume measures recovery-induced flooding traffic. Exp1 is OptoFlood parameter sensitivity. The Sync publication-delay figure reports service-path LSA lead, service-path FIB convergence, and network-wide FIB convergence. The verification-timeout figure reports complete mobility-topology update latency and the same two FIB times. Production figures:
 
 - `results/baseline_service_recovery_time.pdf`
 - `results/baseline_content_loss_fraction.pdf`
@@ -97,10 +101,8 @@ The active main-experiment metrics are service recovery time, content loss fract
 
 Exp1 figures:
 
-- `results/extended/exp1/exp1_service_recovery_time.pdf`
-- `results/extended/exp1/exp1_content_loss_fraction.pdf`
-- `results/extended/exp1/exp1_explicit_flood_rate.pdf`
-- `results/extended/exp1/exp1_delivery_timeline.pdf`
+- `results/extended/exp1/exp1_sync_delay_sensitivity.pdf`
+- `results/extended/exp1/exp1_verification_timeout_sensitivity.pdf`
 
 Legacy manuscript compatibility, not active evaluation metrics:
 

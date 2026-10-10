@@ -64,7 +64,7 @@ EVENT_FIELDS = [
     "recovery_interest_flood_bytes",
     "recovery_data_flood_bytes",
     "recovery_flood_bytes",
-    # Exp1 sensitivity still plots these rates. They are not Recovery Flooding Volume.
+    # Explicit-flood byte and rate columns in the shared event table.
     "explicit_flood_bytes",
     "interest_flood_bytes",
     "data_flood_bytes",
@@ -327,7 +327,7 @@ def load_packets(path: str) -> List[Packet]:
             lp_hop_limit = _flag(row.get("ndn.lp.hoplimit") or "")
             mobility_flag = _flag(row.get("ndn.lp.mobility_flag") or "")
             flood_id = _flag(row.get("ndn.flood_id") or "")
-            # Exp1 explicit-flood rates keep the previous marker union, including FloodId.
+            # Explicit-flood Data matches an LP hop limit, MobilityFlag, or FloodId.
             interest_flood = ptype == "interest" and hop_limit
             data_flood = ptype == "data" and (lp_hop_limit or mobility_flag or flood_id)
             packets.append(Packet(

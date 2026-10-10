@@ -28,7 +28,7 @@ _of_comma := ,
 BASELINE_PROFILE_NAMES := $(subst $(_of_space),$(_of_comma),$(BASELINE_PROFILE_LIST))
 EXPERIMENT_RUN_CSV := $(subst $(_of_space),$(_of_comma),$(EXPERIMENT_RUN_IDS))
 
-# Shared with Makefile.solution. Makefile.exp1 keeps its own K=16 schedule.
+# Eight-handoff schedule shared by the baseline profiles and the solution runs.
 MAIN_HANDOFF_COUNT := 8
 MAIN_HANDOFF_SEQUENCE := acc2,acc3,acc4,acc5,acc6,acc5,acc4,acc3,acc2
 MAIN_HANDOFF_INTERVAL_BASE := 90

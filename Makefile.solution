@@ -18,7 +18,7 @@ SOLUTION_INPUTS = box/solution/solution.$(PROVIDER).box \
 
 SOLUTION_HANDOFF_ENV = $(MAIN_HANDOFF_ENV)
 
-# NLSR experiment-policy switches, shared by the solution run and the Exp 1 sweep.
+# NLSR experiment-policy switches for the solution runs.
 # Override on the command line for ablation cells, e.g.
 # SOLUTION_NLSR_RESULT_DRIVEN=off, SOLUTION_NLSR_CORRIDOR_PRIORITISED_ROUTING=off,
 # or SOLUTION_NLSR_EVENT_DRIVEN_VERIFICATION_TIMEOUT_MS=0.

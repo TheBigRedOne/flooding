@@ -23,7 +23,6 @@ BOXES = box/initial/initial.$(PROVIDER).box \
 # Experiment rules and result variables.
 include Makefile.baseline
 include Makefile.solution
-include Makefile.exp1
 include Makefile.sensitivity
 
 # Baseline profile directories (parents of r1..r5; rules live in Makefile.baseline).
@@ -44,13 +43,15 @@ GENERATED_FIGURES := results/baseline_service_recovery_time.pdf \
                      results/routing_service_path_fib_convergence.pdf \
                      results/routing_network_fib_convergence.pdf
 
+# Paper-facing figures produced by the Exp1 parameter-sensitivity analysis.
+EXP1_PAPER_FIGURES := results/extended/exp1/exp1_sync_delay_sensitivity.pdf \
+                      results/extended/exp1/exp1_verification_timeout_sensitivity.pdf
+
 ALL_FIGURES := paper/figures/NDN_Packets_Processing_Flow.pdf \
                paper/figures/NDN_Producer_Mobility_Problem.pdf \
                paper/figures/NDN_Producer_Mobility_Problem_Solution.pdf \
                paper/figures/Topology.pdf \
-               $(GENERATED_FIGURES) \
-               $(EXT1_SENSITIVITY_OUTPUTS) \
-               $(EXT1_TIMELINE_OUTPUT)
+               $(GENERATED_FIGURES)
 
 # Sources checked by phony target `mypy`.
 PLOT_TOOL_SRCS := experiment/tool/plot_latency.py \
@@ -73,7 +74,9 @@ PLOT_TOOL_SRCS := experiment/tool/plot_latency.py \
                   experiment/tool/run_mobility_event_analysis.py \
                   experiment/tool/test_mobility_event_metrics.py \
                   experiment/tool/audit_decoder_parity.py \
-                  experiment/tool/plot_delivery_timeline.py \
+                  experiment/tool/handoff_schedule.py \
+                  experiment/tool/run_sensitivity_analysis.py \
+                  experiment/tool/test_handoff_schedule.py \
                   experiment/tool/routing_convergence_metrics.py \
                   experiment/tool/run_routing_convergence_analysis.py \
                   experiment/tool/test_routing_convergence_metrics.py
@@ -93,23 +96,27 @@ all:
         result plot plot-baseline plot-main paper test mypy vm-clean
 
 
-# Experiments (run inside VMs and pull back CSVs)
+# Experiments run inside VMs and pull the captures back.
+# Baseline, solution, and Exp1 run one after another.
 experiment-baseline: $(BASELINE_RAW_OUTPUTS)
 
 experiment-solution: $(SOLUTION_RESULTS)
 
-# Extended evaluation, Exp 1 (request-interval sweep, solution only).
-experiment-exp1: $(EXT1_RAW_OUTPUTS)
+experiment-exp1:
+	$(MAKE) experiment-exp1-sync-delay
+	$(MAKE) experiment-exp1-verification-timeout
 
-plot-exp1: $(EXT1_ANALYSIS_OUTPUTS)
+exp1:
+	$(MAKE) experiment-exp1
+	$(MAKE) plot-exp1
 
-exp1: experiment-exp1 plot-exp1
+experiment:
+	$(MAKE) experiment-baseline
+	$(MAKE) experiment-solution
+	$(MAKE) experiment-exp1
 
-# Run the baseline, solution, and Exp 1 experiments
-experiment: experiment-baseline experiment-solution experiment-exp1
-
-# Assemble the active comparison figures and the Exp 1 figures.
-result: $(BASELINE_PROFILE_COMPARE_OUTPUTS) $(SOLUTION_COMPARE_OUTPUTS) $(EXT1_ANALYSIS_OUTPUTS)
+# Baseline and solution comparison outputs, plus the Exp1 sensitivity figures.
+result: $(BASELINE_PROFILE_COMPARE_OUTPUTS) $(SOLUTION_COMPARE_OUTPUTS) $(EXP1_PAPER_FIGURES)
 
 # Run the test experiment
 test: test/.validate_ok
@@ -129,13 +136,13 @@ plot: plot-baseline plot-main
 # Analysis-only targets. Their file rules do not depend on experiment outputs,
 # so Make cannot rebuild a stale PCAP by entering a VM recipe.
 
-.PHONY: mobility-analysis test-mobility-analysis plot-exp1-diagnostic routing-analysis plot-routing test-routing-analysis
+.PHONY: mobility-analysis test-mobility-analysis routing-analysis plot-routing test-routing-analysis
 
 mobility-analysis:
 	$(MAKE) plot-baseline
 	$(MAKE) plot-main
-	$(MAKE) plot-exp1
 	$(MAKE) routing-analysis
+	$(MAKE) plot-exp1
 
 # One command, used by the explicit routing-analysis target and by the paper
 # PDF rule. The PDF rule must not call $(MAKE): a dry-run would execute that
@@ -165,8 +172,18 @@ test-routing-analysis:
 test-mobility-analysis:
 	python3 -m unittest experiment.tool.test_mobility_event_metrics
 
-plot-exp1-diagnostic:
-	python3 experiment/tool/run_mobility_event_analysis.py analyze-exp1 --diagnostic --deadline $(EXT1_PRIMARY_DEADLINE)
+plot-exp1: $(EXP1_PAPER_FIGURES)
+
+# Generate the Exp1 sensitivity figures from existing captures.
+# The recipe lists the analysis programs and invokes the commands directly.
+$(EXP1_PAPER_FIGURES) &: experiment/tool/run_sensitivity_analysis.py \
+                         experiment/tool/mobility_event_metrics.py \
+                         experiment/tool/routing_convergence_metrics.py \
+                         experiment/tool/run_mobility_event_analysis.py \
+                         experiment/tool/plot_mobility_event_metrics.py
+	python3 experiment/tool/run_sensitivity_analysis.py sync-delay
+	python3 experiment/tool/run_sensitivity_analysis.py verification-timeout
+	python3 experiment/tool/run_sensitivity_analysis.py cross-check
 
 plot-baseline: $(BASELINE_PROFILE_COMPARE_OUTPUTS) $(BASELINE_LEGACY_FCR)
 
@@ -251,7 +268,7 @@ vm-clean:
 	PROVIDER=$(PROVIDER) LATEXMK=latexmk sh scripts/cleanup.sh vm-clean
 
 
-.PHONY: all build-boxes boxes clean deep-clean clean-ssh-config box box-initial box-baseline box-solution experiment experiment-baseline experiment-solution experiment-exp1 plot-exp1 exp1 result plot plot-baseline plot-main paper test mypy vm-clean mobility-analysis test-mobility-analysis plot-exp1-diagnostic routing-analysis plot-routing test-routing-analysis
+.PHONY: all build-boxes boxes clean deep-clean clean-ssh-config box box-initial box-baseline box-solution experiment experiment-baseline experiment-solution experiment-exp1 plot-exp1 exp1 result plot plot-baseline plot-main paper test mypy vm-clean mobility-analysis test-mobility-analysis routing-analysis plot-routing test-routing-analysis
 
 .DELETE_ON_ERROR:
 

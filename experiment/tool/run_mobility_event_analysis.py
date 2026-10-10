@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
-"""Mobility-event analysis from raw per-node packet captures.
+"""Host-side mobility-event analysis from raw per-node packet captures.
 
 Decodes PCAPs with the Python decoder, measures one run, and aggregates the
-baseline, solution, and Exp1 event tables and figures. This program does not
-start a virtual machine.
+baseline and solution event tables and figures.
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
-import subprocess
 import sys
 from pathlib import Path
 from typing import Dict, List, Sequence
@@ -29,7 +27,6 @@ PROFILES = [
     "g4-h36-a6-r9-s36",
 ]
 RUNS = ["r1", "r2", "r3", "r4", "r5"]
-EXP1_INTERVALS = [10, 20, 30, 40, 50]
 NODE_PCAPS = (
     "core", "agg1", "agg2",
     "acc1", "acc2", "acc3", "acc4", "acc5", "acc6",
@@ -131,9 +128,6 @@ def _identity(run_dir: Path) -> tuple[str, str, str]:
         return profile.split("-", 1)[0].upper(), profile, run_dir.name
     if run_dir.parent.name == "solution":
         return "OptoFlood", "solution", run_dir.name
-    if "exp1" in parts:
-        _segments, interval = metrics.load_run_config(str(run_dir / "params.txt"))
-        return str(interval), f"i{interval}", "exp1"
     raise metrics.MobilityMetricError(f"unrecognised run directory {run_dir}")
 
 
@@ -232,38 +226,6 @@ def analyze_solution() -> None:
     aggregate_solution()
 
 
-def _write_timeline(deadline_ms: float) -> None:
-    run_dir = RESULTS / "extended" / "exp1" / "i20"
-    capture = run_dir / "consumer_capture.pcap"
-    handoffs = run_dir / "handoffs.txt"
-    require_raw([capture, handoffs])
-    derived = run_dir / "consumer_capture.csv"
-    with derived.open("w", encoding="utf-8", newline="") as handle:
-        subprocess.run(
-            [
-                "tshark", "-X", "lua_script:experiment/tool/ndn.lua", "-r", str(capture),
-                "-T", "fields", "-e", "frame.time_epoch", "-e", "frame.len", "-e", "ndn.type", "-e", "ndn.name",
-                "-E", "separator=,", "-E", "header=y", "-E", "quote=d",
-            ],
-            check=True,
-            stdout=handle,
-        )
-    output = RESULTS / "extended" / "exp1" / "exp1_delivery_timeline.pdf"
-    subprocess.run(
-        [
-            sys.executable, str(ROOT / "experiment" / "tool" / "plot_delivery_timeline.py"),
-            str(derived), str(handoffs), str(output), "--deadline", str(deadline_ms),
-        ],
-        check=True,
-    )
-
-
-def analyze_exp1(diagnostic: bool = False, deadline_ms: float = 200.0) -> None:
-    _analyze_runs([RESULTS / "extended" / "exp1" / f"i{interval}" for interval in EXP1_INTERVALS])
-    aggregate_exp1(diagnostic=diagnostic)
-    _write_timeline(deadline_ms)
-
-
 def aggregate_baseline() -> None:
     paths = [RESULTS / "baseline" / profile / run_id / "mobility_events.csv" for profile in PROFILES for run_id in RUNS]
     rows = _read_events(paths)
@@ -298,24 +260,6 @@ def aggregate_solution() -> None:
     plots.draw_recovery_flooding_volume(flood_rows, str(RESULTS / "solution_recovery_flooding_volume.pdf"), column_pair=True)
 
 
-def aggregate_exp1(diagnostic: bool = False) -> None:
-    paths = [RESULTS / "extended" / "exp1" / f"i{interval}" / "mobility_events.csv" for interval in EXP1_INTERVALS]
-    rows = _read_events(paths)
-    for interval in EXP1_INTERVALS:
-        selected = [row for row in rows if row["configuration"] == str(interval)]
-        if len(selected) != 16:
-            raise metrics.MobilityMetricError(f"exp1 {interval}: expected 16 events, found {len(selected)}")
-    destination = RESULTS / "extended" / "exp1" / "mobility_events.csv"
-    _write_rows(destination, rows)
-    _audit(RESULTS / "extended" / "exp1" / "mobility_event_audit.txt", rows)
-    out = RESULTS / "extended" / "exp1"
-    plots.main(["exp1", "--input", str(destination), "--field", "service_recovery_time_ms", "--ylabel", "Service recovery time (ms)", "--output", str(out / "exp1_service_recovery_time.pdf")])
-    plots.main(["exp1", "--input", str(destination), "--field", "content_loss_fraction", "--ylabel", "Content loss fraction", "--output", str(out / "exp1_content_loss_fraction.pdf")])
-    plots.main(["exp1", "--input", str(destination), "--field", "explicit_flood_rate_bytes_per_s", "--ylabel", "Explicit flood rate (bytes/s)", "--series", "explicit_flood_rate_bytes_per_s,interest_flood_rate_bytes_per_s,data_flood_rate_bytes_per_s", "--output", str(out / "exp1_explicit_flood_rate.pdf")])
-    if diagnostic:
-        plots.main(["exp1", "--input", str(destination), "--field", "service_recovery_time_ms", "--ylabel", "Time (ms)", "--series", "first_post_handoff_producer_data_arrival_ms,service_recovery_time_ms", "--output", str(out / "exp1_recovery_decomposition.pdf")])
-
-
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Measure mobility events from raw captures.")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -328,13 +272,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     measure.add_argument("--output", required=True)
     sub.add_parser("aggregate-baseline")
     sub.add_parser("aggregate-solution")
-    exp1 = sub.add_parser("aggregate-exp1")
-    exp1.add_argument("--diagnostic", action="store_true")
     sub.add_parser("analyze-baseline")
     sub.add_parser("analyze-solution")
-    analyze_exp = sub.add_parser("analyze-exp1")
-    analyze_exp.add_argument("--diagnostic", action="store_true")
-    analyze_exp.add_argument("--deadline", type=float, default=200.0)
     args = parser.parse_args(argv)
     try:
         if args.command == "decode":
@@ -345,14 +284,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             aggregate_baseline()
         elif args.command == "aggregate-solution":
             aggregate_solution()
-        elif args.command == "aggregate-exp1":
-            aggregate_exp1(diagnostic=args.diagnostic)
         elif args.command == "analyze-baseline":
             analyze_baseline()
         elif args.command == "analyze-solution":
             analyze_solution()
-        else:
-            analyze_exp1(diagnostic=args.diagnostic, deadline_ms=args.deadline)
     except metrics.MobilityMetricError as exc:
         print(str(exc), file=sys.stderr)
         return 1

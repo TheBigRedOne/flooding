@@ -282,55 +282,8 @@ def draw_recovery_flooding_volume(rows: Sequence[Dict[str, str]], path: str, col
     )
 
 
-def plot_exp1(path: str, rows: Sequence[Dict[str, str]], field: str, ylabel: str, series: Sequence[str]) -> None:
-    """Median and IQR versus request interval, with faint per-handoff points."""
-    parent = os.path.dirname(path)
-    if parent:
-        os.makedirs(parent, exist_ok=True)
-    intervals = []
-    for row in rows:
-        interval = int(row["configuration"])
-        if interval not in intervals:
-            intervals.append(interval)
-    intervals.sort()
-    fig, ax = plt.subplots(figsize=(6.4, 4.2))
-    for offset, name in enumerate(series):
-        centers = []
-        medians = []
-        lows = []
-        highs = []
-        for interval in intervals:
-            selected = [row for row in rows if int(row["configuration"]) == interval]
-            if len(selected) != 16:
-                raise SystemExit(f"exp1 interval {interval}: expected 16 events, found {len(selected)}")
-            values = [_numeric(row[name]) for row in selected]
-            numeric = [value for value in values if value is not None]
-            if len(numeric) != 16:
-                print(f"exp1 interval {interval} {name}: plotted {len(numeric)} of 16; undefined={16 - len(numeric)}")
-            if not numeric:
-                continue
-            stats = boxplot_stats(numeric, whis=WHIS)[0]
-            center = interval + (offset - (len(series) - 1) / 2.0) * 1.2
-            centers.append(center)
-            medians.append(float(stats["med"]))
-            lows.append(float(stats["med"]) - float(stats["q1"]))
-            highs.append(float(stats["q3"]) - float(stats["med"]))
-            ax.scatter([center] * len(numeric), numeric, s=12, alpha=0.35)
-        if centers:
-            ax.errorbar(centers, medians, yerr=[lows, highs], fmt="o", capsize=3, label=name)
-    ax.set_xlabel("Request interval (ms)")
-    ax.set_ylabel(ylabel)
-    ax.set_xticks(intervals)
-    if len(series) > 1:
-        ax.legend()
-    ax.grid(True, axis="y", linestyle="--", alpha=0.6)
-    fig.tight_layout()
-    fig.savefig(path)
-    plt.close(fig)
-
-
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    parser = argparse.ArgumentParser(description="Plot prototype mobility-event figures.")
+    parser = argparse.ArgumentParser(description="Plot mobility-event figures.")
     sub = parser.add_subparsers(dest="command", required=True)
     boxes = sub.add_parser("boxes")
     boxes.add_argument("--input", required=True)
@@ -342,48 +295,38 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     boxes.add_argument("--compact", action="store_true")
     boxes.add_argument("--column-pair", action="store_true")
     boxes.add_argument("--service-pair", action="store_true")
-    exp1 = sub.add_parser("exp1")
-    exp1.add_argument("--input", required=True)
-    exp1.add_argument("--field", required=True)
-    exp1.add_argument("--ylabel", required=True)
-    exp1.add_argument("--output", required=True)
-    exp1.add_argument("--series", default="")
     args = parser.parse_args(argv)
     rows = load_rows(args.input)
-    if args.command == "boxes":
-        labels = [item.strip() for item in args.labels.split(",") if item.strip()]
-        kept, data, notes, counts = groups_for(rows, labels, args.field)
-        for note in notes:
-            print(note)
-        censors = None
-        if args.field == "service_recovery_time_ms":
-            censors = []
-            for label in kept:
-                marks = []
-                for row in rows:
-                    if row["configuration"] != label:
-                        continue
-                    if _numeric(row["service_recovery_time_ms"]) is not None:
-                        continue
-                    duration = _numeric(row["event_duration_s"])
-                    if duration is not None and duration > 0 and str(row.get("recovered", "")).lower() != "true":
-                        marks.append(duration * 1000.0)
-                censors.append(marks)
-        draw_boxes(
-            args.output,
-            kept,
-            data,
-            args.ylabel,
-            args.log_y,
-            event_counts=counts,
-            censor_marks=censors,
-            compact=args.compact,
-            column_pair=args.column_pair,
-            service_pair=args.service_pair,
-        )
-        return 0
-    series = [item.strip() for item in args.series.split(",") if item.strip()] or [args.field]
-    plot_exp1(args.output, rows, args.field, args.ylabel, series)
+    labels = [item.strip() for item in args.labels.split(",") if item.strip()]
+    kept, data, notes, counts = groups_for(rows, labels, args.field)
+    for note in notes:
+        print(note)
+    censors = None
+    if args.field == "service_recovery_time_ms":
+        censors = []
+        for label in kept:
+            marks = []
+            for row in rows:
+                if row["configuration"] != label:
+                    continue
+                if _numeric(row["service_recovery_time_ms"]) is not None:
+                    continue
+                duration = _numeric(row["event_duration_s"])
+                if duration is not None and duration > 0 and str(row.get("recovered", "")).lower() != "true":
+                    marks.append(duration * 1000.0)
+            censors.append(marks)
+    draw_boxes(
+        args.output,
+        kept,
+        data,
+        args.ylabel,
+        args.log_y,
+        event_counts=counts,
+        censor_marks=censors,
+        compact=args.compact,
+        column_pair=args.column_pair,
+        service_pair=args.service_pair,
+    )
     return 0
 
 
