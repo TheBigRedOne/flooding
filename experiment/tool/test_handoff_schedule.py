@@ -136,6 +136,28 @@ class SensitivityRetentionTest(unittest.TestCase):
         self.assertIn("t50_median=88", srt)
         self.assertNotIn("50000", srt)
 
+    def test_cross_check_uses_repository_root_not_filesystem_root(self) -> None:
+        seen = []
+
+        def capture(repo: Path):
+            seen.append(repo)
+            return ["ok"]
+
+        original = sensitivity.write_default_cross_check
+        sensitivity.write_default_cross_check = capture
+        try:
+            code = sensitivity.main(["cross-check"])
+        finally:
+            sensitivity.write_default_cross_check = original
+        self.assertEqual(code, 0)
+        self.assertEqual(seen, [sensitivity.ROOT])
+        repo = seen[0]
+        self.assertEqual(repo, Path(sensitivity.__file__).resolve().parents[2])
+        self.assertNotEqual(repo, Path(repo.anchor))
+        mobility = repo / "results" / "solution" / "mobility_events.csv"
+        self.assertEqual(mobility, sensitivity.ROOT / "results" / "solution" / "mobility_events.csv")
+        self.assertNotEqual(mobility, Path(repo.anchor) / "results" / "solution" / "mobility_events.csv")
+
 
 if __name__ == "__main__":
     raise SystemExit(unittest.main())

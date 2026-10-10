@@ -398,7 +398,7 @@ def analyze(study: str) -> None:
 def main(argv: Sequence[str] | None = None) -> int:
     study = (argv[0] if argv else sys.argv[1]) if (argv or len(sys.argv) > 1) else ""
     if study == "cross-check":
-        print("\n".join(write_default_cross_check(ROOT.parents[2])))
+        print("\n".join(write_default_cross_check(ROOT)))
         return 0
     if study not in STUDIES:
         names = "|".join((*STUDIES, "cross-check"))
