@@ -51,7 +51,8 @@ ALL_FIGURES := paper/figures/NDN_Packets_Processing_Flow.pdf \
                paper/figures/NDN_Producer_Mobility_Problem.pdf \
                paper/figures/NDN_Producer_Mobility_Problem_Solution.pdf \
                paper/figures/Topology.pdf \
-               $(GENERATED_FIGURES)
+               $(GENERATED_FIGURES) \
+               $(EXP1_PAPER_FIGURES)
 
 # Sources checked by phony target `mypy`.
 PLOT_TOOL_SRCS := experiment/tool/plot_latency.py \

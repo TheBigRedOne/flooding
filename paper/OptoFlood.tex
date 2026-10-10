@@ -394,31 +394,39 @@ The median NLSR control rate is 1.27~kB/s for G0 and 1.18~kB/s for OptoFlood. In
 \subsection{Extended Evaluation}
 \label{sec:evaluation:extended}
 
-The comparison above contrasts OptoFlood with the baseline under a single consumer, a single producer, and an access-network propagation delay below the consumer request interval. We now characterise OptoFlood beyond this single-flow, low-delay regime. Each study in the following relaxes one of these three conditions and maintains the remaining parameters in the main-evaluation configuration. We report how OptoFlood behaves as that condition varies.
+The main evaluation uses a fixed OptoFlood configuration with one consumer and one producer. We extend it in three directions. First, we examine sensitivity to two routing-control parameters in SPRC and EDRC. We then consider multiple consumers and multiple producers. Unless stated otherwise, the remaining topology, workload, and protocol settings follow the main-evaluation configuration.
 
 % - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-\subsubsection{Request Interval and Video Quality}
-\label{sec:evaluation:extended:interval}
+\subsubsection{Routing-Control Parameter Sensitivity}
+\label{sec:evaluation:extended:sensitivity}
 
-The request interval sets the rate at which the consumer requests successive frames, which we use as a proxy for stream quality. We hold the network delay at its main-evaluation value and vary the request interval over a representative range of 10 to 50~ms, with the producer generating one frame per request period. For live streaming, a Data packet is useful only before its playout deadline, and a late packet is equivalent to a lost one; the deadline represents the playout buffer. A frame counts as lost when its Data does not arrive within this deadline. The number of Interests in flight at a hand-off grows as the request interval shrinks, so a finer interval leaves more frames exposed to the convergence gap.
+The main evaluation uses a 1~s SPRC Sync-publication delay and a 50~ms EDRC verification timeout. We vary each parameter independently while holding the other at its main-evaluation setting. Every cell uses the complete OptoFlood system, with Immediate Service Recovery, Service-Prioritised Routing Convergence, and Event-Driven Routing Convergence enabled. The topology, application workload, and 20~ms request interval follow the main experiment. Each parameter value is evaluated in one run with eight hand-offs. All cells replay the same attachment sequence and irregular interval schedule, giving matched observations for corresponding hand-offs across parameter values.
 
-Figure~\ref{fig:ext_interval} reports OptoFlood across the request-interval range. Panel~(a) shows that the interruption time per-handover remains approximately flat. The recovery latency is set by the network--flooded Data and Interest propagation, then TFIB installation, and Fast-LSA--and is independent of the request rate. Panel~(b) shows that the deadline-missed frames per hand-off increase as the interval shrinks. A finer interval places more frames in flight during the convergence gap, and each frame past its deadline counts as lost. Panel~(c) reports the flood load per hand-off, separated into flooded Data and flooded Interest. The flood load increases as the interval shrinks, and the hop limit and per-producer rate limit bound it. Data flooding covers only the Interests pending at the producer when it moves, so its volume tracks the in-flight count. Interest flooding is a last resort that a forwarder issues when both the FIB and the TFIB miss, and it stops once the first flooded Data instals a TFIB entry or Fast-LSA restores the route. Sustained Interest flooding therefore arises only when the producer stays unreachable for an extended period. Across the tested range, the flood load remains localised to the recovery window and becomes significant only at the finest intervals.
+\textbf{SPRC Sync-publication delay.}
+After an updated Adj-LSA has been installed locally and made available through SPRC along the service-relevant branch, this parameter delays its publication through ordinary NLSR Sync. The tested values are 0, 1, 2, and 4~s. The 1~s value is the main-evaluation setting, and the sweep characterises the effect of this parameter across the tested range. At 0~s, SPRC remains enabled and the updated Adj-LSA is published through ordinary NLSR Sync without an additional deferral.
 
-\begin{figure}
+Figure~\ref{fig:ext_sync_delay} shows the three routing timings. The median Service-Path LSA Lead increases from approximately 186.6~ms at 0~s to approximately 4.12~s at 4~s. Service-Path FIB convergence remains approximately 252--257~ms across the sweep, and Complete Mobility-Topology Update Latency stays approximately 165--168~ms. Network-Wide FIB convergence increases from approximately 491.6~ms at 0~s to approximately 4.47~s at 4~s. Increasing the publication delay extends the temporal head start before the update is disseminated more widely through ordinary NLSR Sync. Network-wide convergence shifts by approximately the added publication delay, while the service-path convergence time changes little. The 0~s case still has a positive Service-Path LSA Lead of about 187~ms, consistent with SPRC remaining active without deliberate Sync deferral.
+
+\begin{figure*}[t]
     \centering
-    \subfloat[Service recovery time versus request interval.\label{fig:ext_interval_srt}]{\includegraphics[width=\columnwidth]{results/extended/exp1/exp1_service_recovery_time.pdf}}\\
-    \subfloat[Content loss fraction versus request interval.\label{fig:ext_interval_clf}]{\includegraphics[width=\columnwidth]{results/extended/exp1/exp1_content_loss_fraction.pdf}}\\
-    \subfloat[Explicit flood rate versus request interval.\label{fig:ext_interval_flood}]{\includegraphics[width=\columnwidth]{results/extended/exp1/exp1_explicit_flood_rate.pdf}}
-    \caption{OptoFlood sensitivity to the request interval.}
-    \label{fig:ext_interval}
-\end{figure}
+    \includegraphics[width=0.98\textwidth]{results/extended/exp1/exp1_sync_delay_sensitivity.pdf}
+    \caption{Sensitivity to the SPRC Sync-publication delay. Each parameter value is represented by eight matched hand-off observations from one run. (a)~Service-Path LSA Lead. (b)~Service-Path FIB convergence. (c)~Network-Wide FIB convergence. The 1~s setting is the main-evaluation setting.}
+    \label{fig:ext_sync_delay}
+\end{figure*}
 
-\begin{figure}
+\textbf{EDRC verification timeout.}
+This timeout applies to the mobility-triggered verification Hello Interests. The periodic NLSR Hello interval remains unchanged. The tested values are 10, 25, 50, 100, and 250~ms, with the SPRC Sync-publication delay fixed at 1~s. The 50~ms value is the main-evaluation setting.
+
+Figure~\ref{fig:ext_verification_timeout} shows the resulting routing timings. The median Complete Mobility-Topology Update Latency increases from approximately 45.9~ms at a 10~ms timeout to approximately 764.7~ms at 250~ms. Service-Path FIB convergence increases from approximately 121~ms to approximately 860~ms, and Network-Wide FIB convergence from approximately 1.41~s to approximately 1.83~s. The new attachment becomes REACHABLE in approximately 36--38~ms across the sweep, whereas the time to declare the old attachment UNREACHABLE grows with the configured timeout. Topology-update completion closely tracks that UNREACHABLE decision. The observed topology-update medians are consistent with approximately a three-timeout retry budget plus fixed protocol and processing overhead. The timeout therefore primarily controls how quickly the disconnected old attachment is declared unreachable. The new-attachment REACHABLE timing varies little across the sweep and is dominated by the Hello exchange and processing time. All five timeout settings produced the intended verification result in all eight hand-offs.
+
+\begin{figure*}[t]
     \centering
-    \includegraphics[width=\columnwidth]{results/extended/exp1/exp1_delivery_timeline.pdf}
-    \caption{Per-frame delivery latency over the run at a representative request interval. Each point is the elapsed time from a frame's first request to its Data arrival; the horizontal line marks the playout deadline and the vertical lines mark hand-offs.}
-    \label{fig:ext_interval_timeline}
-\end{figure}
+    \includegraphics[width=0.98\textwidth]{results/extended/exp1/exp1_verification_timeout_sensitivity.pdf}
+    \caption{Sensitivity to the EDRC event-driven verification timeout. Each parameter value is represented by eight matched hand-off observations from one run. (a)~Complete Mobility-Topology Update Latency. (b)~Service-Path FIB convergence. (c)~Network-Wide FIB convergence. The 50~ms setting is the main-evaluation setting.}
+    \label{fig:ext_verification_timeout}
+\end{figure*}
+
+Across both sweeps, SRT remains near the main-solution range while the routing-control timings vary substantially. In the verification-timeout sweep, SRT medians remain approximately 78--86~ms while topology-update latency ranges from approximately 46~ms to 765~ms. In the Sync-publication-delay sweep, SRT remains approximately 81--88~ms while network-wide FIB convergence ranges from approximately 0.49~s to 4.47~s. This is consistent with Immediate Service Recovery restoring the request path while subsequent routing convergence proceeds on a different timescale, under the evaluated topology and workload. The two separately collected runs at the main-evaluation parameter combination also fall within the ranges observed in the main OptoFlood experiment for the corresponding routing metrics and SRT.
 
 % - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 \subsubsection{Multiple Consumers}
