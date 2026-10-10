@@ -24,6 +24,7 @@ BOXES = box/initial/initial.$(PROVIDER).box \
 include Makefile.baseline
 include Makefile.solution
 include Makefile.exp1
+include Makefile.sensitivity
 
 # Baseline profile directories (parents of r1..r5; rules live in Makefile.baseline).
 BASELINE_PROFILE_DIRS := $(addprefix results/baseline/,$(BASELINE_PROFILE_LIST))

@@ -18,6 +18,8 @@ import random
 from shlex import quote
 from typing import Any, Dict, List, Optional, Tuple
 
+import handoff_schedule
+
 from mininet.log import setLogLevel, info
 from minindn.minindn import Minindn
 from minindn.util import MiniNDNCLI  # noqa: F401 (kept for interactive use)
@@ -267,6 +269,7 @@ def _write_nlsr_params_file(
     window_frames: int,
     segments_per_frame: int,
     guard_interval_ms: int,
+    explicit_intervals: Optional[List[float]] = None,
 ) -> None:
     """Persist NLSR tuning parameters and handoff configuration to params.txt."""
     output_path = os.path.join(results_dir, 'params.txt')
@@ -275,6 +278,9 @@ def _write_nlsr_params_file(
     combined['handoff_interval_base_s'] = f'{handoff_base:.3f}'
     combined['handoff_interval_jitter_s'] = f'{handoff_jitter:.3f}'
     combined['handoff_sequence'] = ','.join(handoff_sequence)
+    if explicit_intervals is not None:
+        combined['handoff_interval_mode'] = 'explicit'
+        combined['handoff_intervals_s'] = handoff_schedule.format_intervals(explicit_intervals)
     combined['request_interval_ms'] = str(request_interval_ms)
     combined['window_frames'] = str(window_frames)
     combined['segments_per_frame'] = str(segments_per_frame)
@@ -487,6 +493,9 @@ if __name__ == '__main__':
 
     try:
         handoff_count, handoff_base, handoff_jitter, handoff_sequence = _load_handoff_config()
+        explicit_intervals = handoff_schedule.intervals_from_env(
+            os.getenv('NLSR_HANDOFF_INTERVALS'), handoff_count,
+        )
     except ValueError as error:
         print(f"Error: {error}")
         exit(1)
@@ -511,6 +520,7 @@ if __name__ == '__main__':
         window_frames,
         segments_per_frame,
         guard_interval_ms,
+        explicit_intervals,
     )
     _init_handoffs_file(handoffs_path)
 
@@ -601,13 +611,16 @@ if __name__ == '__main__':
         producer.cmd(f"{producer_daemon_env} {daemon_exec} producer &> {producer_daemon_log} &")
         consumer.cmd(f"{daemon_env} {daemon_exec} consumer &> {consumer_daemon_log} &")
 
-    # The handoff loop runs K randomly-spaced toggles along handoff_sequence.
-    # The first interval doubles as application warm-up before handoff #1.
-    rng = random.SystemRandom()
+    # The first interval is warm-up before handoff #1. An explicit list has K+1
+    # entries and replaces sampling; otherwise each wait is base + Uniform(0, jitter).
+    interval_rng = None if explicit_intervals is not None else random.SystemRandom()
     sequence_start_time = wall_time()
     current_node = handoff_sequence[0]
     for index in range(1, handoff_count + 1):
-        interval_s = _sample_interval(handoff_base, handoff_jitter, rng)
+        if explicit_intervals is None:
+            interval_s = _sample_interval(handoff_base, handoff_jitter, interval_rng)
+        else:
+            interval_s = explicit_intervals[index - 1]
         sleep(interval_s)
         next_node = handoff_sequence[index]
         info(f"Handoff #{index}: producer detaches from {current_node}, attaches to {next_node}\n")
@@ -626,9 +639,11 @@ if __name__ == '__main__':
         )
         current_node = next_node
 
-    # Tail interval drawn from the same distribution to leave the last handoff
-    # a full recovery window before tcpdump termination.
-    sleep(_sample_interval(handoff_base, handoff_jitter, rng))
+    # Tail interval after the last handoff, before tcpdump stops.
+    if explicit_intervals is None:
+        sleep(_sample_interval(handoff_base, handoff_jitter, interval_rng))
+    else:
+        sleep(explicit_intervals[handoff_count])
 
     consumer.cmd(f"pkill -f '{consumer_pcap}' || true")
     for node_name in OVERHEAD_NODES:
