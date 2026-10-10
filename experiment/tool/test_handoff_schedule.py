@@ -10,6 +10,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any, cast
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -161,9 +162,15 @@ class SensitivityRetentionTest(unittest.TestCase):
         self.assertEqual(mobility, sensitivity.ROOT / "results" / "solution" / "mobility_events.csv")
         self.assertNotEqual(mobility, Path(repo.anchor) / "results" / "solution" / "mobility_events.csv")
 
-    def test_production_figures_use_numeric_parameter_axes(self) -> None:
-        self.assertEqual(sensitivity.parameter_coordinates(sensitivity.SYNC_CELLS), [0.0, 1.0, 2.0, 4.0])
-        self.assertEqual(sensitivity.parameter_coordinates(sensitivity.TIMEOUT_CELLS), [10.0, 25.0, 50.0, 100.0, 250.0])
+    def test_sensitivity_levels_share_one_group_centre(self) -> None:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        expected = {
+            "sync-delay": ["0", "1", "2", "4"],
+            "verification-timeout": ["10", "25", "50", "100", "250"],
+        }
         self.assertEqual(
             sensitivity.PAPER_FIGURES["sync-delay"],
             sensitivity.RESULTS / "exp1_sync_delay_sensitivity.pdf",
@@ -172,34 +179,47 @@ class SensitivityRetentionTest(unittest.TestCase):
             sensitivity.PAPER_FIGURES["verification-timeout"],
             sensitivity.RESULTS / "exp1_verification_timeout_sensitivity.pdf",
         )
-        self.assertEqual(
-            [title for _field, title in sensitivity.PAPER_PANELS["sync-delay"]],
-            ["Service-Path LSA Lead", "Service-Path FIB Convergence", "Network-Wide FIB Convergence"],
-        )
-        self.assertEqual(
-            [title for _field, title in sensitivity.PAPER_PANELS["verification-timeout"]],
-            [
-                "Complete Mobility-Topology Update Latency",
-                "Service-Path FIB Convergence",
-                "Network-Wide FIB Convergence",
-            ],
-        )
-        rows = []
-        for cell, parameter in sensitivity.SYNC_CELLS:
-            for index in range(8):
-                rows.append({
-                    "cell": cell,
-                    "parameter_value": parameter,
-                    "service_path_lsa_lead_ms": str(1000 * float(parameter) + index),
-                    "service_path_fib_convergence_ms": str(200 + index),
-                    "network_fib_convergence_ms": str(1000 + 100 * float(parameter) + index),
-                })
-        with tempfile.TemporaryDirectory() as tmp:
-            destination = Path(tmp) / "exp1_sync_delay_sensitivity.pdf"
-            sensitivity.plot_production_figure(destination, "sync-delay", rows)
-            self.assertTrue(destination.is_file())
-            self.assertGreater(destination.stat().st_size, 0)
-            self.assertNotEqual(destination.parent, sensitivity.RESULTS)
+        for study, labels in expected.items():
+            cells = sensitivity.STUDIES[study]
+            positions = sensitivity.group_positions(cells)
+            self.assertEqual(len(positions), len(cells))
+            self.assertEqual(positions, [float(index) for index in range(len(cells))])
+            self.assertEqual(sensitivity.group_tick_labels(cells), labels)
+            field = sensitivity.PAPER_PANELS[study][0][0]
+            rows = []
+            for cell, parameter in cells:
+                for index in range(8):
+                    rows.append({
+                        "cell": cell,
+                        "parameter_value": parameter,
+                        field: str(100 + index),
+                    })
+            figure, axis = plt.subplots()
+            try:
+                sensitivity._draw_parameter_panel(
+                    axis, rows, cells, field, "(a) level", sensitivity.PAPER_XLABEL[study],
+                )
+                self.assertEqual([tick.get_text() for tick in axis.get_xticklabels()], labels)
+                self.assertEqual([float(tick) for tick in axis.get_xticks()], positions)
+                grouped: dict[float, int] = {}
+                for collection in axis.collections:
+                    for offset in cast(Any, collection.get_offsets()):
+                        x_value = float(offset[0])
+                        self.assertTrue(any(abs(x_value - position) <= 1e-9 for position in positions))
+                        centre = min(positions, key=lambda position: abs(position - x_value))
+                        grouped[centre] = grouped.get(centre, 0) + 1
+                self.assertEqual(grouped, {position: 8 for position in positions})
+                vertical_centres = []
+                for line in axis.lines:
+                    xs = [float(value) for value in cast(Any, line.get_xdata())]
+                    centre = (min(xs) + max(xs)) / 2.0
+                    self.assertTrue(any(abs(centre - position) <= 1e-9 for position in positions))
+                    if max(xs) - min(xs) <= 1e-9:
+                        vertical_centres.append(centre)
+                for position in positions:
+                    self.assertTrue(any(abs(centre - position) <= 1e-9 for centre in vertical_centres))
+            finally:
+                plt.close(figure)
 
 
 if __name__ == "__main__":

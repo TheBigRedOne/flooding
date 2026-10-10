@@ -378,31 +378,39 @@ def _summary_lines(study: str, rows: Sequence[Dict[str, object]], cells: Sequenc
     return lines
 
 
-def parameter_coordinates(cells: Sequence[Tuple[str, str]]) -> List[float]:
-    """Configured numeric parameter for each cell, in cell order."""
-    return [float(parameter) for _cell, parameter in cells]
+# Median bar and IQR caps are centred on the group. Widths are fractions of the unit spacing.
+_MEDIAN_HALF_WIDTH = 0.18
+_IQR_CAP_HALF_WIDTH = 0.08
 
 
-def _marker_half_width(coordinates: Sequence[float]) -> float:
-    gaps = [right - left for left, right in zip(coordinates, coordinates[1:]) if right > left]
-    if not gaps:
-        return 0.15
-    return min(gaps) * 0.12
+def group_positions(cells: Sequence[Tuple[str, str]]) -> List[float]:
+    """Equally spaced positions, one per tested cell."""
+    return [float(index) for index in range(len(cells))]
+
+
+def group_tick_labels(cells: Sequence[Tuple[str, str]]) -> List[str]:
+    """Parameter value shown under each experimental level."""
+    return [parameter for _cell, parameter in cells]
 
 
 def _draw_parameter_panel(axis: Any, rows: Sequence[Mapping[str, object]], cells: Sequence[Tuple[str, str]], field: str, title: str, xlabel: str) -> None:
-    """Eight handoff observations at the configured parameter, plus median and IQR."""
-    coordinates = parameter_coordinates(cells)
-    half = _marker_half_width(coordinates)
-    for x, (cell, _parameter) in zip(coordinates, cells):
+    """Eight handoff observations at one experimental level, plus median and IQR."""
+    # Sensitivity cells are displayed as equally spaced experimental levels.
+    positions = group_positions(cells)
+    for x, (cell, _parameter) in zip(positions, cells):
         values = routing.numeric(_as_dicts([row for row in rows if str(row["cell"]) == cell]), field)
         axis.scatter([x] * len(values), values, s=22, color="C0", alpha=0.65, linewidths=0, zorder=3)
         if not values:
             continue
         q1, median, q3 = routing.quantiles(values)
-        axis.plot([x - half, x + half], [median, median], color="black", linewidth=1.4, zorder=4)
+        axis.plot([x - _MEDIAN_HALF_WIDTH, x + _MEDIAN_HALF_WIDTH], [median, median], color="black", linewidth=1.4, zorder=4)
         if len(values) >= 2:
-            axis.plot([x + half * 1.8, x + half * 1.8], [q1, q3], color="black", linewidth=1.0, zorder=2)
+            axis.plot([x, x], [q1, q3], color="black", linewidth=1.0, zorder=4)
+            axis.plot([x - _IQR_CAP_HALF_WIDTH, x + _IQR_CAP_HALF_WIDTH], [q1, q1], color="black", linewidth=1.0, zorder=4)
+            axis.plot([x - _IQR_CAP_HALF_WIDTH, x + _IQR_CAP_HALF_WIDTH], [q3, q3], color="black", linewidth=1.0, zorder=4)
+    axis.set_xticks(positions)
+    axis.set_xticklabels(group_tick_labels(cells))
+    axis.set_xlim(-0.55, len(cells) - 0.45)
     axis.set_title(title, loc="left", fontsize=9)
     axis.set_xlabel(xlabel)
     axis.set_ylabel("Time (ms)")
