@@ -68,3 +68,4 @@ analyze-exp1-verification-timeout:
 analyze-exp1-sensitivity:
 	$(MAKE) analyze-exp1-sync-delay
 	$(MAKE) analyze-exp1-verification-timeout
+	python3 experiment/tool/run_sensitivity_analysis.py cross-check

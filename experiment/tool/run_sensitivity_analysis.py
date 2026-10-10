@@ -10,7 +10,7 @@ from __future__ import annotations
 import csv
 import sys
 from pathlib import Path
-from typing import Dict, List, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Sequence, Tuple
 
 import mobility_event_metrics as metrics
 import routing_convergence_metrics as routing
@@ -95,33 +95,42 @@ def verification_established(note: str, complete: str, old_ms: str, new_ms: str)
     )
 
 
-def _require_files(paths: Sequence[Path]) -> None:
-    missing = [path for path in paths if not path.is_file()]
-    if missing:
-        detail = "\n".join(f"required sensitivity evidence missing: {path}" for path in missing)
-        raise SystemExit(detail)
-
-
-def _cell_evidence(run_dir: Path) -> List[Path]:
-    required = [
+def cell_evidence(run_dir: Path) -> Tuple[List[Path], List[Path]]:
+    """Return required files and required directories. PCAP files stay explicit."""
+    files = [
         run_dir / "params.txt",
         run_dir / "handoffs.txt",
-        run_dir / "pcap_nodes",
     ]
+    directories = [run_dir / "pcap_nodes"]
     for node in routing.NODES:
-        required.append(run_dir / "minindn-logs" / node / "nlsr.log")
+        files.append(run_dir / "minindn-logs" / node / "nlsr.log")
+        files.append(run_dir / "pcap_nodes" / f"{node}.pcap")
     for node in routing.ROUTING_UNIVERSE:
-        required.append(run_dir / "minindn-logs" / node / "nfd.log")
-    pcap_dir = run_dir / "pcap_nodes"
-    if pcap_dir.is_dir():
-        for node in routing.NODES:
-            required.append(pcap_dir / f"{node}.pcap")
-    return required
+        files.append(run_dir / "minindn-logs" / node / "nfd.log")
+    return files, directories
+
+
+def missing_evidence(files: Sequence[Path], directories: Sequence[Path]) -> List[str]:
+    """Directories use is_dir(); files use is_file()."""
+    missing: List[str] = []
+    for path in directories:
+        if not path.is_dir():
+            missing.append(f"required sensitivity evidence missing: {path}")
+    for path in files:
+        if not path.is_file():
+            missing.append(f"required sensitivity evidence missing: {path}")
+    return missing
+
+
+def _require_evidence(run_dir: Path) -> None:
+    missing = missing_evidence(*cell_evidence(run_dir))
+    if missing:
+        raise SystemExit("\n".join(missing))
 
 
 def _measure_cell(study: str, cell: str, parameter: str) -> List[Dict[str, object]]:
     run_dir = RESULTS / study / cell
-    _require_files(_cell_evidence(run_dir))
+    _require_evidence(run_dir)
     packets_path = run_dir / "mobility_packets.csv"
     mobility.decode_run(run_dir, packets_path)
     _segments, frame_period_ms = metrics.load_run_config(str(run_dir / "params.txt"))
@@ -198,6 +207,110 @@ def _write_rows(path: Path, rows: Sequence[Dict[str, object]]) -> None:
         writer.writerows(rows)
 
 
+def _as_dicts(rows: Sequence[Mapping[str, Any]]) -> List[Dict[str, Any]]:
+    return [dict(row) for row in rows]
+
+
+def timeout_cell_status(cell: str, rows: Sequence[Mapping[str, Any]]) -> str:
+    """Counts for one verification-timeout cell. Failed events stay in the total."""
+    established = sum(
+        1 for row in rows
+        if row.get("verification_established") is True or str(row.get("verification_established")) == "True"
+    )
+    censored = sum(1 for row in rows if str(row.get("network_fib_converged")) == "false")
+    counted = _as_dicts(rows)
+    return (
+        f"{cell}: events={len(rows)} "
+        f"verification_established={established} "
+        f"topology_numeric={len(routing.numeric(counted, 'topology_update_latency_ms'))} "
+        f"service_fib_numeric={len(routing.numeric(counted, 'service_path_fib_convergence_ms'))} "
+        f"network_fib_numeric={len(routing.numeric(counted, 'network_fib_convergence_ms'))} "
+        f"network_right_censored={censored} "
+        f"verification_not_established={len(rows) - established}"
+    )
+
+
+CROSS_CHECK_FIELDS: Tuple[Tuple[str, str, str], ...] = (
+    ("topology_update_latency_ms", "Complete Mobility-Topology Update Latency", "routing"),
+    ("service_path_fib_convergence_ms", "Service-Path FIB Convergence", "routing"),
+    ("network_fib_convergence_ms", "Network-Wide FIB Convergence", "routing"),
+    ("service_recovery_time_ms", "SRT", "mobility"),
+)
+
+
+def _median_text(values: Sequence[float]) -> str:
+    if not values:
+        return ""
+    _q1, median, _q3 = routing.quantiles(values)
+    return f"{median:.6g}"
+
+
+def _main_distribution_text(values: Sequence[float]) -> str:
+    if not values:
+        return "main_n=0 main_median= main_Q1= main_Q3= main_min= main_max="
+    ordered = sorted(values)
+    q1, median, q3 = routing.quantiles(ordered)
+    return (
+        f"main_n={len(ordered)} main_median={median:.6g} main_Q1={q1:.6g} "
+        f"main_Q3={q3:.6g} main_min={ordered[0]:.6g} main_max={ordered[-1]:.6g}"
+    )
+
+
+def default_cross_check_lines(
+    main_mobility: Sequence[Mapping[str, Any]],
+    main_routing: Sequence[Mapping[str, Any]],
+    d1_rows: Sequence[Mapping[str, Any]],
+    t50_rows: Sequence[Mapping[str, Any]],
+) -> List[str]:
+    """Describe d1 and t50 against the stored main OptoFlood distributions."""
+    lines = [
+        "Default-configuration cross-check.",
+        "d1 and t50 are independent runs of the production OptoFlood parameter point.",
+        "Main statistics are read from existing production CSVs. This comparison is descriptive and has no pass/fail threshold.",
+    ]
+    opto_mobility = [row for row in main_mobility if row.get("configuration") == "OptoFlood"]
+    opto_routing = [row for row in main_routing if row.get("configuration") == "OptoFlood"]
+    for field, title, source in CROSS_CHECK_FIELDS:
+        main_rows = opto_routing if source == "routing" else opto_mobility
+        main_values = routing.numeric(_as_dicts(main_rows), field)
+        d1_values = routing.numeric(_as_dicts([row for row in d1_rows if str(row.get("cell")) == "d1"]), field)
+        t50_values = routing.numeric(_as_dicts([row for row in t50_rows if str(row.get("cell")) == "t50"]), field)
+        lines.append(
+            f"{title}: {_main_distribution_text(main_values)} "
+            f"d1_median={_median_text(d1_values)} t50_median={_median_text(t50_values)}"
+        )
+    return lines
+
+
+def _read_csv(path: Path) -> List[Dict[str, str]]:
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        return list(csv.DictReader(handle))
+
+
+def write_default_cross_check(repo: Path) -> List[str]:
+    """Read stored main and sensitivity CSVs. Does not recompute production metrics."""
+    paths = {
+        "mobility": repo / "results" / "solution" / "mobility_events.csv",
+        "routing": repo / "results" / "routing" / "routing_events.csv",
+        "d1": repo / "results" / "extended" / "exp1" / "sync-delay" / "sensitivity_events.csv",
+        "t50": repo / "results" / "extended" / "exp1" / "verification-timeout" / "sensitivity_events.csv",
+    }
+    missing = [path for path in paths.values() if not path.is_file()]
+    if missing:
+        detail = "\n".join(f"required cross-check CSV missing: {path}" for path in missing)
+        raise SystemExit(detail)
+    lines = default_cross_check_lines(
+        _read_csv(paths["mobility"]),
+        _read_csv(paths["routing"]),
+        _read_csv(paths["d1"]),
+        _read_csv(paths["t50"]),
+    )
+    destination = repo / "results" / "extended" / "exp1" / "default_cross_check.txt"
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return lines
+
+
 def _summary_lines(study: str, rows: Sequence[Dict[str, object]], cells: Sequence[Tuple[str, str]]) -> List[str]:
     lines = [
         f"study={study}",
@@ -207,18 +320,24 @@ def _summary_lines(study: str, rows: Sequence[Dict[str, object]], cells: Sequenc
     ]
     for cell, _parameter in cells:
         selected = [row for row in rows if row["cell"] == cell]
-        censored = sum(1 for row in selected if str(row.get("network_fib_converged")) == "false")
-        established = sum(1 for row in selected if row.get("verification_established") is True)
-        lines.append(
-            f"{cell}: events={len(selected)} "
-            f"srt_numeric={len(routing.numeric(selected, 'service_recovery_time_ms'))} "
-            f"topology_numeric={len(routing.numeric(selected, 'topology_update_latency_ms'))} "
-            f"lsa_lead_numeric={len(routing.numeric(selected, 'service_path_lsa_lead_ms'))} "
-            f"service_fib_numeric={len(routing.numeric(selected, 'service_path_fib_convergence_ms'))} "
-            f"network_fib_numeric={len(routing.numeric(selected, 'network_fib_convergence_ms'))} "
-            f"network_censored={censored} "
-            f"verification_established={established}"
-        )
+        if study == "verification-timeout":
+            lines.append(timeout_cell_status(cell, selected))
+        else:
+            censored = sum(1 for row in selected if str(row.get("network_fib_converged")) == "false")
+            established = sum(
+                1 for row in selected
+                if row.get("verification_established") is True or str(row.get("verification_established")) == "True"
+            )
+            lines.append(
+                f"{cell}: events={len(selected)} "
+                f"srt_numeric={len(routing.numeric(selected, 'service_recovery_time_ms'))} "
+                f"topology_numeric={len(routing.numeric(selected, 'topology_update_latency_ms'))} "
+                f"lsa_lead_numeric={len(routing.numeric(selected, 'service_path_lsa_lead_ms'))} "
+                f"service_fib_numeric={len(routing.numeric(selected, 'service_path_fib_convergence_ms'))} "
+                f"network_fib_numeric={len(routing.numeric(selected, 'network_fib_convergence_ms'))} "
+                f"network_censored={censored} "
+                f"verification_established={established}"
+            )
         for field, label in (
             ("service_recovery_time_ms", "SRT"),
             ("nlsr_control_rate_bytes_per_s", "NLSR control rate"),
@@ -278,8 +397,12 @@ def analyze(study: str) -> None:
 
 def main(argv: Sequence[str] | None = None) -> int:
     study = (argv[0] if argv else sys.argv[1]) if (argv or len(sys.argv) > 1) else ""
+    if study == "cross-check":
+        print("\n".join(write_default_cross_check(ROOT.parents[2])))
+        return 0
     if study not in STUDIES:
-        raise SystemExit(f"usage: run_sensitivity_analysis.py {'|'.join(STUDIES)}")
+        names = "|".join((*STUDIES, "cross-check"))
+        raise SystemExit(f"usage: run_sensitivity_analysis.py {names}")
     analyze(study)
     return 0
 
