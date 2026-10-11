@@ -1,0 +1,63 @@
+# Exp2-A shared stream. These targets do not depend on baseline, solution, or Exp1 runs.
+# N=1 and N=2 share one Exp2 VM, so the combined smoke target runs them one after another.
+
+EXP2_WARMUP_S ?= 20
+EXP2_TAIL_S ?= 30
+EXP2_SHARED_ROOT := results/extended/exp2/shared
+EXP2_SHARED_CAPTURE_NODES := core agg1 agg2 acc1 acc2 acc3 acc4 acc5 acc6 producer consumer1 consumer2
+
+EXP2_VM_PREREQS := scripts/run-in-vm.sh \
+	box/solution/solution.$(PROVIDER).box \
+	experiment/app/producer.cpp \
+	experiment/app/consumer.cpp \
+	experiment/app/optoflood-daemon.cpp \
+	experiment/app/trust-schema.conf \
+	experiment/extended/exp2/Vagrantfile \
+	experiment/extended/exp2/Makefile \
+	experiment/tool/exp.py \
+	experiment/tool/exp2_shared_driver.py \
+	experiment/tool/exp2_shared_config.py \
+	experiment/tool/handoff_schedule.py
+
+define exp2_shared_outputs
+$(1)/params.txt \
+$(1)/handoffs.txt \
+$(1)/topology.txt \
+$(1)/producer.log \
+$(1)/optoflood_producer.log \
+$(foreach consumer,$(2),$(1)/$(consumer).log $(1)/optoflood_$(consumer).log) \
+$(foreach node,$(EXP2_SHARED_CAPTURE_NODES),$(1)/pcap_nodes/$(node).pcap) \
+$(foreach node,$(EXP2_SHARED_CAPTURE_NODES),$(1)/minindn-logs/$(node)/nfd.log $(1)/minindn-logs/$(node)/nlsr.log)
+endef
+
+EXP2_N1_OUTPUTS := $(call exp2_shared_outputs,$(EXP2_SHARED_ROOT)/n1,consumer1)
+EXP2_N2_OUTPUTS := $(call exp2_shared_outputs,$(EXP2_SHARED_ROOT)/n2,consumer1 consumer2)
+
+comma := ,
+
+define exp2_smoke_recipe
+	RUN_IN_VM_PROFILE=exp2 MOBILITY_LOG_NODES="$(EXP2_SHARED_CAPTURE_NODES)" RUN_IN_VM_REMOTE_MAKE="$(SOLUTION_NLSR_ENV) NLSR_HANDOFF_COUNT='1' NLSR_HANDOFF_SEQUENCE='acc2,acc3' NLSR_HANDOFF_INTERVALS='$(EXP2_WARMUP_S),$(EXP2_TAIL_S)' EXP2_ACTIVE_CONSUMERS='$(1)' EXP2_SCHEDULE='smoke' EXP2_WARMUP_S='$(EXP2_WARMUP_S)' EXP2_TAIL_S='$(EXP2_TAIL_S)' EXP_REQUEST_INTERVAL_MS='20' make exp2-shared" sh $(EXP2_VM_PREREQS) $(2)
+endef
+
+$(EXP2_N1_OUTPUTS) &: $(EXP2_VM_PREREQS)
+	$(call exp2_smoke_recipe,consumer1,$@)
+
+$(EXP2_N2_OUTPUTS) &: $(EXP2_VM_PREREQS)
+	$(call exp2_smoke_recipe,consumer1$(comma)consumer2,$@)
+
+.PHONY: experiment-exp2-shared-n1-smoke experiment-exp2-shared-n2-smoke experiment-exp2-shared-smoke \
+	analyze-exp2-shared-n1 analyze-exp2-shared-n2
+
+experiment-exp2-shared-n1-smoke: $(EXP2_N1_OUTPUTS)
+
+experiment-exp2-shared-n2-smoke: $(EXP2_N2_OUTPUTS)
+
+experiment-exp2-shared-smoke:
+	$(MAKE) experiment-exp2-shared-n1-smoke
+	$(MAKE) experiment-exp2-shared-n2-smoke
+
+analyze-exp2-shared-n1:
+	python3 experiment/tool/run_exp2_shared_analysis.py $(EXP2_SHARED_ROOT)/n1
+
+analyze-exp2-shared-n2:
+	python3 experiment/tool/run_exp2_shared_analysis.py $(EXP2_SHARED_ROOT)/n2

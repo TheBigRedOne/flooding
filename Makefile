@@ -24,6 +24,7 @@ BOXES = box/initial/initial.$(PROVIDER).box \
 include Makefile.baseline
 include Makefile.solution
 include Makefile.sensitivity
+include Makefile.exp2
 
 # Baseline profile directories (parents of r1..r5; rules live in Makefile.baseline).
 BASELINE_PROFILE_DIRS := $(addprefix results/baseline/,$(BASELINE_PROFILE_LIST))
@@ -76,6 +77,10 @@ PLOT_TOOL_SRCS := experiment/tool/plot_latency.py \
                   experiment/tool/test_mobility_event_metrics.py \
                   experiment/tool/audit_decoder_parity.py \
                   experiment/tool/handoff_schedule.py \
+                  experiment/tool/exp2_shared_config.py \
+                  experiment/tool/exp2_shared_metrics.py \
+                  experiment/tool/run_exp2_shared_analysis.py \
+                  experiment/tool/test_exp2_shared.py \
                   experiment/tool/run_sensitivity_analysis.py \
                   experiment/tool/test_handoff_schedule.py \
                   experiment/tool/routing_convergence_metrics.py \
