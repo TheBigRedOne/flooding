@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import bisect
 import re
-from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
 import mobility_event_metrics as metrics
 
@@ -103,25 +104,40 @@ def log_timestamp_seconds(raw: int) -> float:
     return float(raw)
 
 
+def _cached_semantic(raw: str, cache: Dict[str, str]) -> str:
+    """Return one semantic audit spelling. The cache lives only for the current index."""
+    found = cache.get(raw)
+    if found is None:
+        found = semantic_name(raw)
+        cache[raw] = found
+    return found
+
+
 def parse_validation_log(text: str) -> List[Dict[str, object]]:
-    """Validation lines that name a Data packet. Lines without a name stay unmatched."""
+    """Validation lines that name a Data packet. Lines without a name stay unmatched.
+
+    Stored names are semantic audit spellings, so later matching does not parse the log again.
+    """
     records: List[Dict[str, object]] = []
+    cache: Dict[str, str] = {}
     for line in text.splitlines():
         ok_match = _VALIDATE_OK.match(line.strip())
         if ok_match:
+            raw_name = ok_match.group(2) or ""
             records.append({
                 "ok": True,
                 "time_s": log_timestamp_seconds(int(ok_match.group(1))),
-                "name": ok_match.group(2) or "",
+                "name": _cached_semantic(raw_name, cache) if raw_name else "",
                 "consumer_id": ok_match.group(3) or "",
             })
             continue
         bad_match = _VALIDATE_BAD.match(line.strip())
         if bad_match:
+            raw_name = bad_match.group(3) or ""
             records.append({
                 "ok": False,
                 "time_s": log_timestamp_seconds(int(bad_match.group(1))),
-                "name": bad_match.group(3) or "",
+                "name": _cached_semantic(raw_name, cache) if raw_name else "",
                 "consumer_id": bad_match.group(4) or "",
                 "error": bad_match.group(2),
             })
@@ -136,29 +152,135 @@ def _in_window(item: float, start: float, end: float, last: bool) -> bool:
     return item < end
 
 
-def _index(packets: Iterable[metrics.Packet], node: str, outbound: bool, ptype: str, useful: bool) -> Dict[str, List[float]]:
-    grouped: Dict[str, List[float]] = {}
-    for packet in packets:
-        if packet.node != node or packet.outbound != outbound or packet.ptype != ptype:
+def _window_events(
+    events: Sequence[Tuple[float, str]], start: float, end: float, last: bool,
+) -> Sequence[Tuple[float, str]]:
+    """Events with start < time and time < end, or time <= end when this is the final event."""
+    if not events:
+        return ()
+    lo = bisect.bisect_right(events, (start, "\U0010ffff"))
+    if last:
+        hi = bisect.bisect_right(events, (end, "\U0010ffff"))
+    else:
+        hi = bisect.bisect_left(events, (end, ""))
+    return events[lo:hi]
+
+
+def _latest_at_or_before(times: Sequence[float], limit: float) -> Optional[float]:
+    """Last sorted timestamp at or before limit."""
+    if not times:
+        return None
+    pos = bisect.bisect_right(times, limit) - 1
+    if pos < 0:
+        return None
+    return times[pos]
+
+
+def _earliest_at_or_before(times: Sequence[float], limit: float) -> Optional[float]:
+    """First sorted timestamp at or before limit.
+
+    The previous per-reception scan walked the sorted Interest list and stopped at the
+    first timestamp that was at or before reception. That timestamp is the earliest one.
+    """
+    if not times or times[0] > limit:
+        return None
+    return times[0]
+
+
+def _closest_validation(entries: Sequence[Tuple[float, int]], data_time: float) -> Optional[float]:
+    """Closest validation time. Equal distances keep the earlier record."""
+    if not entries:
+        return None
+    times = [item[0] for item in entries]
+    index = bisect.bisect_left(times, data_time)
+    best_time = 0.0
+    best_dist = 0.0
+    best_seq = 0
+    found = False
+
+    def consider(pos: int) -> None:
+        nonlocal best_time, best_dist, best_seq, found
+        if pos < 0 or pos >= len(entries):
+            return
+        stamp = entries[pos][0]
+        left = pos
+        while left > 0 and entries[left - 1][0] == stamp:
+            left -= 1
+        right = pos
+        while right + 1 < len(entries) and entries[right + 1][0] == stamp:
+            right += 1
+        for cursor in range(left, right + 1):
+            candidate_time, candidate_seq = entries[cursor]
+            dist = abs(candidate_time - data_time)
+            if not found or dist < best_dist or (dist == best_dist and candidate_seq < best_seq):
+                best_time = candidate_time
+                best_dist = dist
+                best_seq = candidate_seq
+                found = True
+
+    consider(index - 1)
+    consider(index)
+    if not found:
+        return None
+    return best_time
+
+
+def _index_validation(
+    records: Sequence[Mapping[str, object]],
+    consumer: str,
+    cache: Dict[str, str],
+) -> Dict[str, Tuple[List[Tuple[float, int]], List[Tuple[float, int]]]]:
+    """Success and failure times for one consumer, keyed by semantic Data name."""
+    grouped: Dict[str, Tuple[List[Tuple[float, int]], List[Tuple[float, int]]]] = {}
+    for seq, record in enumerate(records):
+        raw_name = str(record.get("name") or "")
+        if not raw_name:
             continue
-        if useful and not metrics.is_useful_content(semantic_name(packet.name)):
+        record_consumer = str(record.get("consumer_id") or "")
+        if record_consumer and record_consumer != consumer:
             continue
-        grouped.setdefault(semantic_name(packet.name), []).append(packet.time)
-    for times in grouped.values():
-        times.sort()
+        canonical = _cached_semantic(raw_name, cache)
+        slot = grouped.get(canonical)
+        if slot is None:
+            slot = ([], [])
+            grouped[canonical] = slot
+        item = (float(str(record["time_s"])), seq)
+        if record.get("ok"):
+            slot[0].append(item)
+        else:
+            slot[1].append(item)
+    for successes, failures in grouped.values():
+        successes.sort(key=lambda item: (item[0], item[1]))
+        failures.sort(key=lambda item: (item[0], item[1]))
     return grouped
 
 
-def _earliest(times: Sequence[float], start: float, end: float, last: bool) -> Optional[float]:
-    for item in times:
-        if _in_window(item, start, end, last):
-            return item
-    return None
+def _match_indexed(
+    pools: Mapping[str, Tuple[Sequence[Tuple[float, int]], Sequence[Tuple[float, int]]]],
+    canonical: str,
+    data_time: float,
+) -> Tuple[str, str]:
+    """Prefer the closest success for this name. Failures are used only when no success exists."""
+    slot = pools.get(canonical)
+    if slot is None:
+        return "absent", ""
+    chosen = _closest_validation(slot[0], data_time)
+    outcome = "success"
+    if chosen is None:
+        chosen = _closest_validation(slot[1], data_time)
+        outcome = "failure"
+    if chosen is None:
+        return "absent", ""
+    return outcome, f"{chosen:.9f}"
 
 
 def parse_producer_log(text: str) -> List[Dict[str, object]]:
-    """Application send and Interest-reception lines from producer.log."""
+    """Application send and Interest-reception lines from producer.log.
+
+    Stored names are semantic audit spellings.
+    """
     records: List[Dict[str, object]] = []
+    cache: Dict[str, str] = {}
     for line in text.splitlines():
         stripped = line.strip()
         data_match = _PRODUCER_DATA.match(stripped)
@@ -166,7 +288,7 @@ def parse_producer_log(text: str) -> List[Dict[str, object]]:
             records.append({
                 "kind": "data",
                 "time_s": log_timestamp_seconds(int(data_match.group(1))),
-                "name": semantic_name(data_match.group(2)),
+                "name": _cached_semantic(data_match.group(2), cache),
             })
             continue
         interest_match = _PRODUCER_INTEREST.match(stripped)
@@ -174,7 +296,7 @@ def parse_producer_log(text: str) -> List[Dict[str, object]]:
             records.append({
                 "kind": "interest",
                 "time_s": log_timestamp_seconds(int(interest_match.group(1))),
-                "name": semantic_name(interest_match.group(2)),
+                "name": _cached_semantic(interest_match.group(2), cache),
             })
     return records
 
@@ -185,45 +307,40 @@ def match_validation(
     data_time: float,
     consumer: str,
 ) -> Tuple[str, str]:
-    """Match by semantic name and consumer id. Time only picks among those matches."""
-    canonical = semantic_name(name)
-    matched: List[Mapping[str, object]] = []
+    """Match by semantic name and consumer id. Time only picks among those matches.
+
+    A successful record for this consumer and name is preferred to every failure.
+    Among the chosen outcome, the closest timestamp is used. There is no separate
+    acceptance window: closeness does not reject the only remaining record.
+    """
+    cache: Dict[str, str] = {}
+    canonical = _cached_semantic(name, cache)
+    pools = _index_validation(records, consumer, cache)
+    return _match_indexed(pools, canonical, data_time)
+
+
+def _index_producer_log(
+    records: Sequence[Mapping[str, object]],
+    cache: Dict[str, str],
+) -> Tuple[Dict[str, List[float]], Dict[str, List[float]]]:
+    """Application send and Interest times keyed by semantic Data name."""
+    sends: Dict[str, List[float]] = {}
+    interests: Dict[str, List[float]] = {}
     for record in records:
-        record_name = str(record.get("name") or "")
-        if not record_name or semantic_name(record_name) != canonical:
+        raw_name = str(record.get("name") or "")
+        if not raw_name:
             continue
-        record_consumer = str(record.get("consumer_id") or "")
-        if record_consumer and record_consumer != consumer:
+        canonical = _cached_semantic(raw_name, cache)
+        kind = record.get("kind")
+        target = sends if kind == "data" else interests if kind == "interest" else None
+        if target is None:
             continue
-        matched.append(record)
-    if not matched:
-        return "absent", ""
-    successes = [record for record in matched if record["ok"]]
-    pool = successes or matched
-    best = min(pool, key=lambda record: abs(float(str(record["time_s"])) - data_time))
-    result = "success" if best["ok"] else "failure"
-    return result, f"{float(str(best['time_s'])):.9f}"
-
-
-def _times_for(records: Sequence[Mapping[str, object]], kind: str, name: str) -> List[float]:
-    canonical = semantic_name(name)
-    values = [
-        float(str(record["time_s"]))
-        for record in records
-        if record.get("kind") == kind and record.get("name") == canonical
-    ]
-    values.sort()
-    return values
-
-
-def _latest_at_or_before(times: Sequence[float], limit: float) -> Optional[float]:
-    found = None
-    for item in times:
-        if item <= limit:
-            found = item
-        else:
-            break
-    return found
+        target.setdefault(canonical, []).append(float(str(record["time_s"])))
+    for times in sends.values():
+        times.sort()
+    for times in interests.values():
+        times.sort()
+    return sends, interests
 
 
 def classify_delivery(
@@ -288,6 +405,11 @@ def classify_delivery(
     )
 
 
+def _sort_time_index(grouped: Dict[str, List[float]]) -> None:
+    for times in grouped.values():
+        times.sort()
+
+
 def observe_run(
     packets: Sequence[metrics.Packet],
     handoffs: Sequence[metrics.Handoff],
@@ -296,64 +418,150 @@ def observe_run(
     producer_log: Sequence[Mapping[str, object]] = (),
     frame_period_ms: int = FRAME_PERIOD_MS,
 ) -> Tuple[List[Dict[str, object]], List[str]]:
-    """Per-consumer rows and audit lines. Shared flood bytes are counted once per handoff."""
+    """Per-consumer rows and audit lines. Shared flood bytes are counted once per handoff.
+
+    Names, logs, and packet roles are indexed once. Each handoff then reads the sorted
+    slices for its event window. A consumer row stops provenance matching after the
+    first qualifying recovery and the first-arrival timestamp have both been resolved.
+    """
     if not packets:
         raise metrics.MobilityMetricError("no packets")
     if not handoffs:
         raise metrics.MobilityMetricError("no handoffs")
-    named = [
-        metrics.Packet(
+    active = tuple(active_consumers)
+    cache: Dict[str, str] = {}
+    useful: Dict[str, bool] = {}
+    frame_ids: Dict[str, str] = {}
+    app_sends, app_interests = _index_producer_log(producer_log, cache)
+    validation_index = {
+        consumer: _index_validation(validation_by_consumer.get(consumer) or [], consumer, cache)
+        for consumer in active
+    }
+    producer_interests: Dict[str, List[float]] = {}
+    producer_egress_times: Dict[str, List[float]] = {}
+    consumer_interests: Dict[str, Dict[str, List[float]]] = {consumer: {} for consumer in active}
+    consumer_data: Dict[str, List[Tuple[float, str]]] = {consumer: [] for consumer in active}
+    named: List[metrics.Packet] = []
+    capture_end = packets[0].time
+    for packet in packets:
+        name = _cached_semantic(packet.name, cache)
+        if packet.time > capture_end:
+            capture_end = packet.time
+        named.append(metrics.Packet(
             packet.time, packet.node, packet.outbound, packet.ptype,
-            semantic_name(packet.name), packet.length,
+            name, packet.length,
             packet.interest_flood, packet.data_flood,
             packet.interest_hop_limit, packet.data_lp_hop_limit, packet.data_mobility_flag,
+        ))
+        is_content = useful.get(name)
+        if is_content is None:
+            is_content = metrics.is_useful_content(name)
+            useful[name] = is_content
+        if not is_content:
+            continue
+        if packet.node == "producer" and packet.ptype == "interest" and not packet.outbound:
+            producer_interests.setdefault(name, []).append(packet.time)
+        elif packet.node == "producer" and packet.ptype == "data" and packet.outbound:
+            producer_egress_times.setdefault(name, []).append(packet.time)
+        elif packet.node in consumer_data and packet.ptype == "interest" and packet.outbound:
+            consumer_interests[packet.node].setdefault(name, []).append(packet.time)
+        elif packet.node in consumer_data and packet.ptype == "data" and not packet.outbound:
+            consumer_data[packet.node].append((packet.time, name))
+    _sort_time_index(producer_interests)
+    _sort_time_index(producer_egress_times)
+    for interests in consumer_interests.values():
+        _sort_time_index(interests)
+    for events in consumer_data.values():
+        events.sort()
+
+    event_last = []
+    event_end_at = []
+    for position, handoff in enumerate(handoffs):
+        last = position == len(handoffs) - 1
+        event_last.append(last)
+        event_end_at.append(capture_end if last else handoffs[position + 1].abs_time)
+    flood_totals = [0] * len(handoffs)
+    nlsr_totals = [0] * len(handoffs)
+    guard_sends = [{consumer: 0 for consumer in active} for _handoff in handoffs]
+    guard_name = metrics.canonical_name(GUARD_NAME)
+    canonical_names: Dict[str, str] = {}
+    nlsr_names: Dict[str, bool] = {}
+    management_names: Dict[str, bool] = {}
+    guard_names: Dict[str, bool] = {}
+    application_names: Dict[str, bool] = {}
+    for packet in named:
+        position = None
+        for index, handoff in enumerate(handoffs):
+            if _in_window(packet.time, handoff.abs_time, event_end_at[index], event_last[index]):
+                position = index
+                break
+        if position is None:
+            continue
+        flood_marked = packet.outbound and (
+            (packet.ptype == "interest" and packet.interest_hop_limit)
+            or (packet.ptype == "data" and (packet.data_mobility_flag or packet.data_lp_hop_limit))
         )
-        for packet in packets
-    ]
-    capture_end = max(packet.time for packet in named)
-    producer_interests = _index(named, "producer", False, "interest", True)
-    producer_data = _index(named, "producer", True, "data", True)
+        if flood_marked:
+            is_application = application_names.get(packet.name)
+            if is_application is None:
+                is_application = metrics.is_application(packet.name)
+                application_names[packet.name] = is_application
+            if is_application:
+                flood_totals[position] += packet.length
+        is_nlsr = nlsr_names.get(packet.name)
+        if is_nlsr is None:
+            is_nlsr = metrics.is_nlsr(packet.name)
+            nlsr_names[packet.name] = is_nlsr
+        if packet.outbound and is_nlsr:
+            is_management = management_names.get(packet.name)
+            if is_management is None:
+                is_management = metrics.is_management(packet.name)
+                management_names[packet.name] = is_management
+            if not is_management:
+                nlsr_totals[position] += packet.length
+        if packet.outbound and packet.ptype == "interest" and packet.node in guard_sends[position]:
+            is_guard = guard_names.get(packet.name)
+            if is_guard is None:
+                is_guard = metrics.is_guard(packet.name)
+                guard_names[packet.name] = is_guard
+            if is_guard:
+                spelled = canonical_names.get(packet.name)
+                if spelled is None:
+                    spelled = metrics.canonical_name(packet.name)
+                    canonical_names[packet.name] = spelled
+                if spelled == guard_name:
+                    guard_sends[position][packet.node] += 1
+
     rows: List[Dict[str, object]] = []
     audits: List[str] = []
     for position, handoff in enumerate(handoffs):
-        last = position == len(handoffs) - 1
-        event_end = capture_end if last else handoffs[position + 1].abs_time
-        flood_bytes = 0
-        nlsr_bytes = 0
-        guard_sends: Dict[str, int] = {consumer: 0 for consumer in active_consumers}
-        for packet in named:
-            if not _in_window(packet.time, handoff.abs_time, event_end, last):
-                continue
-            if metrics.is_recovery_interest_flood(packet) or metrics.is_recovery_data_flood(packet):
-                flood_bytes += packet.length
-            if packet.outbound and metrics.is_nlsr(packet.name) and not metrics.is_management(packet.name):
-                nlsr_bytes += packet.length
-            if packet.outbound and packet.ptype == "interest" and metrics.is_guard(packet.name):
-                if packet.node in guard_sends and metrics.canonical_name(packet.name) == metrics.canonical_name(GUARD_NAME):
-                    guard_sends[packet.node] += 1
+        last = event_last[position]
+        event_end = event_end_at[position]
+        flood_bytes = flood_totals[position]
+        nlsr_bytes = nlsr_totals[position]
         audits.append(
             f"handoff {handoff.index} guard_sends="
-            + ",".join(f"{consumer}:{guard_sends[consumer]}" for consumer in active_consumers)
+            + ",".join(f"{consumer}:{guard_sends[position][consumer]}" for consumer in active)
             + f" network_recovery_flood_bytes={flood_bytes} nlsr_control_bytes={nlsr_bytes}"
         )
         duration = event_end - handoff.abs_time
         nominal = duration * 1000.0 / frame_period_ms if duration > 0 else 0.0
-        for consumer in active_consumers:
-            interests = _index(named, consumer, True, "interest", True)
-            data = _index(named, consumer, False, "data", True)
+        for consumer in active:
+            window = _window_events(consumer_data[consumer], handoff.abs_time, event_end, last)
+            earliest: Dict[str, float] = {}
+            for stamp, name in window:
+                if name not in earliest:
+                    earliest[name] = stamp
             delivered = set()
-            for name, times in data.items():
-                if any(_in_window(item, handoff.abs_time, event_end, last) for item in times):
+            for name in earliest:
+                frame_id = frame_ids.get(name)
+                if frame_id is None:
                     frame_id = metrics.content_frame_id(name)
-                    if frame_id:
-                        delivered.add(frame_id)
+                    frame_ids[name] = frame_id
+                if frame_id:
+                    delivered.add(frame_id)
             loss = "" if nominal <= 0 else (nominal - len(delivered)) / nominal
-            arrivals: List[Tuple[float, str]] = []
-            for name, times in data.items():
-                earliest = _earliest(times, handoff.abs_time, event_end, last)
-                if earliest is not None:
-                    arrivals.append((earliest, name))
-            arrivals.sort()
+            arrivals = sorted((stamp, name) for name, stamp in earliest.items())
             observed_time = arrivals[0][0] if arrivals else None
             observed_name = arrivals[0][1] if arrivals else ""
             recovery: Optional[Tuple[float, str, str, str, Optional[float], Optional[float], Optional[float], str]] = None
@@ -365,18 +573,16 @@ def observe_run(
             first_send: Optional[float] = None
             first_egress: Optional[float] = None
             first_producer_interest: Optional[float] = None
+            interests = consumer_interests[consumer]
+            pools = validation_index[consumer]
             for receive_time, name in arrivals:
-                interest_time = None
-                for item in interests.get(name) or []:
-                    if item <= receive_time:
-                        interest_time = item
-                        break
-                send_time = _latest_at_or_before(_times_for(producer_log, "data", name), receive_time)
-                egress_time = _latest_at_or_before(producer_data.get(name) or [], receive_time)
+                if recovery is not None and observed_time is not None and receive_time != observed_time:
+                    break
+                interest_time = _earliest_at_or_before(interests.get(name) or [], receive_time)
+                send_time = _latest_at_or_before(app_sends.get(name) or [], receive_time)
+                egress_time = _latest_at_or_before(producer_egress_times.get(name) or [], receive_time)
                 producer_interest_time = _latest_at_or_before(producer_interests.get(name) or [], receive_time)
-                validation, validation_time = match_validation(
-                    validation_by_consumer.get(consumer) or [], name, receive_time, consumer,
-                )
+                validation, validation_time = _match_indexed(pools, name, receive_time)
                 origin, audit, qualifies = classify_delivery(
                     handoff.abs_time, receive_time, interest_time, send_time, egress_time, validation,
                 )

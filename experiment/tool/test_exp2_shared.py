@@ -5,8 +5,11 @@ from __future__ import annotations
 
 import sys
 import tempfile
+import time
+import tracemalloc
 import unittest
 from pathlib import Path
+from typing import Dict, List
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -194,6 +197,8 @@ class Exp2NameTest(unittest.TestCase):
         pcap = "/LiveStream/v0/54=%03%E6/50=%00"
         self.assertEqual(exp2.semantic_components(alias), exp2.semantic_components(pcap))
         self.assertEqual(exp2.semantic_name(alias), exp2.semantic_name(pcap))
+        self.assertEqual(exp2.semantic_name(exp2.semantic_name(alias)), exp2.semantic_name(alias))
+        self.assertEqual(exp2.semantic_name(exp2.semantic_name(pcap)), exp2.semantic_name(pcap))
         self.assertNotEqual(
             exp2.semantic_components("/LiveStream/v0/v=998/seg=0"),
             exp2.semantic_components("/LiveStream/v0/v=999/seg=0"),
@@ -403,6 +408,237 @@ class Exp2MetricTest(unittest.TestCase):
         packets = [_packet(HANDOFF + 1.0, "consumer2", True, "interest", CONTENT)]
         notes = exp2.inactive_consumer_application_traffic(packets, ("consumer2",))
         self.assertEqual(len(notes), 1)
+
+
+def _reference_match(records, name, data_time, consumer):
+    """Independent scan of the accepted validation rule, used only by tests."""
+    canonical = exp2.semantic_name(name)
+    matched = []
+    for record in records:
+        record_name = str(record.get("name") or "")
+        if not record_name or exp2.semantic_name(record_name) != canonical:
+            continue
+        record_consumer = str(record.get("consumer_id") or "")
+        if record_consumer and record_consumer != consumer:
+            continue
+        matched.append(record)
+    if not matched:
+        return "absent", ""
+    successes = [record for record in matched if record["ok"]]
+    pool = successes or matched
+    best = min(pool, key=lambda record: abs(float(str(record["time_s"])) - data_time))
+    outcome = "success" if best["ok"] else "failure"
+    return outcome, f"{float(str(best['time_s'])):.9f}"
+
+
+class Exp2ValidationIndexTest(unittest.TestCase):
+    def test_match_agrees_with_reference_scan(self) -> None:
+        tied = "/LiveStream/v0/v=4/seg=0"
+        nearer = "/LiveStream/v0/v=5/seg=0"
+        mixed = "/LiveStream/v0/v=6/seg=1"
+        records = [
+            {"ok": True, "time_s": 101.0, "name": tied, "consumer_id": "consumer1"},
+            {"ok": True, "time_s": 99.0, "name": tied, "consumer_id": "consumer1"},
+            {"ok": True, "time_s": 100.2, "name": nearer, "consumer_id": "consumer1"},
+            {"ok": False, "time_s": 100.0, "name": mixed, "consumer_id": "consumer1"},
+            {"ok": True, "time_s": 110.0, "name": mixed, "consumer_id": "consumer1"},
+            {"ok": True, "time_s": 100.0, "name": tied, "consumer_id": "consumer2"},
+            {"ok": True, "time_s": 50.0, "name": tied, "consumer_id": ""},
+        ]
+        queries = (
+            (tied, 100.0, "consumer1"),
+            (nearer, 100.0, "consumer1"),
+            (mixed, 100.0, "consumer1"),
+            (tied, 100.0, "consumer2"),
+            (mixed, 100.0, "consumer2"),
+        )
+        for name, data_time, consumer in queries:
+            self.assertEqual(
+                exp2.match_validation(records, name, data_time, consumer),
+                _reference_match(records, name, data_time, consumer),
+            )
+        equal = exp2.match_validation(records, tied, 100.0, "consumer1")
+        self.assertEqual(equal[0], "success")
+        self.assertEqual(equal[1], f"{101.0:.9f}")
+        closer = exp2.match_validation(records, nearer, 100.0, "consumer1")
+        self.assertEqual(closer[1], f"{100.2:.9f}")
+        success_over_failure = exp2.match_validation(records, mixed, 100.0, "consumer1")
+        self.assertEqual(success_over_failure[0], "success")
+        self.assertEqual(success_over_failure[1], f"{110.0:.9f}")
+        self.assertEqual(exp2.match_validation(records, tied, 100.0, "consumer2")[0], "success")
+        self.assertEqual(exp2.match_validation(records, mixed, 100.0, "consumer2"), ("absent", ""))
+
+    def test_latest_send_not_an_earlier_same_name_copy(self) -> None:
+        send_early = HANDOFF - 1.0
+        send_late = HANDOFF + 0.05
+        receive = HANDOFF + 0.10
+        producer_log = (
+            f"[{int(send_early * 1e9)}] DATA: Sending response Size: 100 bytes Name: {CONTENT}\n"
+            f"[{int(send_late * 1e9)}] DATA: Sending response Size: 100 bytes Name: {CONTENT}\n"
+        )
+        packets = [
+            _packet(HANDOFF - 2.0, "consumer1", True, "interest", CONTENT),
+            _packet(HANDOFF - 0.2, "consumer1", True, "interest", CONTENT),
+            _packet(send_early, "producer", True, "data", CONTENT),
+            _packet(send_late, "producer", True, "data", CONTENT),
+            _packet(receive, "consumer1", False, "data", CONTENT),
+        ]
+        log = f"[{int(receive * 1e9)}] VALIDATE: Data signature verified name={CONTENT} id=consumer1\n"
+        rows, _audits = exp2.observe_run(
+            packets, [metrics.Handoff(1, HANDOFF, "acc2", "acc3")], ("consumer1",),
+            {"consumer1": exp2.parse_validation_log(log)},
+            exp2.parse_producer_log(producer_log),
+        )
+        row = rows[0]
+        self.assertEqual(row["producer_send_time"], f"{send_late:.9f}")
+        self.assertEqual(row["origin"], "producer_pending_interest")
+        self.assertEqual(row["interest_time"], f"{HANDOFF - 2.0:.6f}")
+        self.assertEqual(row["interest_predates_handoff"], "true")
+        self.assertNotEqual(row["validated_producer_service_recovery_ms"], "")
+
+    def test_later_same_name_copy_does_not_open_a_second_candidate(self) -> None:
+        name = CONTENT
+        first_receive = HANDOFF + 0.01
+        second_receive = HANDOFF + 0.30
+        packets = [
+            _packet(HANDOFF - 1.0, "producer", True, "data", name),
+            _packet(first_receive, "consumer1", False, "data", name),
+            _packet(HANDOFF + 0.20, "producer", True, "data", name),
+            _packet(second_receive, "consumer1", False, "data", name),
+            _packet(HANDOFF + 0.05, "consumer1", False, "data", "/LiveStream/v0/v=2/seg=0"),
+        ]
+        producer_log = (
+            f"[{int((HANDOFF - 1.0) * 1e9)}] DATA: Sending response Size: 100 bytes Name: {name}\n"
+            f"[{int((HANDOFF + 0.20) * 1e9)}] DATA: Sending response Size: 100 bytes Name: {name}\n"
+            f"[{int((HANDOFF + 0.04) * 1e9)}] DATA: Sending response Size: 100 bytes Name: /LiveStream/v0/v=2/seg=0\n"
+        )
+        validation = (
+            f"[{int(first_receive * 1e9)}] VALIDATE: Data signature verified name={name} id=consumer1\n"
+            f"[{int(second_receive * 1e9)}] VALIDATE: Data signature verified name={name} id=consumer1\n"
+            f"[{int((HANDOFF + 0.05) * 1e9)}] VALIDATE: Data signature verified name=/LiveStream/v0/v=2/seg=0 id=consumer1\n"
+        )
+        rows, _audits = exp2.observe_run(
+            packets, [metrics.Handoff(1, HANDOFF, "acc2", "acc3")], ("consumer1",),
+            {"consumer1": exp2.parse_validation_log(validation)},
+            exp2.parse_producer_log(producer_log),
+        )
+        row = rows[0]
+        self.assertEqual(row["first_arrival_origin"], "in_flight_arrival")
+        self.assertEqual(row["recovery_name"], exp2.semantic_name("/LiveStream/v0/v=2/seg=0"))
+        self.assertEqual(row["delivered_unique_frames"], 2)
+        self.assertNotEqual(row["recovery_name"], row["first_arrival_name"])
+
+    def test_n1_and_n2_keep_shared_overhead_across_eight_handoffs(self) -> None:
+        sequence = config.FULL_HANDOFF_SEQUENCE
+        handoffs = [
+            metrics.Handoff(index + 1, HANDOFF + index * 10.0, sequence[index], sequence[index + 1])
+            for index in range(8)
+        ]
+        receive = HANDOFF + 71.0
+        name = "/LiveStream/v0/v=8/seg=0"
+        packets = [
+            _packet(HANDOFF + 1.0, "core", True, "data", name, length=40, data_mobility_flag=True),
+            _packet(HANDOFF + 1.0, "core", True, "interest", "/ndn/nlsr/update", length=12),
+            _packet(receive, "producer", True, "data", name),
+            _packet(receive, "consumer1", False, "data", name),
+            _packet(receive + 0.01, "consumer2", False, "data", name),
+        ]
+        producer_log = f"[{int(receive * 1e9)}] DATA: Sending response Size: 100 bytes Name: {name}\n"
+        validation = {
+            "consumer1": exp2.parse_validation_log(
+                f"[{int(receive * 1e9)}] VALIDATE: Data signature verified name={name} id=consumer1\n"
+            ),
+            "consumer2": exp2.parse_validation_log(
+                f"[{int((receive + 0.01) * 1e9)}] VALIDATE: Data signature verified name={name} id=consumer2\n"
+            ),
+        }
+        n1, _audits = exp2.observe_run(
+            packets, handoffs, ("consumer1",), {"consumer1": validation["consumer1"]},
+            exp2.parse_producer_log(producer_log),
+        )
+        n2, _audits = exp2.observe_run(
+            packets, handoffs, ("consumer1", "consumer2"), validation,
+            exp2.parse_producer_log(producer_log),
+        )
+        self.assertEqual(len(n1), 8)
+        self.assertEqual(len(n2), 16)
+        self.assertEqual({row["network_recovery_flood_bytes"] for row in n1 if row["handoff_index"] == 1}, {40})
+        self.assertEqual({row["nlsr_control_bytes"] for row in n2 if row["handoff_index"] == 1}, {12})
+        self.assertEqual(
+            {row["network_recovery_flood_bytes"] for row in n2 if row["handoff_index"] == 1},
+            {40},
+        )
+        by_key = {(row["consumer"], row["handoff_index"]): row for row in n2}
+        self.assertEqual(by_key[("consumer1", 1)]["origin"], "absent")
+        self.assertNotEqual(by_key[("consumer1", 8)]["validated_producer_service_recovery_ms"], "")
+        self.assertNotEqual(by_key[("consumer2", 8)]["validated_producer_service_recovery_ms"], "")
+        self.assertNotEqual(
+            by_key[("consumer1", 8)]["validated_producer_service_recovery_ms"],
+            by_key[("consumer2", 8)]["validated_producer_service_recovery_ms"],
+        )
+
+
+def _synthetic_workload(frame_count: int):
+    sequence = config.FULL_HANDOFF_SEQUENCE
+    base = HANDOFF
+    handoffs = [
+        metrics.Handoff(index + 1, base + index * 100.0, sequence[index], sequence[index + 1])
+        for index in range(8)
+    ]
+    packets = []
+    validation: Dict[str, List[Dict[str, object]]] = {"consumer1": [], "consumer2": []}
+    producer = []
+    for frame in range(frame_count):
+        window = frame % 8
+        start = handoffs[window].abs_time
+        alias = f"/LiveStream/v0/v={frame}/seg=0"
+        if frame % 17 == 0:
+            send = start - 0.02
+            receive = start + 0.01
+        else:
+            send = start + 0.03
+            receive = start + 0.04
+        packets.append(_packet(send, "producer", True, "data", alias))
+        producer.append({"kind": "data", "time_s": send, "name": alias})
+        for consumer in ("consumer1", "consumer2"):
+            packets.append(_packet(start - 1.0, consumer, True, "interest", alias))
+            packets.append(_packet(receive, consumer, False, "data", alias))
+            if frame % 13 != 0:
+                validation[consumer].append({
+                    "ok": frame % 29 != 0,
+                    "time_s": receive,
+                    "name": alias,
+                    "consumer_id": consumer,
+                })
+        if frame % 8 == 0:
+            packets.append(_packet(start + 0.05, "core", True, "data", alias, length=40, data_mobility_flag=True))
+            packets.append(_packet(start + 0.06, "core", True, "interest", "/ndn/nlsr/update", length=12))
+    return packets, handoffs, validation, producer
+
+
+class Exp2BenchmarkTest(unittest.TestCase):
+    def test_observe_run_scales_linearly_for_synthetic_frames(self) -> None:
+        _synthetic_workload(1000)
+        measured = []
+        for frame_count in (5000, 20000, 50000):
+            packets, handoffs, validation, producer = _synthetic_workload(frame_count)
+            tracemalloc.start()
+            started = time.perf_counter()
+            rows, _audits = exp2.observe_run(
+                packets, handoffs, ("consumer1", "consumer2"), validation, producer,
+            )
+            elapsed = time.perf_counter() - started
+            _current, peak = tracemalloc.get_traced_memory()
+            tracemalloc.stop()
+            self.assertEqual(len(rows), 16)
+            measured.append((frame_count, elapsed, peak))
+            print(f"EXP2_BENCH frames={frame_count} seconds={elapsed:.4f} peak_bytes={peak}")
+        small_frames, small_time, small_peak = measured[0]
+        large_frames, large_time, large_peak = measured[2]
+        growth = large_frames / small_frames
+        self.assertLess(large_time / small_time, growth * 3)
+        self.assertLess(large_peak / small_peak, growth * 4)
+        self.assertLess(measured[1][1] / small_time, (measured[1][0] / small_frames) * 3)
 
 
 if __name__ == "__main__":
