@@ -9,6 +9,10 @@ import mobility_event_metrics as metrics
 
 from exp2_shared_config import FRAME_PERIOD_MS, GUARD_NAME, STREAM_PREFIX
 
+_TYPED_ALIAS = {"v": metrics.COMPONENT_VERSION, "seg": metrics.COMPONENT_SEGMENT}
+_PRODUCER_DATA = re.compile(r"^\[(\d+)\].*\bDATA: Sending response\b.*\bName: (\S+)")
+_PRODUCER_INTEREST = re.compile(r"^\[(\d+)\].*\bINTEREST: Received\b.*\bName: (\S+)")
+
 OBSERVATION_FIELDS = (
     "consumer",
     "handoff_index",
@@ -17,8 +21,13 @@ OBSERVATION_FIELDS = (
     "handoff_time",
     "event_end_time",
     "observed_data_time",
+    "first_arrival_name",
+    "first_arrival_origin",
     "consumer_observed_recovery_ms",
-    "confirmed_producer_recovery_ms",
+    "validated_producer_service_recovery_ms",
+    "recovery_name",
+    "producer_send_time",
+    "producer_egress_time",
     "interest_to_data_ms",
     "content_name",
     "frame_id",
@@ -43,6 +52,45 @@ _VALIDATE_OK = re.compile(
 _VALIDATE_BAD = re.compile(
     r"^\[(\d+)\] ERROR: Data validation failed: (.*?)(?: name=(\S+))?(?: id=(\S+))?\s*$"
 )
+
+
+def encode_non_negative_integer(value: int) -> bytes:
+    """NDN name-component integer: the smallest width in {1, 2, 4, 8} bytes."""
+    if value < 0:
+        raise ValueError(f"negative NDN integer: {value}")
+    if value <= 0xFF:
+        width = 1
+    elif value <= 0xFFFF:
+        width = 2
+    elif value <= 0xFFFFFFFF:
+        width = 4
+    else:
+        width = 8
+    return value.to_bytes(width, "big")
+
+
+def semantic_components(raw: str) -> Tuple[Tuple[int, bytes], ...]:
+    """Typed name identity. v=N and seg=N match PCAP type-54 and type-50 components."""
+    text = (raw or "").strip()
+    if ",/" in text:
+        text = text.split(",/", 1)[0]
+    components: List[Tuple[int, bytes]] = []
+    for part in [item for item in text.split("/") if item]:
+        if "=" in part:
+            key, value = part.split("=", 1)
+            if key in _TYPED_ALIAS and value.isdigit():
+                components.append((_TYPED_ALIAS[key], encode_non_negative_integer(int(value))))
+                continue
+            if key.isdigit():
+                components.append((int(key), metrics._decode_uri_bytes(value)))
+                continue
+        components.append((metrics.COMPONENT_GENERIC, metrics._decode_uri_bytes(part)))
+    return tuple(components)
+
+
+def semantic_name(raw: str) -> str:
+    """One audit spelling for a typed name from either a log or a PCAP."""
+    return metrics.render_components(semantic_components(raw))
 
 
 def log_timestamp_seconds(raw: int) -> float:
@@ -92,9 +140,9 @@ def _index(packets: Iterable[metrics.Packet], node: str, outbound: bool, ptype: 
     for packet in packets:
         if packet.node != node or packet.outbound != outbound or packet.ptype != ptype:
             continue
-        if useful and not metrics.is_useful_content(packet.name):
+        if useful and not metrics.is_useful_content(semantic_name(packet.name)):
             continue
-        grouped.setdefault(packet.name, []).append(packet.time)
+        grouped.setdefault(semantic_name(packet.name), []).append(packet.time)
     for times in grouped.values():
         times.sort()
     return grouped
@@ -107,51 +155,135 @@ def _earliest(times: Sequence[float], start: float, end: float, last: bool) -> O
     return None
 
 
-def match_validation(records: Sequence[Mapping[str, object]], name: str, data_time: float) -> Tuple[str, str]:
-    """Return (result, validation_time). Result is success, failure, or absent."""
-    best_gap = None
-    best: Optional[Mapping[str, object]] = None
-    canonical = metrics.canonical_name(name)
+def parse_producer_log(text: str) -> List[Dict[str, object]]:
+    """Application send and Interest-reception lines from producer.log."""
+    records: List[Dict[str, object]] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        data_match = _PRODUCER_DATA.match(stripped)
+        if data_match:
+            records.append({
+                "kind": "data",
+                "time_s": log_timestamp_seconds(int(data_match.group(1))),
+                "name": semantic_name(data_match.group(2)),
+            })
+            continue
+        interest_match = _PRODUCER_INTEREST.match(stripped)
+        if interest_match:
+            records.append({
+                "kind": "interest",
+                "time_s": log_timestamp_seconds(int(interest_match.group(1))),
+                "name": semantic_name(interest_match.group(2)),
+            })
+    return records
+
+
+def match_validation(
+    records: Sequence[Mapping[str, object]],
+    name: str,
+    data_time: float,
+    consumer: str,
+) -> Tuple[str, str]:
+    """Match by semantic name and consumer id. Time only picks among those matches."""
+    canonical = semantic_name(name)
+    matched: List[Mapping[str, object]] = []
     for record in records:
         record_name = str(record.get("name") or "")
-        if not record_name or metrics.canonical_name(record_name) != canonical:
+        if not record_name or semantic_name(record_name) != canonical:
             continue
-        gap = abs(float(str(record["time_s"])) - data_time)
-        if best_gap is None or gap < best_gap:
-            best_gap = gap
-            best = record
-    if best is None or best_gap is None or best_gap > 5.0:
+        record_consumer = str(record.get("consumer_id") or "")
+        if record_consumer and record_consumer != consumer:
+            continue
+        matched.append(record)
+    if not matched:
         return "absent", ""
+    successes = [record for record in matched if record["ok"]]
+    pool = successes or matched
+    best = min(pool, key=lambda record: abs(float(str(record["time_s"])) - data_time))
     result = "success" if best["ok"] else "failure"
     return result, f"{float(str(best['time_s'])):.9f}"
 
 
-def _origin(
-    interest_time: Optional[float],
+def _times_for(records: Sequence[Mapping[str, object]], kind: str, name: str) -> List[float]:
+    canonical = semantic_name(name)
+    values = [
+        float(str(record["time_s"]))
+        for record in records
+        if record.get("kind") == kind and record.get("name") == canonical
+    ]
+    values.sort()
+    return values
+
+
+def _latest_at_or_before(times: Sequence[float], limit: float) -> Optional[float]:
+    found = None
+    for item in times:
+        if item <= limit:
+            found = item
+        else:
+            break
+    return found
+
+
+def classify_delivery(
     handoff_time: float,
-    producer_interest_time: Optional[float],
-    producer_data_time: Optional[float],
-) -> Tuple[str, str]:
-    if producer_data_time is None:
+    receive_time: float,
+    interest_time: Optional[float],
+    application_send_time: Optional[float],
+    egress_time: Optional[float],
+    validation: str,
+) -> Tuple[str, str, bool]:
+    """Return origin, audit text, and whether this reception is validated producer-service recovery.
+
+    Application send time is the generation clock. Network egress is used only when the
+    producer log has no send for this name. A send at or before the handoff is in-flight
+    Data, even if the consumer receives it afterwards.
+    """
+    if application_send_time is not None:
+        generated = application_send_time
+        source = "application send"
+    elif egress_time is not None:
+        generated = egress_time
+        source = "network egress"
+    else:
         return (
             "origin_uncertain",
-            "Consumer received content Data after the handoff, but this capture has no "
-            "producer egress Data for that name after the handoff. Cache delivery and "
-            "pending-Interest delivery cannot be separated.",
+            "No producer application send or network egress was observed for this name. "
+            "Cached Data and a missing capture cannot be separated.",
+            False,
+        )
+    if generated <= handoff_time:
+        return (
+            "in_flight_arrival",
+            f"The producer {source} for this Data is at or before the handoff "
+            f"({generated:.9f} <= {handoff_time:.9f}). Post-handoff reception is not "
+            "restored producer service.",
+            False,
+        )
+    if validation == "failure":
+        return (
+            "validation_failure",
+            "The producer transmitted this Data after the handoff, and validation of that name failed.",
+            False,
+        )
+    if validation != "success":
+        return (
+            "validation_absent",
+            "The producer transmitted this Data after the handoff, but this consumer has no "
+            "successful validation for that name.",
+            False,
         )
     if interest_time is not None and interest_time <= handoff_time:
         return (
             "producer_pending_interest",
-            "The consumer Interest predates the handoff and the producer transmitted this Data after the handoff.",
-        )
-    if producer_interest_time is not None:
-        return (
-            "producer_post_handoff_interest",
-            "The producer received a content Interest for this name after the handoff and then transmitted the Data.",
+            "A pre-handoff Interest was satisfied by producer Data transmitted after the handoff, "
+            "and the consumer validated that name.",
+            True,
         )
     return (
-        "producer_transmission_interest_unseen",
-        "The producer transmitted this Data after the handoff. No matching post-handoff producer Interest was observed.",
+        "producer_post_handoff_interest",
+        "The producer transmitted this Data after the handoff and the consumer validated that name.",
+        True,
     )
 
 
@@ -160,6 +292,7 @@ def observe_run(
     handoffs: Sequence[metrics.Handoff],
     active_consumers: Sequence[str],
     validation_by_consumer: Mapping[str, Sequence[Mapping[str, object]]],
+    producer_log: Sequence[Mapping[str, object]] = (),
     frame_period_ms: int = FRAME_PERIOD_MS,
 ) -> Tuple[List[Dict[str, object]], List[str]]:
     """Per-consumer rows and audit lines. Shared flood bytes are counted once per handoff."""
@@ -170,7 +303,7 @@ def observe_run(
     named = [
         metrics.Packet(
             packet.time, packet.node, packet.outbound, packet.ptype,
-            metrics.canonical_name(packet.name), packet.length,
+            semantic_name(packet.name), packet.length,
             packet.interest_flood, packet.data_flood,
             packet.interest_hop_limit, packet.data_lp_hop_limit, packet.data_mobility_flag,
         )
@@ -214,52 +347,74 @@ def observe_run(
                     if frame_id:
                         delivered.add(frame_id)
             loss = "" if nominal <= 0 else (nominal - len(delivered)) / nominal
-            observed_name = ""
-            observed_time: Optional[float] = None
+            arrivals: List[Tuple[float, str]] = []
             for name, times in data.items():
                 earliest = _earliest(times, handoff.abs_time, event_end, last)
-                if earliest is None:
-                    continue
-                if observed_time is None or earliest < observed_time:
-                    observed_time = earliest
-                    observed_name = name
-            interest_time = None
-            if observed_name and observed_time is not None:
-                for item in interests.get(observed_name) or []:
-                    if item <= observed_time:
+                if earliest is not None:
+                    arrivals.append((earliest, name))
+            arrivals.sort()
+            observed_time = arrivals[0][0] if arrivals else None
+            observed_name = arrivals[0][1] if arrivals else ""
+            recovery: Optional[Tuple[float, str, str, str, Optional[float], Optional[float], Optional[float], str]] = None
+            first_origin = "absent"
+            first_audit = "No post-handoff content Data at this consumer in the event window."
+            first_validation = "absent"
+            first_validation_time = ""
+            first_interest: Optional[float] = None
+            first_send: Optional[float] = None
+            first_egress: Optional[float] = None
+            first_producer_interest: Optional[float] = None
+            for receive_time, name in arrivals:
+                interest_time = None
+                for item in interests.get(name) or []:
+                    if item <= receive_time:
                         interest_time = item
                         break
-            producer_data_time = None
-            producer_interest_time = None
-            if observed_name and observed_time is not None:
-                for item in producer_data.get(observed_name) or []:
-                    if handoff.abs_time < item <= observed_time:
-                        producer_data_time = item
-                        break
-                for item in producer_interests.get(observed_name) or []:
-                    if _in_window(item, handoff.abs_time, event_end, last) and item <= observed_time:
-                        producer_interest_time = item
-                        break
-            observed_ms: object = ""
-            if observed_time is None:
-                origin = "absent"
-                audit = "No post-handoff content Data at this consumer in the event window."
-                validation = "absent"
-                validation_time = ""
-                confirmed = ""
-                request_ms = ""
-                predates = ""
-            else:
-                origin, audit = _origin(interest_time, handoff.abs_time, producer_interest_time, producer_data_time)
+                send_time = _latest_at_or_before(_times_for(producer_log, "data", name), receive_time)
+                egress_time = _latest_at_or_before(producer_data.get(name) or [], receive_time)
+                producer_interest_time = _latest_at_or_before(producer_interests.get(name) or [], receive_time)
                 validation, validation_time = match_validation(
-                    validation_by_consumer.get(consumer) or [], observed_name, observed_time,
+                    validation_by_consumer.get(consumer) or [], name, receive_time, consumer,
                 )
-                observed_ms = (observed_time - handoff.abs_time) * 1000.0
-                confirmed = "" if origin == "origin_uncertain" else f"{observed_ms:.6f}"
-                request_ms = ""
-                if interest_time is not None:
-                    request_ms = f"{(observed_time - interest_time) * 1000.0:.6f}"
-                predates = "true" if interest_time is not None and interest_time <= handoff.abs_time else "false"
+                origin, audit, qualifies = classify_delivery(
+                    handoff.abs_time, receive_time, interest_time, send_time, egress_time, validation,
+                )
+                if receive_time == observed_time:
+                    first_origin = origin
+                    first_audit = audit
+                    first_validation = validation
+                    first_validation_time = validation_time
+                    first_interest = interest_time
+                    first_send = send_time
+                    first_egress = egress_time
+                    first_producer_interest = producer_interest_time
+                if qualifies and recovery is None:
+                    recovery = (
+                        receive_time, name, origin, audit, interest_time, send_time, egress_time, validation_time,
+                    )
+            if recovery is None:
+                content_name = observed_name
+                origin = first_origin
+                audit = first_audit
+                validation = first_validation
+                validation_time = first_validation_time
+                interest_time = first_interest
+                producer_send = first_send
+                producer_egress = first_egress
+                producer_interest_time = first_producer_interest
+                receive_time = observed_time
+                primary = ""
+            else:
+                receive_time, content_name, origin, audit, interest_time, producer_send, producer_egress, validation_time = recovery
+                validation = "success"
+                producer_interest_time = _latest_at_or_before(producer_interests.get(content_name) or [], receive_time)
+                primary = f"{(receive_time - handoff.abs_time) * 1000.0:.6f}"
+            observed_ms = "" if observed_time is None else f"{(observed_time - handoff.abs_time) * 1000.0:.6f}"
+            request_anchor = receive_time
+            request_ms = ""
+            if interest_time is not None and request_anchor is not None:
+                request_ms = f"{(request_anchor - interest_time) * 1000.0:.6f}"
+            predates = "true" if interest_time is not None and interest_time <= handoff.abs_time else "false"
             rows.append({
                 "consumer": consumer,
                 "handoff_index": handoff.index,
@@ -268,15 +423,20 @@ def observe_run(
                 "handoff_time": f"{handoff.abs_time:.6f}",
                 "event_end_time": f"{event_end:.6f}",
                 "observed_data_time": "" if observed_time is None else f"{observed_time:.6f}",
-                "consumer_observed_recovery_ms": "" if observed_ms == "" else f"{float(str(observed_ms)):.6f}",
-                "confirmed_producer_recovery_ms": confirmed,
+                "first_arrival_name": observed_name,
+                "first_arrival_origin": first_origin,
+                "consumer_observed_recovery_ms": observed_ms,
+                "validated_producer_service_recovery_ms": primary,
+                "recovery_name": content_name if primary else "",
+                "producer_send_time": "" if producer_send is None else f"{producer_send:.9f}",
+                "producer_egress_time": "" if producer_egress is None else f"{producer_egress:.9f}",
                 "interest_to_data_ms": request_ms,
-                "content_name": observed_name,
-                "frame_id": metrics.content_frame_id(observed_name) if observed_name else "",
+                "content_name": content_name,
+                "frame_id": metrics.content_frame_id(content_name) if content_name else "",
                 "interest_time": "" if interest_time is None else f"{interest_time:.6f}",
-                "interest_predates_handoff": predates,
+                "interest_predates_handoff": predates if content_name else "",
                 "producer_interest_time": "" if producer_interest_time is None else f"{producer_interest_time:.6f}",
-                "producer_data_time": "" if producer_data_time is None else f"{producer_data_time:.6f}",
+                "producer_data_time": "" if producer_egress is None else f"{producer_egress:.9f}",
                 "origin": origin,
                 "validation": validation,
                 "validation_time": validation_time,

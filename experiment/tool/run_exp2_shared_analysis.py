@@ -37,15 +37,19 @@ def analyze_directory(run_dir: Path) -> tuple[List[Dict[str, object]], str]:
         consumer: exp2.parse_validation_log(_read_log(run_dir / f"{consumer}.log"))
         for consumer in active
     }
-    rows, audits = exp2.observe_run(packets, handoffs, active, validation, frame_period_ms=interval)
+    producer_log = exp2.parse_producer_log(_read_log(run_dir / "producer.log"))
+    rows, audits = exp2.observe_run(
+        packets, handoffs, active, validation, producer_log, frame_period_ms=interval,
+    )
     inactive = [host for host in config.CONSUMER_HOSTS if host not in active]
     silent = exp2.inactive_consumer_application_traffic(packets, inactive)
     lines = [
         f"active_consumers={','.join(active)}",
         f"stream_prefix={config.STREAM_PREFIX}",
         f"guard_name={config.GUARD_NAME}",
-        "consumer_observed_recovery_ms is handoff to the first post-handoff content Data.",
-        "confirmed_producer_recovery_ms is set only when the producer egress capture shows that Data after the handoff.",
+        "consumer_observed_recovery_ms is the first post-handoff content Data arrival and is not service recovery.",
+        "validated_producer_service_recovery_ms starts at the handoff and ends at the first validated Data whose producer send or, if no send log exists, network egress is after the handoff.",
+        "A producer send at or before the handoff is in-flight arrival, even when the consumer receives it later.",
         "interest_to_data_ms is request completion latency and is not the handoff recovery time.",
         "network_recovery_flood_bytes counts each sender-egress flood transmission once.",
     ]
@@ -53,10 +57,11 @@ def analyze_directory(run_dir: Path) -> tuple[List[Dict[str, object]], str]:
     lines.extend(silent)
     for row in rows:
         lines.append(
-            f"{row['consumer']} h{row['handoff_index']} origin={row['origin']} "
-            f"observed_ms={row['consumer_observed_recovery_ms']} "
-            f"confirmed_ms={row['confirmed_producer_recovery_ms']} "
-            f"validation={row['validation']} name={row['content_name']}"
+            f"{row['consumer']} h{row['handoff_index']} first={row['first_arrival_origin']} "
+            f"arrival_ms={row['consumer_observed_recovery_ms']} arrival_name={row['first_arrival_name']} "
+            f"recovery_ms={row['validated_producer_service_recovery_ms']} "
+            f"recovery_name={row['recovery_name']} origin={row['origin']} "
+            f"validation={row['validation']}"
         )
         if row["origin"] == "absent" or row["validation"] == "failure":
             lines.append(f"retained failure: {row['consumer']} h{row['handoff_index']} {row['audit']}")

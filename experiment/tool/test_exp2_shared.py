@@ -96,6 +96,65 @@ class Exp2ConfigTest(unittest.TestCase):
         self.assertEqual(config.GUARD_NAME, "/LiveStream/_guard")
 
 
+class Exp2NameTest(unittest.TestCase):
+    def test_version_and_segment_aliases_match_pcap_spellings(self) -> None:
+        alias = "/LiveStream/v0/v=998/seg=0"
+        pcap = "/LiveStream/v0/54=%03%E6/50=%00"
+        self.assertEqual(exp2.semantic_components(alias), exp2.semantic_components(pcap))
+        self.assertEqual(exp2.semantic_name(alias), exp2.semantic_name(pcap))
+        self.assertNotEqual(
+            exp2.semantic_components("/LiveStream/v0/v=998/seg=0"),
+            exp2.semantic_components("/LiveStream/v0/v=999/seg=0"),
+        )
+        self.assertNotEqual(
+            exp2.semantic_components("/LiveStream/v0/v=998/seg=0"),
+            exp2.semantic_components("/LiveStream/v0/v=998/seg=1"),
+        )
+        generic = exp2.semantic_components("/LiveStream/v0/foo=1")
+        self.assertEqual(generic[-1][0], metrics.COMPONENT_GENERIC)
+        self.assertEqual(exp2.encode_non_negative_integer(65536), b"\x00\x01\x00\x00")
+
+    def test_frame_998_inflight_is_not_validated_service_recovery(self) -> None:
+        handoff = 1791696401.073512
+        send = 1791696401.055147239
+        receive = 1791696401.078982856
+        alias = "/LiveStream/v0/v=998/seg=0"
+        pcap = "/LiveStream/v0/54=%03%E6/50=%00"
+        later_alias = "/LiveStream/v0/v=1000/seg=0"
+        later_pcap = exp2.semantic_name(later_alias)
+        later_send = handoff + 0.050
+        later_receive = handoff + 0.080
+        packets = [
+            _packet(handoff - 0.2, "consumer1", True, "interest", pcap),
+            _packet(send, "producer", True, "data", pcap),
+            _packet(receive, "consumer1", False, "data", pcap),
+            _packet(later_send, "producer", True, "data", later_pcap),
+            _packet(later_receive, "consumer1", False, "data", later_pcap),
+        ]
+        consumer_log = (
+            f"[{int(receive * 1e9)}] VALIDATE: Data signature verified name={alias} id=consumer1\n"
+            f"[{int(later_receive * 1e9)}] VALIDATE: Data signature verified name={later_alias} id=consumer1\n"
+        )
+        producer_log = (
+            f"[{int(send * 1e9)}] DATA: Sending response Size: 100 bytes Name: {alias}\n"
+            f"[{int(later_send * 1e9)}] DATA: Sending response Size: 100 bytes Name: {later_alias}\n"
+        )
+        rows, _audits = exp2.observe_run(
+            packets,
+            [metrics.Handoff(1, handoff, "acc2", "acc3")],
+            ("consumer1",),
+            {"consumer1": exp2.parse_validation_log(consumer_log)},
+            exp2.parse_producer_log(producer_log),
+        )
+        row = rows[0]
+        self.assertEqual(row["first_arrival_name"], exp2.semantic_name(pcap))
+        self.assertEqual(row["first_arrival_origin"], "in_flight_arrival")
+        self.assertEqual(row["recovery_name"], exp2.semantic_name(later_alias))
+        self.assertEqual(row["origin"], "producer_post_handoff_interest")
+        self.assertAlmostEqual(float(str(row["validated_producer_service_recovery_ms"])), (later_receive - handoff) * 1000.0, places=3)
+        self.assertNotEqual(row["consumer_observed_recovery_ms"], row["validated_producer_service_recovery_ms"])
+
+
 class Exp2MetricTest(unittest.TestCase):
     def _handoff(self) -> metrics.Handoff:
         return metrics.Handoff(1, HANDOFF, "acc2", "acc3")
@@ -121,6 +180,7 @@ class Exp2MetricTest(unittest.TestCase):
         self.assertEqual(row["interest_predates_handoff"], "true")
         self.assertEqual(row["validation"], "success")
         self.assertEqual(row["content_name"], metrics.canonical_name(CONTENT))
+        self.assertNotEqual(row["validated_producer_service_recovery_ms"], "")
         self.assertEqual(row["network_recovery_flood_bytes"], 100 + 40)
         self.assertNotEqual(row["consumer_observed_recovery_ms"], row["interest_to_data_ms"])
 
@@ -138,7 +198,8 @@ class Exp2MetricTest(unittest.TestCase):
             {"consumer1": exp2.parse_validation_log(log)},
         )
         self.assertEqual(rows[0]["validation"], "failure")
-        self.assertEqual(rows[0]["origin"], "producer_post_handoff_interest")
+        self.assertEqual(rows[0]["origin"], "validation_failure")
+        self.assertEqual(rows[0]["validated_producer_service_recovery_ms"], "")
 
     def test_missing_data_is_right_censored_and_consumers_stay_separate(self) -> None:
         packets = [
@@ -150,10 +211,11 @@ class Exp2MetricTest(unittest.TestCase):
             packets, [self._handoff()], ("consumer1", "consumer2"), {},
         )
         by_consumer = {row["consumer"]: row for row in rows}
-        self.assertEqual(by_consumer["consumer1"]["origin"], "producer_transmission_interest_unseen")
+        self.assertEqual(by_consumer["consumer1"]["origin"], "validation_absent")
+        self.assertEqual(by_consumer["consumer1"]["validated_producer_service_recovery_ms"], "")
         self.assertEqual(by_consumer["consumer2"]["origin"], "absent")
         self.assertEqual(by_consumer["consumer2"]["consumer_observed_recovery_ms"], "")
-        self.assertEqual(by_consumer["consumer2"]["confirmed_producer_recovery_ms"], "")
+        self.assertEqual(by_consumer["consumer2"]["validated_producer_service_recovery_ms"], "")
         self.assertEqual(
             by_consumer["consumer1"]["network_recovery_flood_bytes"],
             by_consumer["consumer2"]["network_recovery_flood_bytes"],
@@ -175,7 +237,7 @@ class Exp2MetricTest(unittest.TestCase):
         rows, _audits = exp2.observe_run(packets, [self._handoff()], ("consumer1",), {})
         self.assertEqual(rows[0]["origin"], "origin_uncertain")
         self.assertNotEqual(rows[0]["consumer_observed_recovery_ms"], "")
-        self.assertEqual(rows[0]["confirmed_producer_recovery_ms"], "")
+        self.assertEqual(rows[0]["validated_producer_service_recovery_ms"], "")
         self.assertEqual(rows[0]["validation"], "absent")
 
     def test_inactive_consumer_application_traffic_is_reported(self) -> None:
