@@ -7,7 +7,7 @@ from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import mobility_event_metrics as metrics
 
-from exp2_shared_config import FRAME_PERIOD_MS, GUARD_NAME, STREAM_PREFIX
+from exp2_shared_config import FRAME_PERIOD_MS, GUARD_NAME, STREAM_PREFIX, topology_position
 
 _TYPED_ALIAS = {"v": metrics.COMPONENT_VERSION, "seg": metrics.COMPONENT_SEGMENT}
 _PRODUCER_DATA = re.compile(r"^\[(\d+)\].*\bDATA: Sending response\b.*\bName: (\S+)")
@@ -18,6 +18,7 @@ OBSERVATION_FIELDS = (
     "handoff_index",
     "from_node",
     "to_node",
+    "topology_position",
     "handoff_time",
     "event_end_time",
     "observed_data_time",
@@ -420,6 +421,7 @@ def observe_run(
                 "handoff_index": handoff.index,
                 "from_node": handoff.from_node,
                 "to_node": handoff.to_node,
+                "topology_position": topology_position(consumer, handoff.from_node, handoff.to_node),
                 "handoff_time": f"{handoff.abs_time:.6f}",
                 "event_end_time": f"{event_end:.6f}",
                 "observed_data_time": "" if observed_time is None else f"{observed_time:.6f}",

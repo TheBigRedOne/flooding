@@ -61,7 +61,7 @@ def analyze_directory(run_dir: Path) -> tuple[List[Dict[str, object]], str]:
             f"arrival_ms={row['consumer_observed_recovery_ms']} arrival_name={row['first_arrival_name']} "
             f"recovery_ms={row['validated_producer_service_recovery_ms']} "
             f"recovery_name={row['recovery_name']} origin={row['origin']} "
-            f"validation={row['validation']}"
+            f"validation={row['validation']} position={row['topology_position']}"
         )
         if row["origin"] == "absent" or row["validation"] == "failure":
             lines.append(f"retained failure: {row['consumer']} h{row['handoff_index']} {row['audit']}")

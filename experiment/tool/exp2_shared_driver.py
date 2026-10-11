@@ -43,12 +43,26 @@ def _positive_float_env(name: str, default: float) -> float:
     return value
 
 
-def _append_exp2_params(results_dir: str, active: tuple, mode: str) -> None:
+def _append_exp2_params(
+    results_dir: str,
+    active: tuple,
+    mode: str,
+    run_id: str,
+    interval_source: str,
+    realized_intervals: list,
+) -> None:
     path = os.path.join(results_dir, "params.txt")
     with open(path, "a", encoding="utf-8") as handle:
         handle.write("exp2_experiment=shared\n")
         handle.write(f"exp2_active_consumers={','.join(active)}\n")
         handle.write(f"exp2_schedule={mode}\n")
+        handle.write(f"exp2_run_id={run_id}\n")
+        handle.write(f"exp2_interval_source={interval_source}\n")
+        handle.write(
+            "exp2_realized_intervals_s="
+            + ",".join(f"{float(value):.6f}" for value in realized_intervals)
+            + "\n"
+        )
         handle.write(f"exp2_stream_prefix={cfg.STREAM_PREFIX}\n")
         handle.write(f"exp2_advertised_prefix={cfg.ADVERTISED_PREFIX}\n")
         handle.write(f"exp2_guard_name={cfg.GUARD_NAME}\n")
@@ -71,6 +85,7 @@ def main() -> int:
         warmup_s = _positive_float_env("EXP2_WARMUP_S", 20.0)
         tail_s = _positive_float_env("EXP2_TAIL_S", 30.0)
         plan = cfg.schedule_for(mode, warmup_s, tail_s)
+        run_id = cfg.recorded_run_id(str(plan["mode"]), os.getenv("EXP2_RUN_ID") or "")
         interval_changes, nlsr_applied = exp._load_nlsr_interval_overrides()
         feature_changes, feature_params = exp._load_nlsr_feature_overrides()
         scalar_changes, scalar_params = exp._load_nlsr_scalar_overrides()
@@ -84,6 +99,7 @@ def main() -> int:
 
     sequence = list(plan["sequence"])
     handoff_count = int(plan["handoff_count"])
+    interval_source = "configured"
     if plan["intervals_s"] is None:
         try:
             explicit_intervals = handoff_schedule.intervals_from_env(
@@ -92,8 +108,15 @@ def main() -> int:
         except ValueError as error:
             print(f"Error: {error}")
             return 1
-        handoff_base = float(os.getenv("NLSR_HANDOFF_INTERVAL_BASE") or 90)
-        handoff_jitter = float(os.getenv("NLSR_HANDOFF_INTERVAL_JITTER") or 60)
+        handoff_base = float(os.getenv("NLSR_HANDOFF_INTERVAL_BASE") or cfg.FULL_INTERVAL_BASE_S)
+        handoff_jitter = float(os.getenv("NLSR_HANDOFF_INTERVAL_JITTER") or cfg.FULL_INTERVAL_JITTER_S)
+        if explicit_intervals is None:
+            interval_source = "sampled"
+            interval_rng = random.SystemRandom()
+            explicit_intervals = [
+                exp._sample_interval(handoff_base, handoff_jitter, interval_rng)
+                for _ in range(handoff_count + 1)
+            ]
     else:
         explicit_intervals = list(plan["intervals_s"])
         handoff_base = explicit_intervals[0]
@@ -107,7 +130,9 @@ def main() -> int:
         sequence, request_interval_ms, window_frames, segments_per_frame,
         guard_interval_ms, explicit_intervals,
     )
-    _append_exp2_params(results_dir, active, str(plan["mode"]))
+    _append_exp2_params(
+        results_dir, active, str(plan["mode"]), run_id, interval_source, explicit_intervals,
+    )
     with open(os.path.join(results_dir, "topology.txt"), "w", encoding="utf-8") as handle:
         handle.write(cfg.topology_text(active))
     exp._init_handoffs_file(handoffs_path)
@@ -178,14 +203,10 @@ def main() -> int:
                 f"{os.path.join(results_dir, f'optoflood_{consumer_name}.log')} &"
             )
 
-    interval_rng = None if explicit_intervals is not None else random.SystemRandom()
     sequence_start = wall_time()
     current_node = sequence[0]
     for index in range(1, handoff_count + 1):
-        if explicit_intervals is None:
-            interval_s = exp._sample_interval(handoff_base, handoff_jitter, interval_rng)
-        else:
-            interval_s = explicit_intervals[index - 1]
+        interval_s = explicit_intervals[index - 1]
         sleep(interval_s)
         next_node = sequence[index]
         info(f"Handoff #{index}: producer detaches from {current_node}, attaches to {next_node}\n")
@@ -197,10 +218,7 @@ def main() -> int:
             current_node, next_node, interval_s,
         )
         current_node = next_node
-    if explicit_intervals is None:
-        sleep(exp._sample_interval(handoff_base, handoff_jitter, interval_rng))
-    else:
-        sleep(explicit_intervals[handoff_count])
+    sleep(explicit_intervals[handoff_count])
 
     for node_name in cfg.CAPTURE_NODES:
         pcap_path = os.path.join(pcap_nodes_dir, f"{node_name}.pcap")

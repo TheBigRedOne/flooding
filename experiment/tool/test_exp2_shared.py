@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -94,6 +95,97 @@ class Exp2ConfigTest(unittest.TestCase):
         self.assertEqual(config.STREAM_PREFIX, "/LiveStream/v0")
         self.assertEqual(config.ADVERTISED_PREFIX, "/LiveStream")
         self.assertEqual(config.GUARD_NAME, "/LiveStream/_guard")
+
+    def test_full_sequence_and_run_directories_stay_separate_from_smoke(self) -> None:
+        full = config.full_schedule()
+        self.assertEqual(
+            full["sequence"],
+            ("acc2", "acc3", "acc4", "acc5", "acc6", "acc5", "acc4", "acc3", "acc2"),
+        )
+        self.assertEqual(full["handoff_count"], 8)
+        self.assertIsNone(full["intervals_s"])
+        self.assertEqual(config.FULL_INTERVAL_BASE_S, 90.0)
+        self.assertEqual(config.FULL_INTERVAL_JITTER_S, 60.0)
+        root = "results/extended/exp2/shared"
+        smoke_dirs = {config.smoke_directory(root, population) for population in ("n1", "n2")}
+        full_dirs = {
+            config.full_run_directory(root, population, run_id)
+            for population in ("n1", "n2")
+            for run_id in config.FULL_RUN_IDS
+        }
+        self.assertEqual(len(full_dirs), 10)
+        self.assertTrue(smoke_dirs.isdisjoint(full_dirs))
+        self.assertEqual(config.full_run_directory(root, "n1", "r1"), f"{root}/n1/r1")
+        self.assertEqual(config.full_run_directory(root, "n2", "r5"), f"{root}/n2/r5")
+        self.assertEqual(config.recorded_run_id("smoke", ""), "")
+        self.assertEqual(config.recorded_run_id("full", "r3"), "r3")
+        for text in ("", "r6", "smoke"):
+            with self.assertRaises(config.Exp2ConfigError):
+                config.recorded_run_id("full", text)
+        n1 = config.parse_active_consumers("n1")
+        n2 = config.parse_active_consumers("consumer1,consumer2")
+        self.assertEqual(n1, ("consumer1",))
+        self.assertEqual(n2, ("consumer1", "consumer2"))
+        self.assertEqual(config.application_hosts(n1), ("producer", "consumer1"))
+        self.assertEqual(config.application_hosts(n2), ("producer", "consumer1", "consumer2"))
+
+    def test_populated_run_directory_is_not_treated_as_empty(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            smoke = root / "n1"
+            smoke.mkdir()
+            (smoke / "params.txt").write_text("smoke\n", encoding="utf-8")
+            populated = root / "n1" / "r1"
+            populated.mkdir()
+            (populated / "handoffs.txt").write_text("index\n", encoding="utf-8")
+            empty = root / "n1" / "r2"
+            empty.mkdir()
+            self.assertTrue(config.directory_has_entries(smoke))
+            self.assertTrue(config.directory_has_entries(populated))
+            self.assertFalse(config.directory_has_entries(empty))
+            self.assertFalse(config.directory_has_entries(root / "n1" / "r3"))
+        repo = Path(__file__).resolve().parents[2]
+        script = (repo / "scripts" / "run-in-vm.sh").read_text(encoding="utf-8")
+        self.assertIn('if [ "$experiment" = "exp2" ]; then', script)
+        self.assertIn("refusing to replace existing Exp2 results", script)
+        self.assertIn("remote_subdir=experiment/extended/exp2", script)
+        self.assertIn("--exclude box --exclude '*.box'", script)
+        makefile = (repo / "Makefile.exp2").read_text(encoding="utf-8")
+        self.assertIn("experiment-exp2-shared-$(3)-$(2):", makefile)
+        self.assertIn("analyze-exp2-shared-$(3)-$(2):", makefile)
+        self.assertIn("experiment-exp2-shared-n1-full:", makefile)
+        self.assertIn("experiment-exp2-shared-n2-full:", makefile)
+        self.assertIn("NLSR_HANDOFF_COUNT='8'", makefile)
+        self.assertIn("NLSR_HANDOFF_INTERVALS=''", makefile)
+        self.assertIn("EXP2_SCHEDULE='full'", makefile)
+        self.assertIn("acc2,acc3,acc4,acc5,acc6,acc5,acc4,acc3,acc2", makefile)
+        self.assertNotIn("experiment-exp2-shared-n1-full", (repo / "Makefile").read_text(encoding="utf-8"))
+        self.assertNotIn("experiment-exp2-shared-n1-r1", (repo / "Makefile").read_text(encoding="utf-8"))
+
+    def test_topology_position_keeps_consumer2_access_events(self) -> None:
+        expected = [
+            "other_attachment",
+            "moves_onto_consumer_access",
+            "moves_away_from_consumer_access",
+            "other_attachment",
+            "other_attachment",
+            "moves_onto_consumer_access",
+            "moves_away_from_consumer_access",
+            "other_attachment",
+        ]
+        sequence = config.FULL_HANDOFF_SEQUENCE
+        for index, position in enumerate(expected):
+            self.assertEqual(
+                config.topology_position("consumer2", sequence[index], sequence[index + 1]),
+                position,
+            )
+            self.assertEqual(
+                config.topology_position("consumer1", sequence[index], sequence[index + 1]),
+                "other_attachment",
+            )
+        self.assertEqual(config.topology_position("consumer2", "acc4", "acc4"), "resides_at_consumer_access")
+        with self.assertRaises(config.Exp2ConfigError):
+            config.topology_position("consumer3", "acc2", "acc3")
 
 
 class Exp2NameTest(unittest.TestCase):
@@ -239,6 +331,73 @@ class Exp2MetricTest(unittest.TestCase):
         self.assertNotEqual(rows[0]["consumer_observed_recovery_ms"], "")
         self.assertEqual(rows[0]["validated_producer_service_recovery_ms"], "")
         self.assertEqual(rows[0]["validation"], "absent")
+
+    def test_eight_handoff_windows_censoring_and_shared_overhead(self) -> None:
+        sequence = config.FULL_HANDOFF_SEQUENCE
+        handoffs = [
+            metrics.Handoff(index + 1, HANDOFF + index * 10.0, sequence[index], sequence[index + 1])
+            for index in range(8)
+        ]
+        onto = HANDOFF + 10.0
+        arrival = onto + 1.0
+        boundary = HANDOFF + 20.0
+        last = HANDOFF + 70.0
+        capture_end = last + 5.0
+        early = "/LiveStream/v0/54=%02/50=%00"
+        late = "/LiveStream/v0/54=%08/50=%00"
+        packets = [
+            _packet(arrival, "producer", True, "data", early),
+            _packet(arrival + 0.01, "consumer1", False, "data", early),
+            _packet(boundary, "consumer1", False, "data", early),
+            _packet(onto + 0.5, "core", True, "data", early, length=80, data_mobility_flag=True),
+            _packet(capture_end, "producer", True, "data", late),
+            _packet(capture_end, "consumer1", False, "data", late),
+            _packet(capture_end, "core", True, "interest", "/ndn/nlsr/update", length=15),
+        ]
+        log = f"[{int(capture_end * 1e9)}] VALIDATE: Data signature verified name={late} id=consumer1\n"
+        producer_log = f"[{int(capture_end * 1e9)}] DATA: Sending response Size: 100 bytes Name: {late}\n"
+        rows, _audits = exp2.observe_run(
+            packets, handoffs, ("consumer1", "consumer2"),
+            {"consumer1": exp2.parse_validation_log(log)},
+            exp2.parse_producer_log(producer_log),
+        )
+        self.assertEqual(len(rows), 16)
+        by_key = {(row["consumer"], int(str(row["handoff_index"]))): row for row in rows}
+        first_c1 = by_key[("consumer1", 1)]
+        first_c2 = by_key[("consumer2", 1)]
+        self.assertEqual(first_c1["origin"], "absent")
+        self.assertEqual(first_c1["validated_producer_service_recovery_ms"], "")
+        self.assertEqual(first_c1["consumer_observed_recovery_ms"], "")
+        self.assertEqual(first_c1["event_end_time"], f"{handoffs[1].abs_time:.6f}")
+        self.assertEqual(first_c2["origin"], "absent")
+        self.assertEqual(first_c1["topology_position"], "other_attachment")
+        second_c1 = by_key[("consumer1", 2)]
+        second_c2 = by_key[("consumer2", 2)]
+        self.assertEqual(second_c1["first_arrival_origin"], "validation_absent")
+        self.assertNotEqual(second_c1["consumer_observed_recovery_ms"], "")
+        self.assertEqual(second_c1["validated_producer_service_recovery_ms"], "")
+        self.assertEqual(second_c1["observed_data_time"], f"{arrival + 0.01:.6f}")
+        self.assertEqual(second_c2["origin"], "absent")
+        self.assertEqual(second_c2["topology_position"], "moves_onto_consumer_access")
+        self.assertEqual(second_c1["topology_position"], "other_attachment")
+        self.assertEqual(second_c1["network_recovery_flood_bytes"], 80)
+        self.assertEqual(second_c2["network_recovery_flood_bytes"], 80)
+        self.assertNotEqual(second_c1["content_loss_fraction"], second_c2["content_loss_fraction"])
+        self.assertEqual(by_key[("consumer1", 1)]["network_recovery_flood_bytes"], 0)
+        self.assertEqual(by_key[("consumer2", 3)]["topology_position"], "moves_away_from_consumer_access")
+        self.assertEqual(by_key[("consumer2", 6)]["topology_position"], "moves_onto_consumer_access")
+        self.assertEqual(by_key[("consumer2", 7)]["topology_position"], "moves_away_from_consumer_access")
+        last_c1 = by_key[("consumer1", 8)]
+        last_c2 = by_key[("consumer2", 8)]
+        self.assertEqual(last_c1["event_end_time"], f"{capture_end:.6f}")
+        self.assertNotEqual(last_c1["validated_producer_service_recovery_ms"], "")
+        self.assertEqual(last_c1["validation"], "success")
+        self.assertEqual(last_c2["origin"], "absent")
+        self.assertEqual(last_c2["validated_producer_service_recovery_ms"], "")
+        self.assertEqual(last_c1["nlsr_control_bytes"], 15)
+        self.assertEqual(last_c2["nlsr_control_bytes"], 15)
+        self.assertEqual(second_c1["nlsr_control_bytes"], 0)
+        self.assertEqual(last_c1["topology_position"], "other_attachment")
 
     def test_inactive_consumer_application_traffic_is_reported(self) -> None:
         packets = [_packet(HANDOFF + 1.0, "consumer2", True, "interest", CONTENT)]

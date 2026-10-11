@@ -84,7 +84,11 @@ echo "*** Running experiment VM workflow: $remote_subdir ($provider, dir=$vagran
 env "$box_env_name=$box_path" VAGRANT_DEFAULT_PROVIDER="$provider" VAGRANT_CWD="$vagrant_dir" vagrant up --provision
 VAGRANT_DEFAULT_PROVIDER="$provider" VAGRANT_CWD="$vagrant_dir" vagrant ssh-config --host "$host_alias" > "$ssh_config"
 
-rsync -avH -e "ssh -F $ssh_config -o TCPKeepAlive=no -o ServerAliveInterval=10" --exclude .git --exclude .vagrant --exclude results --exclude paper/bin ./ "$host_alias:$remote_dir/"
+if [ "$experiment" = "exp2" ]; then
+  rsync -avH -e "ssh -F $ssh_config -o TCPKeepAlive=no -o ServerAliveInterval=10" --exclude .git --exclude .vagrant --exclude results --exclude paper/bin --exclude box --exclude '*.box' --exclude '*.tar' --exclude '*.tar.gz' --exclude '*.tgz' ./ "$host_alias:$remote_dir/"
+else
+  rsync -avH -e "ssh -F $ssh_config -o TCPKeepAlive=no -o ServerAliveInterval=10" --exclude .git --exclude .vagrant --exclude results --exclude paper/bin ./ "$host_alias:$remote_dir/"
+fi
 
 mkdir -p "$result_dir"
 if [ "$experiment" != "exp2" ] && [ "${RUN_IN_VM_CLEAR_LOCAL:-}" = "1" ]; then

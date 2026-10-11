@@ -34,6 +34,9 @@ ADVERTISED_PREFIX = "/LiveStream"
 STREAM_PREFIX = "/LiveStream/v0"
 GUARD_NAME = "/LiveStream/_guard"
 FRAME_PERIOD_MS = 20
+FULL_RUN_IDS: Tuple[str, ...] = ("r1", "r2", "r3", "r4", "r5")
+FULL_INTERVAL_BASE_S = 90.0
+FULL_INTERVAL_JITTER_S = 60.0
 
 # (left, right, bandwidth Mbps, delay)
 LINKS: Tuple[Tuple[str, str, int, str], ...] = (
@@ -165,6 +168,58 @@ def missing_evidence(run_dir: Path, active_consumers: Sequence[str]) -> List[str
         if not (run_dir / name).is_file():
             missing.append(name)
     return missing
+
+
+def recorded_run_id(mode: str, text: str) -> str:
+    """Full runs require r1..r5. Smoke may omit the id."""
+    token = (text or "").strip().lower()
+    if mode == "full":
+        return parse_run_id(token)
+    if token and token not in FULL_RUN_IDS:
+        raise Exp2ConfigError(f"EXP2_RUN_ID must be empty or one of {', '.join(FULL_RUN_IDS)}; got {text!r}")
+    return token
+
+
+def parse_run_id(text: str) -> str:
+    token = (text or "").strip().lower()
+    if token not in FULL_RUN_IDS:
+        raise Exp2ConfigError(f"EXP2_RUN_ID must be one of {', '.join(FULL_RUN_IDS)}; got {text!r}")
+    return token
+
+
+def full_run_directory(root: str, population: str, run_id: str) -> str:
+    """Full-schedule directory. It is not the smoke directory for that population."""
+    if population not in {"n1", "n2"}:
+        raise Exp2ConfigError(f"population must be n1 or n2; got {population!r}")
+    run_id = parse_run_id(run_id)
+    return f"{root.rstrip('/')}/{population}/{run_id}"
+
+
+def smoke_directory(root: str, population: str) -> str:
+    if population not in {"n1", "n2"}:
+        raise Exp2ConfigError(f"population must be n1 or n2; got {population!r}")
+    return f"{root.rstrip('/')}/{population}"
+
+
+def directory_has_entries(run_dir: Path) -> bool:
+    """True when a directory already holds files and must not be replaced."""
+    if not run_dir.is_dir():
+        return False
+    return any(run_dir.iterdir())
+
+
+def topology_position(consumer: str, from_node: str, to_node: str) -> str:
+    """Classify one handoff relative to that consumer's access router."""
+    access = CONSUMER_ATTACHMENT.get(consumer)
+    if access is None:
+        raise Exp2ConfigError(f"unknown consumer: {consumer}")
+    if from_node == access and to_node == access:
+        return "resides_at_consumer_access"
+    if to_node == access:
+        return "moves_onto_consumer_access"
+    if from_node == access:
+        return "moves_away_from_consumer_access"
+    return "other_attachment"
 
 
 def read_active_consumers(params_path: Path) -> Tuple[str, ...]:

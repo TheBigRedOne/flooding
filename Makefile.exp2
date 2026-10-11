@@ -61,3 +61,42 @@ analyze-exp2-shared-n1:
 
 analyze-exp2-shared-n2:
 	python3 experiment/tool/run_exp2_shared_analysis.py $(EXP2_SHARED_ROOT)/n2
+
+# Full schedule: eight handoffs, independently sampled 90+U(0,60) intervals.
+# r1..r5 are separate directories. The five-run targets are explicit and are
+# not prerequisites of the smoke, analysis, all, or paper targets.
+EXP2_FULL_SEQUENCE := acc2,acc3,acc4,acc5,acc6,acc5,acc4,acc3,acc2
+EXP2_FULL_RUNS := r1 r2 r3 r4 r5
+
+define exp2_full_rule
+EXP2_$(1)_$(2)_OUTPUTS := $$(call exp2_shared_outputs,$(EXP2_SHARED_ROOT)/$(3)/$(2),$(4))
+
+$$(EXP2_$(1)_$(2)_OUTPUTS) &: $$(EXP2_VM_PREREQS)
+	RUN_IN_VM_PROFILE=exp2 MOBILITY_LOG_NODES="$(EXP2_SHARED_CAPTURE_NODES)" RUN_IN_VM_REMOTE_MAKE="$(SOLUTION_NLSR_ENV) NLSR_HANDOFF_COUNT='8' NLSR_HANDOFF_SEQUENCE='$(EXP2_FULL_SEQUENCE)' NLSR_HANDOFF_INTERVALS='' NLSR_HANDOFF_INTERVAL_BASE='90' NLSR_HANDOFF_INTERVAL_JITTER='60' EXP2_ACTIVE_CONSUMERS='$(subst +,$(comma),$(5))' EXP2_SCHEDULE='full' EXP2_RUN_ID='$(2)' EXP_REQUEST_INTERVAL_MS='20' make exp2-shared" sh $$(EXP2_VM_PREREQS) $$@
+
+.PHONY: experiment-exp2-shared-$(3)-$(2) analyze-exp2-shared-$(3)-$(2)
+
+experiment-exp2-shared-$(3)-$(2): $$(EXP2_$(1)_$(2)_OUTPUTS)
+
+analyze-exp2-shared-$(3)-$(2):
+	python3 experiment/tool/run_exp2_shared_analysis.py $(EXP2_SHARED_ROOT)/$(3)/$(2)
+endef
+
+$(foreach run,$(EXP2_FULL_RUNS),$(eval $(call exp2_full_rule,N1,$(run),n1,consumer1,consumer1)))
+$(foreach run,$(EXP2_FULL_RUNS),$(eval $(call exp2_full_rule,N2,$(run),n2,consumer1 consumer2,consumer1+consumer2)))
+
+.PHONY: experiment-exp2-shared-n1-full experiment-exp2-shared-n2-full
+
+experiment-exp2-shared-n1-full:
+	$(MAKE) experiment-exp2-shared-n1-r1
+	$(MAKE) experiment-exp2-shared-n1-r2
+	$(MAKE) experiment-exp2-shared-n1-r3
+	$(MAKE) experiment-exp2-shared-n1-r4
+	$(MAKE) experiment-exp2-shared-n1-r5
+
+experiment-exp2-shared-n2-full:
+	$(MAKE) experiment-exp2-shared-n2-r1
+	$(MAKE) experiment-exp2-shared-n2-r2
+	$(MAKE) experiment-exp2-shared-n2-r3
+	$(MAKE) experiment-exp2-shared-n2-r4
+	$(MAKE) experiment-exp2-shared-n2-r5
