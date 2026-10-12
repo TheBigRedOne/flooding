@@ -81,6 +81,7 @@ PLOT_TOOL_SRCS := experiment/tool/plot_latency.py \
                   experiment/tool/exp2_shared_metrics.py \
                   experiment/tool/run_exp2_shared_analysis.py \
                   experiment/tool/test_exp2_shared.py \
+                  experiment/tool/check_exp2_shared_evidence.py \
                   experiment/tool/run_sensitivity_analysis.py \
                   experiment/tool/test_handoff_schedule.py \
                   experiment/tool/routing_convergence_metrics.py \

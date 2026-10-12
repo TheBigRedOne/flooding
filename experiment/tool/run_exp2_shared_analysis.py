@@ -41,7 +41,10 @@ def analyze_directory(run_dir: Path) -> tuple[List[Dict[str, object]], str]:
     rows, audits = exp2.observe_run(
         packets, handoffs, active, validation, producer_log, frame_period_ms=interval,
     )
-    inactive = [host for host in config.CONSUMER_HOSTS if host not in active]
+    inactive = [
+        host for host in config.physical_hosts(active)
+        if host.startswith("consumer") and host not in active
+    ]
     silent = exp2.inactive_consumer_application_traffic(packets, inactive)
     lines = [
         f"active_consumers={','.join(active)}",

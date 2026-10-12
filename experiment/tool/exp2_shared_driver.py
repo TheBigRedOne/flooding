@@ -1,4 +1,4 @@
-"""Exp2-A Mini-NDN driver. Both consumer hosts exist; only the active set runs applications.
+"""Exp2-A Mini-NDN driver. The selected N=2 or N=4 population is the whole topology.
 
 Importing this module loads Mini-NDN. Host-side tests use exp2_shared_config instead.
 """
@@ -21,12 +21,14 @@ from minindn.minindn import Minindn
 
 
 class Exp2SharedTopo(Topo):
-    """Main routing graph plus consumer1 on acc1 and consumer2 on acc4."""
+    """Solution routing graph plus the consumers selected for this population."""
+
+    consumers = cfg.POPULATIONS["n2"]
 
     def build(self):
-        for name in cfg.NLSR_HOSTS:
+        for name in cfg.physical_hosts(self.consumers):
             self.addHost(name)
-        for left, right, bandwidth, delay in cfg.LINKS:
+        for left, right, bandwidth, delay in cfg.links(self.consumers):
             self.addLink(left, right, bw=bandwidth, delay=delay)
 
 
@@ -66,6 +68,15 @@ def _append_exp2_params(
         handle.write(f"exp2_stream_prefix={cfg.STREAM_PREFIX}\n")
         handle.write(f"exp2_advertised_prefix={cfg.ADVERTISED_PREFIX}\n")
         handle.write(f"exp2_guard_name={cfg.GUARD_NAME}\n")
+        handle.write(f"exp2_campaign={cfg.CAMPAIGN_ID}\n")
+        handle.write(f"exp2_population={cfg.population_of(active)}\n")
+        hosts = cfg.physical_hosts(active)
+        handle.write(f"exp2_physical_node_count={len(hosts)}\n")
+        handle.write("exp2_physical_nodes=" + ",".join(hosts) + "\n")
+        handle.write("exp2_nlsr_hosts=" + ",".join(cfg.nlsr_hosts(active)) + "\n")
+        handle.write("exp2_capture_nodes=" + ",".join(cfg.capture_nodes(active)) + "\n")
+        handle.write("exp2_application_hosts=" + ",".join(cfg.application_hosts(active)) + "\n")
+        handle.write("exp2_guard_daemon_hosts=" + ",".join(cfg.guard_daemon_hosts(active)) + "\n")
 
 
 def main() -> int:
@@ -80,7 +91,7 @@ def main() -> int:
     os.makedirs(pcap_nodes_dir, exist_ok=True)
 
     try:
-        active = cfg.parse_active_consumers(os.getenv("EXP2_ACTIVE_CONSUMERS") or "consumer1")
+        active = cfg.parse_active_consumers(os.getenv("EXP2_ACTIVE_CONSUMERS") or "")
         mode = (os.getenv("EXP2_SCHEDULE") or "smoke").strip()
         warmup_s = _positive_float_env("EXP2_WARMUP_S", 20.0)
         tail_s = _positive_float_env("EXP2_TAIL_S", 30.0)
@@ -133,12 +144,15 @@ def main() -> int:
     _append_exp2_params(
         results_dir, active, str(plan["mode"]), run_id, interval_source, explicit_intervals,
     )
+    with open(os.path.join(results_dir, "campaign.txt"), "w", encoding="utf-8") as handle:
+        handle.write(cfg.campaign_text(active, str(plan["mode"]), run_id))
     with open(os.path.join(results_dir, "topology.txt"), "w", encoding="utf-8") as handle:
-        handle.write(cfg.topology_text(active))
+        handle.write(cfg.topology_text(active, sequence))
     exp._init_handoffs_file(handoffs_path)
 
     Minindn.cleanUp()
     Minindn.verifyDependencies()
+    Exp2SharedTopo.consumers = active
     ndn = Minindn(topo=Exp2SharedTopo())
     ndn.start()
 
@@ -164,7 +178,7 @@ def main() -> int:
     if os.path.exists(daemon_exec):
         producer.cmd("ndnsec key-gen -n {} >/dev/null 2>&1".format(exp.OPTOFLOOD_MGMT_IDENTITY))
 
-    for node_name in cfg.CAPTURE_NODES:
+    for node_name in cfg.capture_nodes(active):
         node = ndn.net[node_name]
         pcap_path = os.path.join(pcap_nodes_dir, f"{node_name}.pcap")
         log_path = os.path.join(results_dir, f"tcpdump_{node_name}.log")
@@ -220,7 +234,7 @@ def main() -> int:
         current_node = next_node
     sleep(explicit_intervals[handoff_count])
 
-    for node_name in cfg.CAPTURE_NODES:
+    for node_name in cfg.capture_nodes(active):
         pcap_path = os.path.join(pcap_nodes_dir, f"{node_name}.pcap")
         ndn.net[node_name].cmd(f"pkill -f '{pcap_path}' || true")
     sleep(1)

@@ -32,47 +32,72 @@ def _packet(time_s: float, node: str, outbound: bool, ptype: str, name: str, len
 
 
 class Exp2ConfigTest(unittest.TestCase):
-    def test_n1_and_n2_share_topology_and_nlsr_membership(self) -> None:
-        n1 = config.parse_active_consumers("consumer1")
-        n2 = config.parse_active_consumers("2")
-        self.assertEqual(n1, ("consumer1",))
+    def test_n2_and_n4_share_infrastructure_and_differ_in_consumers(self) -> None:
+        n2 = config.parse_active_consumers("n2")
+        n4 = config.parse_active_consumers("4")
         self.assertEqual(n2, ("consumer1", "consumer2"))
-        self.assertEqual(config.NLSR_HOSTS, config.NLSR_HOSTS)
-        self.assertIn("consumer1", config.NLSR_HOSTS)
-        self.assertIn("consumer2", config.NLSR_HOSTS)
-        self.assertEqual(config.LINKS, config.LINKS)
+        self.assertEqual(n4, ("consumer1", "consumer2", "consumer3", "consumer4"))
+        self.assertEqual(len(config.physical_hosts(n2)), 12)
+        self.assertEqual(len(config.physical_hosts(n4)), 14)
+        self.assertEqual(config.nlsr_hosts(n2), config.physical_hosts(n2))
+        self.assertEqual(config.capture_nodes(n4), config.physical_hosts(n4))
+        self.assertNotIn("consumer3", config.physical_hosts(n2))
+        self.assertNotIn("consumer4", config.physical_hosts(n2))
+        self.assertEqual(config.common_links(), config.BACKBONE_LINKS + config.PRODUCER_LINKS)
+        self.assertEqual(
+            tuple(link for link in config.links(n2) if link in config.common_links()),
+            config.common_links(),
+        )
+        self.assertEqual(
+            tuple(link for link in config.links(n4) if link in config.common_links()),
+            config.common_links(),
+        )
         self.assertEqual(config.CONSUMER_ATTACHMENT["consumer1"], "acc1")
         self.assertEqual(config.CONSUMER_ATTACHMENT["consumer2"], "acc4")
-        text_n1 = config.topology_text(n1)
+        self.assertEqual(config.CONSUMER_ATTACHMENT["consumer3"], "acc3")
+        self.assertEqual(config.CONSUMER_ATTACHMENT["consumer4"], "acc6")
         text_n2 = config.topology_text(n2)
-        self.assertIn("nlsr_hosts=" + ",".join(config.NLSR_HOSTS), text_n1)
-        self.assertIn("nlsr_hosts=" + ",".join(config.NLSR_HOSTS), text_n2)
-        self.assertIn("inactive_consumers=consumer2", text_n1)
-        self.assertIn("inactive_consumers=", text_n2)
-        self.assertNotIn("inactive_consumers=consumer", text_n2.split("inactive_consumers=")[1].split("\n")[0] or "x")
+        text_n4 = config.topology_text(n4)
+        self.assertIn("physical_node_count=12", text_n2)
+        self.assertIn("physical_node_count=14", text_n4)
+        self.assertNotIn("consumer3", text_n2)
+        self.assertIn("attachment consumer3 acc3", text_n4)
+        self.assertIn("attachment consumer4 acc6", text_n4)
+        self.assertIn("nlsr_hosts=" + ",".join(config.nlsr_hosts(n2)), text_n2)
+        self.assertIn("capture_nodes=" + ",".join(config.capture_nodes(n4)), text_n4)
 
     def test_active_applications_and_guard_daemons(self) -> None:
-        n1 = config.parse_active_consumers("n1")
         n2 = config.parse_active_consumers("consumer1,consumer2")
-        self.assertEqual(config.application_hosts(n1), ("producer", "consumer1"))
-        self.assertEqual(config.guard_daemon_hosts(n1), ("producer", "consumer1"))
+        n4 = config.parse_active_consumers("n4")
         self.assertEqual(config.application_hosts(n2), ("producer", "consumer1", "consumer2"))
-        self.assertNotIn("consumer2", config.application_hosts(n1))
+        self.assertEqual(config.guard_daemon_hosts(n2), config.application_hosts(n2))
+        self.assertEqual(
+            config.application_hosts(n4),
+            ("producer", "consumer1", "consumer2", "consumer3", "consumer4"),
+        )
+        self.assertEqual(config.guard_daemon_hosts(n4), config.application_hosts(n4))
+        self.assertNotIn("consumer3", config.application_hosts(n2))
 
     def test_capture_and_log_paths_are_unique(self) -> None:
         n2 = config.parse_active_consumers("2")
+        n4 = config.parse_active_consumers("n4")
         names = config.result_names(n2)
         self.assertEqual(len(names), len(set(names)))
+        self.assertIn("campaign.txt", names)
         self.assertIn("consumer1.log", names)
         self.assertIn("consumer2.log", names)
-        self.assertIn("optoflood_consumer1.log", names)
-        self.assertIn("optoflood_consumer2.log", names)
-        self.assertIn("pcap_nodes/consumer1.pcap", names)
+        self.assertNotIn("consumer3.log", names)
+        self.assertNotIn("pcap_nodes/consumer3.pcap", names)
         self.assertIn("pcap_nodes/consumer2.pcap", names)
-        self.assertIn("pcap_nodes/producer.pcap", names)
-        n1_names = config.result_names(("consumer1",))
-        self.assertNotIn("consumer2.log", n1_names)
-        self.assertIn("pcap_nodes/consumer2.pcap", n1_names)
+        self.assertIn("tcpdump_producer.log", names)
+        n4_names = config.result_names(n4)
+        self.assertEqual(len(n4_names), len(set(n4_names)))
+        for consumer in n4:
+            self.assertIn(f"{consumer}.log", n4_names)
+            self.assertIn(f"optoflood_{consumer}.log", n4_names)
+            self.assertIn(f"pcap_nodes/{consumer}.pcap", n4_names)
+            self.assertIn(f"minindn-logs/{consumer}/nfd.log", n4_names)
+            self.assertIn(f"minindn-logs/{consumer}/nlsr.log", n4_names)
 
     def test_smoke_is_one_handoff_off_acc4_and_full_sequence_remains_available(self) -> None:
         smoke = config.smoke_schedule(20, 30)
@@ -86,7 +111,7 @@ class Exp2ConfigTest(unittest.TestCase):
         self.assertEqual(len(config.FULL_HANDOFF_SEQUENCE), 9)
 
     def test_malformed_configurations_are_rejected(self) -> None:
-        for text in ("", "consumer2", "3", "consumer1,consumer1", "consumer1,consumer3"):
+        for text in ("", "1", "n1", "consumer1", "3", "n3", "consumer1,consumer2,consumer3", "consumer2"):
             with self.assertRaises(config.Exp2ConfigError):
                 config.parse_active_consumers(text)
         with self.assertRaises(config.Exp2ConfigError):
@@ -110,43 +135,42 @@ class Exp2ConfigTest(unittest.TestCase):
         self.assertEqual(config.FULL_INTERVAL_BASE_S, 90.0)
         self.assertEqual(config.FULL_INTERVAL_JITTER_S, 60.0)
         root = "results/extended/exp2/shared"
-        smoke_dirs = {config.smoke_directory(root, population) for population in ("n1", "n2")}
+        smoke_dirs = {config.smoke_directory(root, population) for population in ("n2", "n4")}
         full_dirs = {
             config.full_run_directory(root, population, run_id)
-            for population in ("n1", "n2")
+            for population in ("n2", "n4")
             for run_id in config.FULL_RUN_IDS
         }
         self.assertEqual(len(full_dirs), 10)
         self.assertTrue(smoke_dirs.isdisjoint(full_dirs))
-        self.assertEqual(config.full_run_directory(root, "n1", "r1"), f"{root}/n1/r1")
-        self.assertEqual(config.full_run_directory(root, "n2", "r5"), f"{root}/n2/r5")
-        self.assertEqual(config.recorded_run_id("smoke", ""), "")
+        self.assertEqual(config.smoke_directory(root, "n2"), f"{root}/n2/smoke")
+        self.assertEqual(config.full_run_directory(root, "n2", "r1"), f"{root}/n2/r1")
+        self.assertEqual(config.full_run_directory(root, "n4", "r5"), f"{root}/n4/r5")
+        self.assertEqual(config.recorded_run_id("smoke", ""), "smoke")
         self.assertEqual(config.recorded_run_id("full", "r3"), "r3")
         for text in ("", "r6", "smoke"):
             with self.assertRaises(config.Exp2ConfigError):
                 config.recorded_run_id("full", text)
-        n1 = config.parse_active_consumers("n1")
-        n2 = config.parse_active_consumers("consumer1,consumer2")
-        self.assertEqual(n1, ("consumer1",))
-        self.assertEqual(n2, ("consumer1", "consumer2"))
-        self.assertEqual(config.application_hosts(n1), ("producer", "consumer1"))
-        self.assertEqual(config.application_hosts(n2), ("producer", "consumer1", "consumer2"))
+        with self.assertRaises(config.Exp2ConfigError):
+            config.full_run_directory(root, "n1", "r1")
+        with self.assertRaises(config.Exp2ConfigError):
+            config.smoke_directory(root, "n3")
 
     def test_populated_run_directory_is_not_treated_as_empty(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            smoke = root / "n1"
-            smoke.mkdir()
+            smoke = root / "n2" / "smoke"
+            smoke.mkdir(parents=True)
             (smoke / "params.txt").write_text("smoke\n", encoding="utf-8")
-            populated = root / "n1" / "r1"
+            populated = root / "n2" / "r1"
             populated.mkdir()
             (populated / "handoffs.txt").write_text("index\n", encoding="utf-8")
-            empty = root / "n1" / "r2"
-            empty.mkdir()
+            empty = root / "n4" / "r2"
+            empty.mkdir(parents=True)
             self.assertTrue(config.directory_has_entries(smoke))
             self.assertTrue(config.directory_has_entries(populated))
             self.assertFalse(config.directory_has_entries(empty))
-            self.assertFalse(config.directory_has_entries(root / "n1" / "r3"))
+            self.assertFalse(config.directory_has_entries(root / "n4" / "r3"))
         repo = Path(__file__).resolve().parents[2]
         script = (repo / "scripts" / "run-in-vm.sh").read_text(encoding="utf-8")
         self.assertIn('if [ "$experiment" = "exp2" ]; then', script)
@@ -155,15 +179,23 @@ class Exp2ConfigTest(unittest.TestCase):
         self.assertIn("--exclude box --exclude '*.box'", script)
         makefile = (repo / "Makefile.exp2").read_text(encoding="utf-8")
         self.assertIn("experiment-exp2-shared-$(3)-$(2):", makefile)
-        self.assertIn("analyze-exp2-shared-$(3)-$(2):", makefile)
-        self.assertIn("experiment-exp2-shared-n1-full:", makefile)
+        self.assertIn("check-exp2-shared-$(3)-$(2):", makefile)
+        self.assertIn("experiment-exp2-shared-n2-smoke:", makefile)
+        self.assertIn("experiment-exp2-shared-n4-smoke:", makefile)
         self.assertIn("experiment-exp2-shared-n2-full:", makefile)
+        self.assertIn("experiment-exp2-shared-n4-full:", makefile)
+        self.assertIn("$(EXP2_SHARED_ROOT)/n2/smoke", makefile)
+        self.assertIn("$(EXP2_SHARED_ROOT)/n4/smoke", makefile)
+        self.assertNotIn("experiment-exp2-shared-n1", makefile)
         self.assertIn("NLSR_HANDOFF_COUNT='8'", makefile)
         self.assertIn("NLSR_HANDOFF_INTERVALS=''", makefile)
         self.assertIn("EXP2_SCHEDULE='full'", makefile)
+        self.assertIn("campaign.txt", makefile)
         self.assertIn("acc2,acc3,acc4,acc5,acc6,acc5,acc4,acc3,acc2", makefile)
-        self.assertNotIn("experiment-exp2-shared-n1-full", (repo / "Makefile").read_text(encoding="utf-8"))
-        self.assertNotIn("experiment-exp2-shared-n1-r1", (repo / "Makefile").read_text(encoding="utf-8"))
+        top = (repo / "Makefile").read_text(encoding="utf-8")
+        self.assertNotIn("experiment-exp2-shared-n2-full", top)
+        self.assertNotIn("experiment-exp2-shared-n4-r1", top)
+        self.assertNotIn("experiment-exp2-shared-n1", top)
 
     def test_topology_position_keeps_consumer2_access_events(self) -> None:
         expected = [
@@ -187,8 +219,12 @@ class Exp2ConfigTest(unittest.TestCase):
                 "other_attachment",
             )
         self.assertEqual(config.topology_position("consumer2", "acc4", "acc4"), "resides_at_consumer_access")
+        self.assertEqual(config.topology_position("consumer3", "acc2", "acc3"), "moves_onto_consumer_access")
+        self.assertEqual(config.topology_position("consumer3", "acc3", "acc4"), "moves_away_from_consumer_access")
+        self.assertEqual(config.topology_position("consumer4", "acc5", "acc6"), "moves_onto_consumer_access")
+        self.assertEqual(config.topology_position("consumer4", "acc6", "acc5"), "moves_away_from_consumer_access")
         with self.assertRaises(config.Exp2ConfigError):
-            config.topology_position("consumer3", "acc2", "acc3")
+            config.topology_position("consumer5", "acc2", "acc3")
 
 
 class Exp2NameTest(unittest.TestCase):
@@ -614,6 +650,98 @@ def _synthetic_workload(frame_count: int):
             packets.append(_packet(start + 0.05, "core", True, "data", alias, length=40, data_mobility_flag=True))
             packets.append(_packet(start + 0.06, "core", True, "interest", "/ndn/nlsr/update", length=12))
     return packets, handoffs, validation, producer
+
+
+def _populate_run(root: Path, consumers: tuple, mode: str = "smoke") -> Path:
+    run_dir = root / config.population_of(consumers) / ("smoke" if mode == "smoke" else "r1")
+    sequence = config.SMOKE_HANDOFF_SEQUENCE if mode == "smoke" else config.FULL_HANDOFF_SEQUENCE
+    count = 1 if mode == "smoke" else 8
+    run_id = "smoke" if mode == "smoke" else "r1"
+    for name in config.result_names(consumers):
+        path = run_dir / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if name.endswith(".pcap"):
+            path.write_bytes(b"pcap-bytes-beyond-global-header")
+        elif name.startswith("tcpdump_"):
+            path.write_text("", encoding="utf-8")
+        else:
+            path.write_text("placeholder\n", encoding="utf-8")
+    (run_dir / "campaign.txt").write_text(config.campaign_text(consumers, mode, run_id), encoding="utf-8")
+    (run_dir / "topology.txt").write_text(config.topology_text(consumers, sequence), encoding="utf-8")
+    intervals = [20.0, 30.0] if mode == "smoke" else [90.0 + index for index in range(count + 1)]
+    params = {
+        "exp2_active_consumers": ",".join(consumers),
+        "exp2_schedule": mode,
+        "exp2_campaign": config.CAMPAIGN_ID,
+        "exp2_interval_source": "configured" if mode == "smoke" else "sampled",
+        "exp2_realized_intervals_s": ",".join(f"{value:.6f}" for value in intervals),
+        "handoff_sequence": ",".join(sequence),
+        "handoff_count": str(count),
+        "handoff_interval_base_s": "20.000" if mode == "smoke" else "90.000",
+        "handoff_interval_jitter_s": "0.000" if mode == "smoke" else "60.000",
+        "request_interval_ms": "20",
+        "segments_per_frame": "1",
+        "exp2_stream_prefix": config.STREAM_PREFIX,
+        "exp2_advertised_prefix": config.ADVERTISED_PREFIX,
+        "exp2_guard_name": config.GUARD_NAME,
+    }
+    (run_dir / "params.txt").write_text("".join(f"{key}={value}\n" for key, value in params.items()), encoding="utf-8")
+    handoff_lines = ["index\tabs_time\trel_time\tfrom_node\tto_node\tinterval_s\n"]
+    for index in range(count):
+        stamp = HANDOFF + index * 10.0
+        handoff_lines.append(
+            f"{index + 1}\t{stamp:.6f}\t{index * 10.0:.6f}\t{sequence[index]}\t{sequence[index + 1]}\t{intervals[index]:.6f}\n"
+        )
+    (run_dir / "handoffs.txt").write_text("".join(handoff_lines), encoding="utf-8")
+    if mode == "smoke":
+        received = int((HANDOFF + 1.0) * 1e9)
+        for consumer in consumers:
+            (run_dir / f"{consumer}.log").write_text(
+                f"[{received}] DATA: frame=1 seg=0 Size: 100 bytes\n"
+                f"[{received}] VALIDATE: Data signature verified name=/LiveStream/v0/v=1/seg=0 id={consumer}\n",
+                encoding="utf-8",
+            )
+    return run_dir
+
+
+class Exp2EvidenceTest(unittest.TestCase):
+    def test_complete_smoke_and_full_directories_pass(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            n2_smoke = _populate_run(root, config.parse_active_consumers("n2"), "smoke")
+            n4_full = _populate_run(root, config.parse_active_consumers("n4"), "full")
+            self.assertEqual(config.inspect_run(n2_smoke), [])
+            self.assertEqual(config.inspect_run(n4_full), [])
+
+    def test_n2_rejects_consumer3_and_missing_or_empty_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            run_dir = _populate_run(root, config.parse_active_consumers("n2"), "smoke")
+            stray = run_dir / "pcap_nodes" / "consumer3.pcap"
+            stray.write_bytes(b"not-an-n2-host")
+            problems = config.inspect_run(run_dir)
+            self.assertTrue(any("consumer3" in problem for problem in problems))
+            stray.unlink()
+            (run_dir / "pcap_nodes" / "acc1.pcap").write_bytes(b"short")
+            problems = config.inspect_run(run_dir)
+            self.assertTrue(any("acc1.pcap" in problem for problem in problems))
+            (run_dir / "minindn-logs" / "producer" / "nfd.log").write_text("", encoding="utf-8")
+            problems = config.inspect_run(run_dir)
+            self.assertTrue(any("nfd.log" in problem for problem in problems))
+
+    def test_smoke_without_validation_fails_and_old_campaign_is_not_accepted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            run_dir = _populate_run(root, config.parse_active_consumers("n4"), "smoke")
+            (run_dir / "consumer4.log").write_text(
+                f"[{int((HANDOFF - 5) * 1e9)}] DATA: frame=1 seg=0 Size: 10 bytes\n",
+                encoding="utf-8",
+            )
+            problems = config.inspect_run(run_dir)
+            self.assertTrue(any("consumer4" in problem and "validation" in problem for problem in problems))
+            (run_dir / "campaign.txt").write_text("exp2_campaign=preliminary-n1\n", encoding="utf-8")
+            problems = config.inspect_run(run_dir)
+            self.assertTrue(any("campaign id" in problem for problem in problems))
 
 
 class Exp2BenchmarkTest(unittest.TestCase):
