@@ -101,3 +101,8 @@ experiment-exp2-shared-n4-full:
 	$(MAKE) experiment-exp2-shared-n4-r3
 	$(MAKE) experiment-exp2-shared-n4-r4
 	$(MAKE) experiment-exp2-shared-n4-r5
+
+.PHONY: analyze-exp2-scale
+
+analyze-exp2-scale:
+	python3 experiment/tool/run_exp2_scale_analysis.py
