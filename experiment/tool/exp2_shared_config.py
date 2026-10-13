@@ -1,14 +1,15 @@
-"""Exp2-A shared-stream deployment record. No Mini-NDN import.
+"""Exp2 deployment record for Shared and Distinct Streams. No Mini-NDN import.
 
 N=2 and N=4 are the supported populations. N=1 remains the completed Solution
 experiment and is not an Exp2 population. Absent consumers are not instantiated.
+The default demand pattern remains Shared Streams.
 """
 
 from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Dict, List, Sequence, Tuple
+from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
 ROUTING_NODES: Tuple[str, ...] = (
     "core", "agg1", "agg2",
@@ -43,6 +44,19 @@ FULL_RUN_IDS: Tuple[str, ...] = ("r1", "r2", "r3", "r4", "r5")
 FULL_INTERVAL_BASE_S = 90.0
 FULL_INTERVAL_JITTER_S = 60.0
 CAMPAIGN_ID = "shared-n2-n4"
+SHARED_CAMPAIGN_ID = CAMPAIGN_ID
+DISTINCT_CAMPAIGN_ID = "distinct-n2-n4"
+SHARED_RESULT_ROOT = "results/extended/exp2/shared"
+DISTINCT_RESULT_ROOT = "results/extended/exp2/distinct"
+DEMAND_PATTERNS = ("shared", "distinct")
+# Ordinary stream-identifier components. These are not NDN typed Version components.
+DISTINCT_STREAM_PREFIX = {
+    "consumer1": "/LiveStream/v0",
+    "consumer2": "/LiveStream/v1",
+    "consumer3": "/LiveStream/v2",
+    "consumer4": "/LiveStream/v3",
+}
+PER_STREAM_GUARD_NAMES = tuple(f"{prefix}/_guard" for prefix in DISTINCT_STREAM_PREFIX.values())
 EXPECTED_NODE_COUNT = {"n2": 12, "n4": 14}
 
 # Backbone and producer mobility links match the Solution topology.
@@ -66,6 +80,15 @@ _DATA_LINE = re.compile(r"^\[(\d+)\].*\bDATA: frame=")
 _VALIDATE_LINE = re.compile(
     r"^\[(\d+)\] VALIDATE: Data signature verified(?: name=(\S+))?(?: id=(\S+))?"
 )
+_PRODUCER_INTEREST_LINE = re.compile(
+    r"^\[(\d+)\].*\bINTEREST: Received\b.*\bName: (\S+)", re.MULTILINE,
+)
+_PRODUCER_DATA_LINE = re.compile(
+    r"^\[(\d+)\].*\bDATA: Sending response\b.*\bName: (\S+)", re.MULTILINE,
+)
+_REGISTERED_PREFIX = re.compile(r"Successfully registered prefix: (\S+)")
+_GUARD_PREFIX = re.compile(r"registered guard prefix (\S+)")
+_GUARD_CONSUMER_NAME = re.compile(r"GUARD-CONSUMER: name=(\S+)")
 
 
 class Exp2ConfigError(ValueError):
@@ -96,6 +119,102 @@ def population_of(consumers: Sequence[str]) -> str:
         if key == members:
             return population
     raise Exp2ConfigError(f"unsupported Exp2 consumer population: {','.join(consumers)}")
+
+
+def parse_demand_pattern(text: str) -> str:
+    """Return shared or distinct. Any other demand pattern is rejected."""
+    token = (text or "").strip().lower()
+    if token not in DEMAND_PATTERNS:
+        raise Exp2ConfigError(
+            f"EXP2_DEMAND_PATTERN must be shared or distinct; got {text!r}"
+        )
+    return token
+
+
+def campaign_id_for(pattern: str) -> str:
+    pattern = parse_demand_pattern(pattern)
+    if pattern == "shared":
+        return SHARED_CAMPAIGN_ID
+    return DISTINCT_CAMPAIGN_ID
+
+
+def result_root_for(pattern: str) -> str:
+    pattern = parse_demand_pattern(pattern)
+    if pattern == "shared":
+        return SHARED_RESULT_ROOT
+    return DISTINCT_RESULT_ROOT
+
+
+def stream_mapping(pattern: str, consumers: Sequence[str]) -> Dict[str, str]:
+    """Map each instantiated consumer to its content stream prefix.
+
+    Shared Streams assigns /LiveStream/v0 to every consumer. Distinct Streams
+    assigns v0, v1, v2, and v3 by consumer identity. The Producer still
+    advertises only /LiveStream.
+    """
+    pattern = parse_demand_pattern(pattern)
+    population_of(consumers)
+    if pattern == "shared":
+        return {name: STREAM_PREFIX for name in consumers}
+    return {name: DISTINCT_STREAM_PREFIX[name] for name in consumers}
+
+
+def format_stream_map(mapping: Mapping[str, str]) -> str:
+    return ",".join(f"{name}={mapping[name]}" for name in mapping)
+
+
+def parse_stream_map(text: str) -> Dict[str, str]:
+    result: Dict[str, str] = {}
+    for item in (text or "").split(","):
+        if not item:
+            continue
+        if "=" not in item:
+            raise Exp2ConfigError(f"malformed stream map entry: {item!r}")
+        name, prefix = item.split("=", 1)
+        result[name.strip()] = prefix.strip()
+    return result
+
+
+def process_environments(
+    pattern: str,
+    consumers: Sequence[str],
+    request_interval_ms: int,
+    window_frames: int,
+    segments_per_frame: int,
+) -> Dict[str, str]:
+    """Environment prefixes for the one Producer and each Consumer.
+
+    Shared Streams keeps one EXP_STREAM_PREFIX on every process. Distinct
+    Streams sets that variable separately on each Consumer and does not assign
+    a stream prefix to the Producer.
+    """
+    pattern = parse_demand_pattern(pattern)
+    population_of(consumers)
+    if pattern == "shared":
+        app_env = (
+            f"EXP_REQUEST_INTERVAL_MS={request_interval_ms}"
+            f" EXP_WINDOW_FRAMES={window_frames}"
+            f" EXP_SEGMENTS_PER_FRAME={segments_per_frame}"
+            f" EXP_STREAM_PREFIX={STREAM_PREFIX}"
+            f" EXP_LOG_VALIDATION_NAME=1"
+        )
+        environments = {PRODUCER_HOST: app_env}
+        for name in consumers:
+            environments[name] = f"{app_env} EXP_CONSUMER_ID={name}"
+        return environments
+    app_env = (
+        f"EXP_REQUEST_INTERVAL_MS={request_interval_ms}"
+        f" EXP_WINDOW_FRAMES={window_frames}"
+        f" EXP_SEGMENTS_PER_FRAME={segments_per_frame}"
+        f" EXP_LOG_VALIDATION_NAME=1"
+    )
+    environments = {PRODUCER_HOST: app_env}
+    mapping = stream_mapping(pattern, consumers)
+    for name in consumers:
+        environments[name] = (
+            f"{app_env} EXP_STREAM_PREFIX={mapping[name]} EXP_CONSUMER_ID={name}"
+        )
+    return environments
 
 
 def physical_hosts(consumers: Sequence[str]) -> Tuple[str, ...]:
@@ -168,17 +287,25 @@ def guard_daemon_hosts(consumers: Sequence[str]) -> Tuple[str, ...]:
     return application_hosts(consumers)
 
 
-def topology_text(consumers: Sequence[str], sequence: Sequence[str] = FULL_HANDOFF_SEQUENCE) -> str:
+def topology_text(
+    consumers: Sequence[str],
+    sequence: Sequence[str] = FULL_HANDOFF_SEQUENCE,
+    pattern: str = "shared",
+) -> str:
     """Record only hosts and links that this population instantiates."""
+    pattern = parse_demand_pattern(pattern)
     hosts = physical_hosts(consumers)
+    mapping = stream_mapping(pattern, consumers)
     lines = [
-        "experiment=exp2-shared",
-        f"exp2_campaign={CAMPAIGN_ID}",
+        "experiment=exp2-shared" if pattern == "shared" else "experiment=exp2-distinct",
+        f"exp2_campaign={campaign_id_for(pattern)}",
+        f"demand_pattern={pattern}",
         f"population={population_of(consumers)}",
         f"physical_node_count={len(hosts)}",
         "physical_nodes=" + ",".join(hosts),
         "advertised_prefix=" + ADVERTISED_PREFIX,
-        "stream_prefix=" + STREAM_PREFIX,
+        "stream_prefix=" + (STREAM_PREFIX if pattern == "shared" else "per-consumer"),
+        "stream_map=" + format_stream_map(mapping),
         "guard_name=" + GUARD_NAME,
         "nlsr_hosts=" + ",".join(nlsr_hosts(consumers)),
         "capture_nodes=" + ",".join(capture_nodes(consumers)),
@@ -191,20 +318,32 @@ def topology_text(consumers: Sequence[str], sequence: Sequence[str] = FULL_HANDO
     ]
     for host in consumers:
         lines.append(f"attachment {host} {CONSUMER_ATTACHMENT[host]}")
+        lines.append(f"stream {host} {mapping[host]}")
     for left, right, bandwidth, delay in links(consumers):
         lines.append(f"link {left} {right} bw_mbps={bandwidth} delay={delay}")
     return "\n".join(lines) + "\n"
 
 
-def campaign_text(consumers: Sequence[str], mode: str, run_id: str) -> str:
+def campaign_text(
+    consumers: Sequence[str],
+    mode: str,
+    run_id: str,
+    pattern: str = "shared",
+) -> str:
+    pattern = parse_demand_pattern(pattern)
     hosts = physical_hosts(consumers)
+    mapping = stream_mapping(pattern, consumers)
     return (
-        f"exp2_campaign={CAMPAIGN_ID}\n"
+        f"exp2_campaign={campaign_id_for(pattern)}\n"
+        f"demand_pattern={pattern}\n"
         f"population={population_of(consumers)}\n"
         f"schedule={mode}\n"
         f"run_id={run_id}\n"
         f"physical_node_count={len(hosts)}\n"
         "physical_nodes=" + ",".join(hosts) + "\n"
+        f"advertised_prefix={ADVERTISED_PREFIX}\n"
+        f"guard_name={GUARD_NAME}\n"
+        f"stream_map={format_stream_map(mapping)}\n"
     )
 
 
@@ -355,6 +494,62 @@ def _pcap_problem(path: Path) -> str:
     return ""
 
 
+def _pattern_vote(source: Mapping[str, str]) -> Optional[str]:
+    token = (source.get("exp2_demand_pattern") or source.get("demand_pattern") or "").strip()
+    campaign_name = (source.get("exp2_campaign") or "").strip()
+    label = (source.get("exp2_experiment") or source.get("experiment") or "").strip()
+    votes = []
+    if token:
+        votes.append(parse_demand_pattern(token))
+    if campaign_name == SHARED_CAMPAIGN_ID:
+        votes.append("shared")
+    elif campaign_name == DISTINCT_CAMPAIGN_ID:
+        votes.append("distinct")
+    if label in {"shared", "exp2-shared"}:
+        votes.append("shared")
+    elif label in {"distinct", "exp2-distinct"}:
+        votes.append("distinct")
+    elif label:
+        raise Exp2ConfigError(f"unknown Exp2 experiment label {label!r}")
+    if not votes:
+        return None
+    if len(set(votes)) != 1:
+        raise Exp2ConfigError("demand pattern records disagree: " + ",".join(votes))
+    return votes[0]
+
+
+def recorded_demand_pattern(
+    params: Mapping[str, str],
+    campaign: Mapping[str, str],
+    topology: Mapping[str, str],
+) -> str:
+    """Infer one demand pattern. Shared and Distinct records must not be mixed."""
+    votes = []
+    for source in (params, campaign, topology):
+        vote = _pattern_vote(source)
+        if vote is not None:
+            votes.append(vote)
+    if not votes:
+        raise Exp2ConfigError("demand pattern is not recorded")
+    if len(set(votes)) != 1:
+        raise Exp2ConfigError("Shared and Distinct records disagree: " + ",".join(votes))
+    return votes[0]
+
+
+def _content_name(name: str, prefix: str) -> bool:
+    """True when name is content under prefix, not that stream's discovery name."""
+    if not name.startswith(prefix + "/"):
+        return False
+    remainder = name[len(prefix) + 1:]
+    return remainder != "_meta" and not remainder.startswith("_meta/")
+
+
+def _log_text(path: Path) -> str:
+    if not path.is_file():
+        return ""
+    return path.read_text(encoding="utf-8", errors="replace")
+
+
 def _smoke_reception_problems(run_dir: Path, consumers: Sequence[str], handoff_time: float) -> List[str]:
     problems = []
     for consumer in consumers:
@@ -384,7 +579,162 @@ def _smoke_reception_problems(run_dir: Path, consumers: Sequence[str], handoff_t
     return problems
 
 
-def inspect_run(run_dir: Path) -> List[str]:
+def _map_problems(label: str, text: str, expected: Mapping[str, str], required: bool) -> List[str]:
+    if not text:
+        if required:
+            return [f"{label} has no stream_map"]
+        return []
+    try:
+        recorded = parse_stream_map(text)
+    except Exp2ConfigError as error:
+        return [f"{label} {error}"]
+    if recorded != dict(expected):
+        return [f"{label} stream_map must be {format_stream_map(expected)}; got {text!r}"]
+    return []
+
+
+def _distinct_metadata_problems(
+    params: Mapping[str, str],
+    campaign: Mapping[str, str],
+    topology: Mapping[str, str],
+    topology_body: str,
+    consumers: Sequence[str],
+) -> List[str]:
+    problems = []
+    expected = stream_mapping("distinct", consumers)
+    problems.extend(_map_problems("params.txt", params.get("exp2_stream_map", ""), expected, True))
+    problems.extend(_map_problems("campaign.txt", campaign.get("stream_map", ""), expected, True))
+    problems.extend(_map_problems("topology.txt", topology.get("stream_map", ""), expected, True))
+    for consumer, prefix in expected.items():
+        if f"stream {consumer} {prefix}" not in topology_body.splitlines():
+            problems.append(f"missing stream {consumer} {prefix}")
+    single = params.get("exp2_stream_prefix", "")
+    if single and single != "per-consumer":
+        problems.append(
+            f"distinct run must not record one stream prefix; got exp2_stream_prefix={single!r}"
+        )
+    if params.get("exp2_advertised_prefix") != ADVERTISED_PREFIX or topology.get("advertised_prefix") != ADVERTISED_PREFIX:
+        problems.append(f"advertised prefix must be {ADVERTISED_PREFIX}")
+    if params.get("exp2_guard_name") != GUARD_NAME or topology.get("guard_name") != GUARD_NAME:
+        problems.append(f"guard name must be {GUARD_NAME}")
+    if campaign.get("advertised_prefix") not in {"", ADVERTISED_PREFIX}:
+        problems.append(f"campaign advertised prefix must be {ADVERTISED_PREFIX}")
+    if campaign.get("guard_name") not in {"", GUARD_NAME}:
+        problems.append(f"campaign guard name must be {GUARD_NAME}")
+    for forbidden in PER_STREAM_GUARD_NAMES:
+        if forbidden in topology_body:
+            problems.append(f"topology records per-stream guard {forbidden}")
+    required_settings = {
+        "window_frames": "4",
+        "guard_interval_ms": "1000",
+        "neighbors.result-driven-adj-lsa-build": "on",
+        "neighbors.event-driven-adjacency-verification": "on",
+        "neighbors.corridor-prioritised-routing": "on",
+        "neighbors.corridor-adj-lsa-sync-publish-delay": "1",
+        "neighbors.event-driven-verification-timeout-ms": "50",
+    }
+    for key, expected_value in required_settings.items():
+        if params.get(key) != expected_value:
+            problems.append(f"{key} must be {expected_value}; got {params.get(key)!r}")
+    return problems
+
+
+def _smoke_distinct_problems(run_dir: Path, consumers: Sequence[str], handoff_time: float) -> List[str]:
+    """Smoke evidence that each active consumer used its own stream after the handoff."""
+    problems = []
+    mapping = stream_mapping("distinct", consumers)
+    for consumer, prefix in mapping.items():
+        log_path = run_dir / f"{consumer}.log"
+        text = _log_text(log_path)
+        if not text:
+            problems.append(f"missing consumer log for smoke reception check: {log_path}")
+            continue
+        data_after = False
+        assigned_after = False
+        for line in text.splitlines():
+            data_match = _DATA_LINE.match(line.strip())
+            if data_match and _log_seconds(int(data_match.group(1))) > handoff_time:
+                data_after = True
+            validate_match = _VALIDATE_LINE.match(line.strip())
+            if not validate_match or _log_seconds(int(validate_match.group(1))) <= handoff_time:
+                continue
+            identity = validate_match.group(3) or ""
+            name = validate_match.group(2) or ""
+            if identity != consumer:
+                continue
+            if _content_name(name, prefix):
+                assigned_after = True
+            elif name.startswith("/LiveStream/"):
+                problems.append(
+                    f"{consumer} validated {name}, which is not its assigned stream {prefix}"
+                )
+        if not data_after:
+            problems.append(f"{consumer} has no content Data after the smoke handoff")
+        if not assigned_after:
+            problems.append(
+                f"{consumer} has no successful validation of {prefix} after the smoke handoff"
+            )
+    producer_text = _log_text(run_dir / "producer.log")
+    if not producer_text:
+        problems.append(f"missing producer log: {run_dir / 'producer.log'}")
+    else:
+        registered = _REGISTERED_PREFIX.findall(producer_text)
+        if not registered or any(name != ADVERTISED_PREFIX for name in registered):
+            problems.append(
+                f"producer must register only {ADVERTISED_PREFIX}; got {registered or ['none']}"
+            )
+        interests = {
+            name for stamp, name in _PRODUCER_INTEREST_LINE.findall(producer_text)
+            if _log_seconds(int(stamp)) > handoff_time and _content_name_any(name, mapping)
+        }
+        sent = {
+            name for stamp, name in _PRODUCER_DATA_LINE.findall(producer_text)
+            if _log_seconds(int(stamp)) > handoff_time and _content_name_any(name, mapping)
+        }
+        for prefix in mapping.values():
+            if not any(_content_name(name, prefix) for name in interests):
+                problems.append(f"producer log has no post-handoff content Interest for {prefix}")
+            if not any(_content_name(name, prefix) for name in sent):
+                problems.append(f"producer log has no post-handoff content Data for {prefix}")
+    problems.extend(_guard_namespace_problems(run_dir, consumers))
+    return problems
+
+
+def _content_name_any(name: str, mapping: Mapping[str, str]) -> bool:
+    return any(_content_name(name, prefix) for prefix in mapping.values())
+
+
+def _guard_namespace_problems(run_dir: Path, consumers: Sequence[str]) -> List[str]:
+    problems = []
+    logs = [run_dir / "optoflood_producer.log"]
+    logs.extend(run_dir / f"optoflood_{consumer}.log" for consumer in consumers)
+    logs.append(run_dir / "producer.log")
+    for path in logs:
+        text = _log_text(path)
+        for forbidden in PER_STREAM_GUARD_NAMES:
+            if forbidden in text:
+                problems.append(f"{path.name} records per-stream guard {forbidden}")
+    producer_daemon = _log_text(run_dir / "optoflood_producer.log")
+    registered = _GUARD_PREFIX.findall(producer_daemon)
+    if not registered or any(name != GUARD_NAME for name in registered):
+        problems.append(
+            f"producer daemon must register only {GUARD_NAME}; got {registered or ['none']}"
+        )
+    if "prefix=/LiveStream " not in producer_daemon:
+        problems.append("producer daemon startup prefix must be /LiveStream")
+    for consumer in consumers:
+        text = _log_text(run_dir / f"optoflood_{consumer}.log")
+        names = _GUARD_CONSUMER_NAME.findall(text)
+        if not names or any(name != GUARD_NAME for name in names):
+            problems.append(
+                f"{consumer} daemon must request only {GUARD_NAME}; got {names or ['none']}"
+            )
+        if "prefix=/LiveStream " not in text:
+            problems.append(f"{consumer} daemon startup prefix must be /LiveStream")
+    return problems
+
+
+def inspect_run(run_dir: Path, expected_pattern: Optional[str] = None) -> List[str]:
     """Return evidence problems. An empty list means the run directory is consistent."""
     problems: List[str] = []
     params = _read_assignments(run_dir / "params.txt")
@@ -403,9 +753,24 @@ def inspect_run(run_dir: Path) -> List[str]:
     mode = params.get("exp2_schedule", "")
     if mode not in {"smoke", "full"}:
         problems.append(f"exp2_schedule must be smoke or full; got {mode!r}")
-    if params.get("exp2_campaign") != CAMPAIGN_ID or campaign.get("exp2_campaign") != CAMPAIGN_ID:
+    try:
+        pattern = recorded_demand_pattern(params, campaign, topology_fields)
+    except Exp2ConfigError as error:
+        problems.append(str(error))
+        return problems
+    if expected_pattern is not None:
+        try:
+            demanded = parse_demand_pattern(expected_pattern)
+        except Exp2ConfigError as error:
+            problems.append(str(error))
+            return problems
+        if pattern != demanded:
+            problems.append(f"demand pattern must be {demanded}; recorded {pattern}")
+            return problems
+    expected_campaign = campaign_id_for(pattern)
+    if params.get("exp2_campaign") != expected_campaign or campaign.get("exp2_campaign") != expected_campaign:
         problems.append(
-            f"campaign id must be {CAMPAIGN_ID}; params={params.get('exp2_campaign')!r} "
+            f"campaign id must be {expected_campaign}; params={params.get('exp2_campaign')!r} "
             f"campaign.txt={campaign.get('exp2_campaign')!r}"
         )
     if campaign.get("population") != population or topology_fields.get("population") != population:
@@ -475,10 +840,19 @@ def inspect_run(run_dir: Path) -> List[str]:
         problems.append(f"request_interval_ms must be 20; got {params.get('request_interval_ms')!r}")
     if params.get("segments_per_frame") != "1":
         problems.append(f"segments_per_frame must be 1; got {params.get('segments_per_frame')!r}")
-    if params.get("exp2_stream_prefix") != STREAM_PREFIX or params.get("exp2_advertised_prefix") != ADVERTISED_PREFIX:
-        problems.append("stream or advertised prefix does not match the shared LiveStream configuration")
-    if params.get("exp2_guard_name") != GUARD_NAME:
-        problems.append(f"guard name must be {GUARD_NAME}; got {params.get('exp2_guard_name')!r}")
+    if pattern == "shared":
+        if params.get("exp2_stream_prefix") != STREAM_PREFIX or params.get("exp2_advertised_prefix") != ADVERTISED_PREFIX:
+            problems.append("stream or advertised prefix does not match the shared LiveStream configuration")
+        if params.get("exp2_guard_name") != GUARD_NAME:
+            problems.append(f"guard name must be {GUARD_NAME}; got {params.get('exp2_guard_name')!r}")
+        shared_map = stream_mapping("shared", consumers)
+        problems.extend(_map_problems("params.txt", params.get("exp2_stream_map", ""), shared_map, False))
+        problems.extend(_map_problems("campaign.txt", campaign.get("stream_map", ""), shared_map, False))
+        problems.extend(_map_problems("topology.txt", topology_fields.get("stream_map", ""), shared_map, False))
+    else:
+        problems.extend(_distinct_metadata_problems(
+            params, campaign, topology_fields, topology_text_body, consumers,
+        ))
     for name in result_names(consumers):
         path = run_dir / name
         if name.endswith(".pcap"):
@@ -495,5 +869,8 @@ def inspect_run(run_dir: Path) -> List[str]:
         except ValueError:
             problems.append(f"smoke handoff timestamp is not numeric: {rows[0][1]!r}")
         else:
-            problems.extend(_smoke_reception_problems(run_dir, consumers, handoff_time))
+            if pattern == "distinct":
+                problems.extend(_smoke_distinct_problems(run_dir, consumers, handoff_time))
+            else:
+                problems.extend(_smoke_reception_problems(run_dir, consumers, handoff_time))
     return problems

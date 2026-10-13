@@ -21,7 +21,29 @@ def _read_log(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace")
 
 
+def reject_distinct_run(run_dir: Path) -> None:
+    """Refuse to score Distinct Streams with the Shared Streams observer."""
+    blob = ""
+    for name in ("campaign.txt", "params.txt", "topology.txt"):
+        path = run_dir / name
+        if path.is_file():
+            blob += path.read_text(encoding="utf-8", errors="replace") + "\n"
+    markers = (
+        "distinct-n2-n4",
+        "demand_pattern=distinct",
+        "exp2_demand_pattern=distinct",
+        "experiment=exp2-distinct",
+    )
+    if any(marker in blob for marker in markers):
+        raise SystemExit(
+            f"{run_dir} records Exp2(b) Distinct Streams. "
+            "The Shared Streams analysis does not recognise per-consumer stream prefixes "
+            "and will not be applied."
+        )
+
+
 def analyze_directory(run_dir: Path) -> tuple[List[Dict[str, object]], str]:
+    reject_distinct_run(run_dir)
     params = run_dir / "params.txt"
     active = config.read_active_consumers(params)
     missing = config.missing_evidence(run_dir, active)

@@ -1,5 +1,7 @@
-"""Exp2-A Mini-NDN driver. The selected N=2 or N=4 population is the whole topology.
+"""Exp2 Mini-NDN driver for Shared and Distinct Streams.
 
+The selected N=2 or N=4 population is the whole topology. EXP2_DEMAND_PATTERN
+selects the consumer stream map; an unset value remains Shared Streams.
 Importing this module loads Mini-NDN. Host-side tests use exp2_shared_config instead.
 """
 
@@ -52,10 +54,13 @@ def _append_exp2_params(
     run_id: str,
     interval_source: str,
     realized_intervals: list,
+    pattern: str,
+    mapping: Dict[str, str],
 ) -> None:
     path = os.path.join(results_dir, "params.txt")
     with open(path, "a", encoding="utf-8") as handle:
-        handle.write("exp2_experiment=shared\n")
+        handle.write(f"exp2_experiment={pattern}\n")
+        handle.write(f"exp2_demand_pattern={pattern}\n")
         handle.write(f"exp2_active_consumers={','.join(active)}\n")
         handle.write(f"exp2_schedule={mode}\n")
         handle.write(f"exp2_run_id={run_id}\n")
@@ -65,10 +70,12 @@ def _append_exp2_params(
             + ",".join(f"{float(value):.6f}" for value in realized_intervals)
             + "\n"
         )
-        handle.write(f"exp2_stream_prefix={cfg.STREAM_PREFIX}\n")
+        if pattern == "shared":
+            handle.write(f"exp2_stream_prefix={cfg.STREAM_PREFIX}\n")
+        handle.write(f"exp2_stream_map={cfg.format_stream_map(mapping)}\n")
         handle.write(f"exp2_advertised_prefix={cfg.ADVERTISED_PREFIX}\n")
         handle.write(f"exp2_guard_name={cfg.GUARD_NAME}\n")
-        handle.write(f"exp2_campaign={cfg.CAMPAIGN_ID}\n")
+        handle.write(f"exp2_campaign={cfg.campaign_id_for(pattern)}\n")
         handle.write(f"exp2_population={cfg.population_of(active)}\n")
         hosts = cfg.physical_hosts(active)
         handle.write(f"exp2_physical_node_count={len(hosts)}\n")
@@ -91,7 +98,9 @@ def main() -> int:
     os.makedirs(pcap_nodes_dir, exist_ok=True)
 
     try:
+        pattern = cfg.parse_demand_pattern(os.getenv("EXP2_DEMAND_PATTERN") or "shared")
         active = cfg.parse_active_consumers(os.getenv("EXP2_ACTIVE_CONSUMERS") or "")
+        mapping = cfg.stream_mapping(pattern, active)
         mode = (os.getenv("EXP2_SCHEDULE") or "smoke").strip()
         warmup_s = _positive_float_env("EXP2_WARMUP_S", 20.0)
         tail_s = _positive_float_env("EXP2_TAIL_S", 30.0)
@@ -143,11 +152,12 @@ def main() -> int:
     )
     _append_exp2_params(
         results_dir, active, str(plan["mode"]), run_id, interval_source, explicit_intervals,
+        pattern, mapping,
     )
     with open(os.path.join(results_dir, "campaign.txt"), "w", encoding="utf-8") as handle:
-        handle.write(cfg.campaign_text(active, str(plan["mode"]), run_id))
+        handle.write(cfg.campaign_text(active, str(plan["mode"]), run_id, pattern))
     with open(os.path.join(results_dir, "topology.txt"), "w", encoding="utf-8") as handle:
-        handle.write(cfg.topology_text(active, sequence))
+        handle.write(cfg.topology_text(active, sequence, pattern))
     exp._init_handoffs_file(handoffs_path)
 
     Minindn.cleanUp()
@@ -186,18 +196,18 @@ def main() -> int:
 
     producer_exec = os.path.join(experiment_dir, "producer")
     consumer_exec = os.path.join(experiment_dir, "consumer")
-    app_env = (
-        f"EXP_REQUEST_INTERVAL_MS={request_interval_ms}"
-        f" EXP_WINDOW_FRAMES={window_frames}"
-        f" EXP_SEGMENTS_PER_FRAME={segments_per_frame}"
-        f" EXP_STREAM_PREFIX={cfg.STREAM_PREFIX}"
-        f" EXP_LOG_VALIDATION_NAME=1"
+    environments = cfg.process_environments(
+        pattern, active, request_interval_ms, window_frames, segments_per_frame,
     )
-    producer.cmd(f"{app_env} {producer_exec} &> {os.path.join(results_dir, 'producer.log')} &")
+    producer.cmd(
+        f"{environments[cfg.PRODUCER_HOST]} {producer_exec} &> "
+        f"{os.path.join(results_dir, 'producer.log')} &"
+    )
     for consumer_name in active:
-        consumer_env = f"{app_env} EXP_CONSUMER_ID={consumer_name}"
         log_path = os.path.join(results_dir, f"{consumer_name}.log")
-        ndn.net[consumer_name].cmd(f"{consumer_env} {consumer_exec} &> {log_path} &")
+        ndn.net[consumer_name].cmd(
+            f"{environments[consumer_name]} {consumer_exec} &> {log_path} &"
+        )
 
     if os.path.exists(daemon_exec):
         daemon_env = (
