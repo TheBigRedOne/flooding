@@ -256,7 +256,11 @@ class Exp2DistinctConfigTest(unittest.TestCase):
         self.assertIn("$(EXP2_DISTINCT_ROOT)/n2/smoke", makefile)
         self.assertIn("$(EXP2_DISTINCT_ROOT)/n4/smoke", makefile)
         self.assertIn("--pattern distinct", makefile)
-        self.assertNotIn("analyze-exp2-distinct", makefile)
+        self.assertIn("analyze-exp2-distinct-n2-r1:", makefile)
+        self.assertIn("run_exp2_distinct_analysis.py n2 r1", makefile)
+        self.assertIn("run_exp2_distinct_analysis.py n4 r1", makefile)
+        self.assertIn("run_exp2_distinct_analysis.py --all", makefile)
+        self.assertNotIn("run_exp2_scale_analysis.py --all", makefile)
         smoke_lines = [line for line in makefile.splitlines() if "EXP2_SCHEDULE='smoke'" in line]
         self.assertEqual(len([line for line in smoke_lines if "EXP2_DEMAND_PATTERN" not in line]), 2)
         self.assertEqual(len([line for line in smoke_lines if "EXP2_DEMAND_PATTERN='distinct'" in line]), 2)

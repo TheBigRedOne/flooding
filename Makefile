@@ -82,6 +82,9 @@ PLOT_TOOL_SRCS := experiment/tool/plot_latency.py \
                   experiment/tool/run_exp2_shared_analysis.py \
                   experiment/tool/test_exp2_shared.py \
                   experiment/tool/test_exp2_distinct.py \
+                  experiment/tool/exp2_distinct_metrics.py \
+                  experiment/tool/run_exp2_distinct_analysis.py \
+                  experiment/tool/test_exp2_distinct_metrics.py \
                   experiment/tool/check_exp2_shared_evidence.py \
                   experiment/tool/exp2_scale_metrics.py \
                   experiment/tool/run_exp2_scale_analysis.py \

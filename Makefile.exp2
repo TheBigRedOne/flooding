@@ -158,7 +158,16 @@ experiment-exp2-distinct-n4-full:
 	$(MAKE) experiment-exp2-distinct-n4-r4
 	$(MAKE) experiment-exp2-distinct-n4-r5
 
-.PHONY: analyze-exp2-scale
+.PHONY: analyze-exp2-scale analyze-exp2-distinct-n2-r1 analyze-exp2-distinct-n4-r1 analyze-exp2-distinct
 
 analyze-exp2-scale:
 	python3 experiment/tool/run_exp2_scale_analysis.py
+
+analyze-exp2-distinct-n2-r1:
+	python3 experiment/tool/run_exp2_distinct_analysis.py n2 r1
+
+analyze-exp2-distinct-n4-r1:
+	python3 experiment/tool/run_exp2_distinct_analysis.py n4 r1
+
+analyze-exp2-distinct:
+	python3 experiment/tool/run_exp2_distinct_analysis.py --all
