@@ -48,12 +48,29 @@ GENERATED_FIGURES := results/baseline_service_recovery_time.pdf \
 EXP1_PAPER_FIGURES := results/extended/exp1/exp1_sync_delay_sensitivity.pdf \
                       results/extended/exp1/exp1_verification_timeout_sensitivity.pdf
 
+# Shared-versus-Distinct comparison figures. The recipe reads existing
+# analysis CSVs and does not start a VM.
+EXP2_PAPER_FIGURES := results/extended/exp2/comparison/rfv_shared_vs_distinct.pdf \
+                      results/extended/exp2/comparison/srt_shared_vs_distinct.pdf \
+                      results/extended/exp2/comparison/clf_shared_vs_distinct.pdf
+EXP2_COMPARISON_INPUTS := results/extended/exp2/analysis/network_handoffs.csv \
+                          results/extended/exp2/analysis/consumer_handoffs.csv \
+                          results/extended/exp2/analysis/analysis_audit.txt \
+                          results/extended/exp2/distinct/analysis/network_handoffs.csv \
+                          results/extended/exp2/distinct/analysis/consumer_handoffs.csv \
+                          results/extended/exp2/distinct/analysis/stream_recovery_diagnostics.csv \
+                          results/extended/exp2/distinct/analysis/analysis_audit.txt
+
 ALL_FIGURES := paper/figures/NDN_Packets_Processing_Flow.pdf \
                paper/figures/NDN_Producer_Mobility_Problem.pdf \
                paper/figures/NDN_Producer_Mobility_Problem_Solution.pdf \
                paper/figures/Topology.pdf \
                $(GENERATED_FIGURES) \
-               $(EXP1_PAPER_FIGURES)
+               $(EXP1_PAPER_FIGURES) \
+               $(EXP2_PAPER_FIGURES)
+
+$(EXP2_PAPER_FIGURES) &: experiment/tool/plot_exp2_comparison.py $(EXP2_COMPARISON_INPUTS)
+	python3 experiment/tool/plot_exp2_comparison.py
 
 # Sources checked by phony target `mypy`.
 PLOT_TOOL_SRCS := experiment/tool/plot_latency.py \

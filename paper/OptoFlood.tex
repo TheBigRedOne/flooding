@@ -432,17 +432,38 @@ Across both sweeps, SRT remains near the main-solution range while the routing-c
 \subsubsection{Multiple Consumers}
 \label{sec:evaluation:extended:consumers}
 
-We attach several consumers to the access network under two demand patterns. In the \emph{shared} pattern, all consumers view the same live stream. Two mechanisms then let them share the recovery: consumers requesting the same frame at the same time are aggregated in the PIT, and consumers lagging the live edge by less than the Data freshness period are served from the Content Store. The temporary forwarding state that OptoFlood instals from mobility-marked data is a per-prefix forwarder state, so it is shared as well. In the \emph{distinct} pattern, each consumer requests a separate stream from the same producer, so no content is shared, and each stream is recovered on its own prefix. We scale the number of consumers, and for the shared pattern we also vary the lag behind the live edge relative to the freshness period.
+One mobile producer serves \(N=1\), \(N=2\), or \(N=4\) consumers. The five configurations are an \(N=1\) OptoFlood reference from the main solution measurements, plus Shared and Distinct demand at \(N=2\) and \(N=4\). Shared consumers all request \texttt{/LiveStream/v0}. Distinct consumers request \texttt{/LiveStream/v0} through \texttt{/LiveStream/v3}, according to \(N\). Every configuration keeps one mobile producer, one advertised \texttt{/LiveStream} prefix, the shared \texttt{/LiveStream/\_guard} namespace, the main OptoFlood mechanisms, a 20~ms request interval, one segment per frame, and the same eight hand-off attachment sequence. C1--C4 attach at acc1, acc4, acc3, and acc6. At a fixed \(N\), Shared and Distinct use the same placements. From \(N=1\) to \(N=4\), the physical NLSR population grows from 11 to 12 to 14 nodes.
 
-In Figure~\ref{fig:ext_consumers}, panel~(a) reports the shared-pattern per-consumer interruption time against consumer lag, in units of the Data freshness period. While the lag stays below the freshness period, the Content Store holds the requested frame and the consumer sees little disruption. Once the lag exceeds the freshness period, the cached frame expires and the disruption returns to the live-edge value. The curves for different numbers of consumers overlap, because PIT aggregation and the shared TFIB keep the per-consumer disruption independent of the number of consumers. Panel~(b) reports the recovery cost compared to the number of consumers for both patterns. Under the shared pattern, the cost stays close to its single-consumer value, because the mobility-marked Data is flooded once per event and its copies populate the Content Store. Under the distinct pattern the cost grows with the number of consumers, because each separate stream carries its own pending Interests and is recovered on its own prefix. The contrast isolates the saving from content sharing: the per consumer cost falls with scale under the shared pattern and remains constant per consumer under the distinct pattern.
+Each configuration has five independent runs of eight hand-offs, hence 40 network-level observations. The \(N=2\) and \(N=4\) runs draw their own intervals from \(90+U(0,60)\)~s.
 
-\begin{figure}
+Figure~\ref{fig:ext_consumers} shows network-wide Recovery Flooding Volume, the sender-egress recovery-flood bytes per hand-off. Event-level medians are 8,318~B at \(N=1\), 12,897.5~B and 15,800~B for \(N=2\) Shared and Distinct, and 15,592.5~B and 30,362~B for \(N=4\) Shared and Distinct. Distinct demand raises the median by 22.5\% at \(N=2\) and 94.7\% at \(N=4\). At \(N=4\) the event-level ranges do not overlap: the Shared maximum is 21,528~B and the Distinct minimum is 22,100~B. At both \(N=2\) and \(N=4\), every Distinct run-level median exceeds all five Shared run-level medians. All recorded recovery-flood bytes are marked Data flooding. Distinct names reduce same-name sharing, and recovering different content can require additional transmissions. The totals leave the separate contributions of PIT aggregation, Content Store hits, outstanding requests, and path length unresolved.
+
+\begin{figure*}[t]
     \centering
-    \subfloat[Shared pattern: per-consumer service disruption versus consumer lag, in units of the freshness period.\label{fig:ext_consumers_lag}]{\includegraphics[width=\columnwidth]{paper/figures/EXT 2(a)： per-consumer disruption vs lag.png}}\\
-    \subfloat[Recovery cost versus number of consumers, for the shared and distinct patterns.\label{fig:ext_consumers_cost}]{\includegraphics[width=\columnwidth]{paper/figures/EXT 2(b)： Recovery cost vs N.png}}
-    \caption{OptoFlood with multiple consumers under shared and distinct demand.}
+    \includegraphics[width=0.95\textwidth]{results/extended/exp2/comparison/rfv_shared_vs_distinct.pdf}
+    \caption{Network-wide Recovery Flooding Volume per hand-off. Each configuration contains five runs of eight hand-offs. Boxes show the event-level observations, and the five symbols mark the run-level medians. The byte total is not divided by the number of consumers.}
     \label{fig:ext_consumers}
-\end{figure}
+\end{figure*}
+
+Network-level Service Recovery Time runs from a hand-off until the producer receives the earliest qualifying ordinary-content Interest packet that matches a fresh post-handoff consumer Interest. For \(N>1\) this earliest arrival is the one observation for that hand-off. Figure~\ref{fig:ext_consumers_srt} gives event-level medians of 82.73~ms at \(N=1\), 77.21~ms and 74.13~ms for \(N=2\) Shared and Distinct, and 61.33~ms and 60.34~ms for \(N=4\) Shared and Distinct. All 40 hand-offs in every configuration are observed. At fixed \(N\), Shared and Distinct stay close. The network-level SRT uses the earliest qualifying arrival among the active consumers. Its lower median at \(N=4\) therefore does not directly measure an improvement for each consumer. Separate Distinct per-stream diagnostics observe recovery in all 240 stream events, with medians of approximately 77--87~ms. Those values record producer receipt of each stream's Interest packet.
+
+\begin{figure*}[t]
+    \centering
+    \includegraphics[width=0.95\textwidth]{results/extended/exp2/comparison/srt_shared_vs_distinct.pdf}
+    \caption{Network-level Service Recovery Time, from the hand-off until the producer receives the earliest qualifying ordinary-content Interest packet issued after the hand-off. For \(N>1\), the observation is the earliest qualifying recovery among the active consumers. Every hand-off in these configurations has an observed recovery.}
+    \label{fig:ext_consumers_srt}
+\end{figure*}
+
+Content Loss Fraction is calculated separately for each consumer as one minus the ratio of delivered unique frames to nominal frame opportunities. All per-consumer medians are below 0.002, with a few much larger events. In \(N=2\) Distinct, run r1, hand-off 7, C1 and C2 reach approximately 0.05631 and 0.05647 in the same event. The denominator is a nominal frame count, so scheduling and live-edge behaviour can move the fraction as well as missing deliveries. One \(N=4\) Shared observation is slightly negative because the delivered-frame count marginally exceeds the nominal number of frame opportunities. This observation is retained. This observation is retained. Figure~\ref{fig:ext_consumers_clf} plots the full range and a magnified low-CLF view of the same observations.
+
+\begin{figure*}[t]
+    \centering
+    \includegraphics[width=0.95\textwidth]{results/extended/exp2/comparison/clf_shared_vs_distinct.pdf}
+    \caption{Content Loss Fraction for each consumer, relative to nominal frame opportunities. The left panel shows the full range. The right panel magnifies the low-CLF region.}
+    \label{fig:ext_consumers_clf}
+\end{figure*}
+
+Median NLSR control rates are 1,176.52~B/s at \(N=1\), 1,417.95~B/s and 1,352.09~B/s for \(N=2\) Shared and Distinct, and 1,822.69~B/s and 1,771.06~B/s for \(N=4\). At fixed \(N\) the two patterns share the advertised prefix and the NLSR nodes, and their rates are similar. The increase across \(N\) includes the growth from 11 to 14 routing nodes. At a fixed population, Distinct demand incurs more Data recovery flooding, while first request-path recovery stays in a similar observed range.
 
 % - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 \subsubsection{Multiple Producers}
