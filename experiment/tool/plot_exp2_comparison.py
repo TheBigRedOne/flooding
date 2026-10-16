@@ -17,7 +17,6 @@ if "matplotlib.pyplot" not in __import__("sys").modules:
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 
-NOTE = "8 handoffs × 5 runs; handoffs within a run are not independent replicates"
 CLUSTER_GAP = 1.7
 RUNS = ("r1", "r2", "r3", "r4", "r5")
 RUN_MARKERS = ("o", "s", "^", "D", "v")
@@ -312,9 +311,8 @@ def _metric_figure(
     field: str,
     recovered_only: bool,
     ylabel: str,
-    caption: str,
 ) -> plt.Figure:
-    fig, ax = plt.subplots(figsize=(7.2, 3.45))
+    fig, ax = plt.subplots(figsize=(7.2, 2.85))
     _boxes(ax, series, list(range(len(series))))
     _run_markers(ax, rows_by_config, field, recovered_only)
     for position, boundaries in enumerate(censored):
@@ -334,9 +332,8 @@ def _metric_figure(
         highest = max(highest, max(max(values) for values in censored if values))
     ax.set_ylim(0.0, highest * 1.12)
     _style(ax)
-    fig.text(0.46, 0.015, caption, ha="center", va="bottom", fontsize=7)
     _legend(fig)
-    fig.subplots_adjust(left=0.12, right=0.84, bottom=0.22, top=0.97)
+    fig.subplots_adjust(left=0.17, right=0.84, bottom=0.18, top=0.97)
     if path:
         parent = os.path.dirname(path)
         if parent:
@@ -391,7 +388,7 @@ def _clf_figure(path: str, labels: Sequence[str], series: Sequence[Sequence[floa
             positions.append(cursor)
             cursor += 1.0
         cursor += CLUSTER_GAP
-    fig, axes = plt.subplots(1, 2, figsize=(7.8, 4.3), sharex=True)
+    fig, axes = plt.subplots(1, 2, figsize=(7.2, 3.15), sharex=True)
     _boxes(axes[0], series, positions)
     axes[0].set_ylim(*full)
     rng_positions = []
@@ -411,18 +408,11 @@ def _clf_figure(path: str, labels: Sequence[str], series: Sequence[Sequence[floa
         _style(ax)
         for center, label in centers:
             ax.text(
-                center, -0.22, label.replace(" ", "\n"),
+                center, -0.16, label.replace(" ", "\n"),
                 transform=ax.get_xaxis_transform(), ha="center", va="top", fontsize=7, clip_on=False,
             )
     axes[0].set_ylabel("Content loss fraction", fontsize=9)
-    fig.text(
-        0.50, 0.01,
-        "Nominal 20 ms frame opportunities; not confirmed Data loss.\n"
-        "Right panel: low-range view of the same observations. The left panel retains every value, including negatives.\n"
-        + NOTE,
-        ha="center", va="bottom", fontsize=7,
-    )
-    fig.subplots_adjust(left=0.10, right=0.98, bottom=0.34, top=0.90, wspace=0.24)
+    fig.subplots_adjust(left=0.09, right=0.98, bottom=0.22, top=0.91, wspace=0.24)
     if path:
         parent = os.path.dirname(path)
         if parent:
@@ -645,7 +635,6 @@ def write_outputs(directory: Path, tables: Mapping[str, object]) -> None:
         observed, boundaries = measured_srt(rows)
         srt.append(observed)
         censored.append(boundaries)
-    censored_count = sum(len(values) for values in censored)
     _metric_figure(
         str(directory / "rfv_shared_vs_distinct.pdf"),
         rfv,
@@ -653,9 +642,7 @@ def write_outputs(directory: Path, tables: Mapping[str, object]) -> None:
         grouped,
         "recovery_flood_bytes",
         False,
-        "Recovery flooding volume\n(bytes per handoff)",
-        "Network-wide sender-egress bytes per handoff; not divided by Consumer count.\n"
-        "Markers: per-run median of eight handoffs. Handoffs within a run are not independent replicates.",
+        "Network-wide recovery flooding volume\n(bytes per handoff)",
     )
     _metric_figure(
         str(directory / "srt_shared_vs_distinct.pdf"),
@@ -665,10 +652,6 @@ def write_outputs(directory: Path, tables: Mapping[str, object]) -> None:
         "service_recovery_time_ms",
         True,
         "Service recovery time (ms)",
-        "Endpoint: Producer ingress of the first qualifying post-handoff content Interest.\n"
-        "N>1 uses the earliest Interest from any active Consumer. "
-        f"Right-censored handoffs: {censored_count}.\n"
-        "Boxes contain measured recoveries only. Handoffs within a run are not independent replicates.",
     )
     if not isinstance(tables["shared_consumer"], list) or not isinstance(tables["distinct_consumer"], list):
         raise ComparisonDataError("consumer tables must be row lists")

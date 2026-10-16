@@ -36,8 +36,9 @@ class ComparisonPlotTest(unittest.TestCase):
         for rows in grouped:
             rfv.append([float(row["recovery_flood_bytes"]) for row in rows])
         figure = comparison._metric_figure(
-            "", rfv, [[] for _rows in grouped], grouped, "recovery_flood_bytes", False, "RFV", "note",
+            "", rfv, [[] for _rows in grouped], grouped, "recovery_flood_bytes", False, "RFV",
         )
+        self.assertEqual(figure.texts, [])
         axis = figure.axes[0]
         self.assertEqual(axis.get_yscale(), "linear")
         self.assertEqual(axis.get_ylim()[0], 0.0)
@@ -87,6 +88,8 @@ class ComparisonPlotTest(unittest.TestCase):
         self.assertLess(zoom[0], min(flat))
         self.assertGreater(zoom[1], max(statistics.median(values) for values in series))
         figure = comparison._clf_figure("", labels, series, centers)
+        self.assertEqual(figure.texts, [])
+        self.assertEqual([axis.get_title() for axis in figure.axes], ["All observations", "Low-range view"])
         self.assertEqual(figure.axes[0].get_ylim(), full)
         offsets = cast(Sequence[Sequence[float]], figure.axes[1].collections[0].get_offsets())
         self.assertEqual([float(point[1]) for point in offsets], series[0])
