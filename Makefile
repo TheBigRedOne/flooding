@@ -25,6 +25,7 @@ include Makefile.baseline
 include Makefile.solution
 include Makefile.sensitivity
 include Makefile.exp2
+include Makefile.exp3
 
 # Baseline profile directories (parents of r1..r5; rules live in Makefile.baseline).
 BASELINE_PROFILE_DIRS := $(addprefix results/baseline/,$(BASELINE_PROFILE_LIST))
@@ -103,6 +104,10 @@ PLOT_TOOL_SRCS := experiment/tool/plot_latency.py \
                   experiment/tool/run_exp2_distinct_analysis.py \
                   experiment/tool/test_exp2_distinct_metrics.py \
                   experiment/tool/check_exp2_shared_evidence.py \
+                  experiment/tool/exp3_config.py \
+                  experiment/tool/exp3_driver.py \
+                  experiment/tool/check_exp3_evidence.py \
+                  experiment/tool/test_exp3.py \
                   experiment/tool/exp2_scale_metrics.py \
                   experiment/tool/run_exp2_scale_analysis.py \
                   experiment/tool/plot_exp2_scale.py \

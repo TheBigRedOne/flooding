@@ -1,0 +1,70 @@
+# Exp3 independent mobility. These targets do not depend on baseline, solution,
+# Exp1, or Exp2 runs. One Exp3 VM is locked, so smoke targets stay serial.
+
+EXP3_ROOT := results/extended/exp3
+EXP3_P1_NODES := core agg1 agg2 acc1 acc2 acc3 acc4 acc5 acc6 producer1 consumer1
+EXP3_P2_NODES := $(EXP3_P1_NODES) producer2 consumer2
+EXP3_P4_NODES := $(EXP3_P2_NODES) producer3 consumer3 producer4 consumer4
+EXP3_FULL_RUNS := r1 r2 r3 r4 r5
+
+EXP3_VM_PREREQS := scripts/run-in-vm.sh \
+	box/solution/solution.$(PROVIDER).box \
+	experiment/app/producer.cpp \
+	experiment/app/consumer.cpp \
+	experiment/app/optoflood-daemon.cpp \
+	experiment/app/guard_flood_id.hpp \
+	experiment/app/trust-schema.conf \
+	experiment/extended/exp3/Vagrantfile \
+	experiment/extended/exp3/Makefile \
+	experiment/tool/exp.py \
+	experiment/tool/exp3_driver.py \
+	experiment/tool/exp3_config.py \
+	experiment/tool/check_exp3_evidence.py
+
+define exp3_outputs
+$(1)/campaign.txt \
+$(1)/params.txt \
+$(1)/handoffs.txt \
+$(1)/topology.txt \
+$(1)/schedules.txt \
+$(1)/observation_ends.txt \
+$(1)/trust-schema.conf \
+$(foreach pair,$(2),$(1)/producer$(pair).log $(1)/consumer$(pair).log $(1)/optoflood_producer$(pair).log $(1)/optoflood_consumer$(pair).log $(1)/certs/producer$(pair).cert) \
+$(foreach node,$(3),$(1)/pcap_nodes/$(node).pcap $(1)/tcpdump_$(node).log $(1)/minindn-logs/$(node)/nfd.log $(1)/minindn-logs/$(node)/nlsr.log)
+endef
+
+define exp3_smoke_rule
+EXP3_$(1)_SMOKE_OUTPUTS := $$(call exp3_outputs,$(EXP3_ROOT)/$(2)/smoke,$(3),$(4))
+
+$$(EXP3_$(1)_SMOKE_OUTPUTS) &: $$(EXP3_VM_PREREQS)
+	RUN_IN_VM_PROFILE=exp3 MOBILITY_LOG_NODES="$(4)" RUN_IN_VM_REMOTE_MAKE="$(SOLUTION_NLSR_ENV) EXP3_POPULATION='$(2)' EXP3_SCHEDULE='smoke' EXP3_RUN_ID='smoke' EXP_REQUEST_INTERVAL_MS='20' make exp3" sh $$(EXP3_VM_PREREQS) $$@
+
+.PHONY: experiment-exp3-$(2)-smoke check-exp3-$(2)-smoke
+
+experiment-exp3-$(2)-smoke: $$(EXP3_$(1)_SMOKE_OUTPUTS)
+
+check-exp3-$(2)-smoke:
+	python3 experiment/tool/check_exp3_evidence.py $(EXP3_ROOT)/$(2)/smoke
+endef
+
+$(eval $(call exp3_smoke_rule,P1,p1,1,$(EXP3_P1_NODES)))
+$(eval $(call exp3_smoke_rule,P2,p2,1 2,$(EXP3_P2_NODES)))
+$(eval $(call exp3_smoke_rule,P4,p4,1 2 3 4,$(EXP3_P4_NODES)))
+
+define exp3_full_rule
+EXP3_$(1)_$(2)_OUTPUTS := $$(call exp3_outputs,$(EXP3_ROOT)/$(3)/$(2),$(4),$(5))
+
+$$(EXP3_$(1)_$(2)_OUTPUTS) &: $$(EXP3_VM_PREREQS)
+	RUN_IN_VM_PROFILE=exp3 MOBILITY_LOG_NODES="$(5)" RUN_IN_VM_REMOTE_MAKE="$(SOLUTION_NLSR_ENV) EXP3_POPULATION='$(3)' EXP3_SCHEDULE='full' EXP3_RUN_ID='$(2)' EXP_REQUEST_INTERVAL_MS='20' make exp3" sh $$(EXP3_VM_PREREQS) $$@
+
+.PHONY: experiment-exp3-$(3)-$(2) check-exp3-$(3)-$(2)
+
+experiment-exp3-$(3)-$(2): $$(EXP3_$(1)_$(2)_OUTPUTS)
+
+check-exp3-$(3)-$(2):
+	python3 experiment/tool/check_exp3_evidence.py $(EXP3_ROOT)/$(3)/$(2)
+endef
+
+$(foreach run,$(EXP3_FULL_RUNS),$(eval $(call exp3_full_rule,P1,$(run),p1,1,$(EXP3_P1_NODES))))
+$(foreach run,$(EXP3_FULL_RUNS),$(eval $(call exp3_full_rule,P2,$(run),p2,1 2,$(EXP3_P2_NODES))))
+$(foreach run,$(EXP3_FULL_RUNS),$(eval $(call exp3_full_rule,P4,$(run),p4,1 2 3 4,$(EXP3_P4_NODES))))

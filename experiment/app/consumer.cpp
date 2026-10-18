@@ -104,7 +104,13 @@ public:
   run()
   {
     try {
-      m_validator.load("/home/vagrant/flooding/experiment/app/trust-schema.conf");
+      const char* schema = std::getenv("EXP_TRUST_SCHEMA");
+      const std::string schemaPath =
+        (schema != nullptr && schema[0] != '\0')
+          ? schema
+          : "/home/vagrant/flooding/experiment/app/trust-schema.conf";
+      m_validator.load(schemaPath);
+      std::cout << "[" << nowNs() << "] TRUST_SCHEMA: " << schemaPath << std::endl;
     }
     catch (const std::exception& e) {
       std::cerr << "ERROR: Failed to load trust schema: " << e.what() << std::endl;

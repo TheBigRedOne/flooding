@@ -31,6 +31,13 @@ if [ "$profile" = "exp2" ]; then
   box_env_name=ACTUAL_SOLUTION_BOX_PATH
   remote_subdir=experiment/extended/exp2
   remote_make=${RUN_IN_VM_REMOTE_MAKE:?RUN_IN_VM_REMOTE_MAKE is required for exp2}
+elif [ "$profile" = "exp3" ]; then
+  experiment=exp3
+  host_alias=exp3
+  vagrant_dir=experiment/extended/exp3
+  box_env_name=ACTUAL_SOLUTION_BOX_PATH
+  remote_subdir=experiment/extended/exp3
+  remote_make=${RUN_IN_VM_REMOTE_MAKE:?RUN_IN_VM_REMOTE_MAKE is required for exp3}
 elif [ -n "$profile" ]; then
   echo "unsupported RUN_IN_VM_PROFILE: $profile" >&2
   exit 2
@@ -77,6 +84,22 @@ if [ "$experiment" = "exp2" ]; then
     exit 1
   fi
   trap 'rc=$?; VAGRANT_DEFAULT_PROVIDER="$provider" VAGRANT_CWD="$vagrant_dir" vagrant halt -f >/dev/null 2>&1 || true; rmdir "$exp2_lock" 2>/dev/null || true; exit "$rc"' EXIT
+elif [ "$experiment" = "exp3" ]; then
+  if [ -d "$result_dir" ]; then
+    for entry in "$result_dir"/*; do
+      if [ -e "$entry" ] || [ -L "$entry" ]; then
+        echo "refusing to replace existing Exp3 results: $result_dir" >&2
+        echo "choose a new run directory or remove this one explicitly" >&2
+        exit 1
+      fi
+    done
+  fi
+  exp3_lock=${RUN_IN_VM_LOCK:-.exp3-vm.lock}
+  if ! mkdir "$exp3_lock" 2>/dev/null; then
+    echo "Exp3 VM is already in use ($exp3_lock)" >&2
+    exit 1
+  fi
+  trap 'rc=$?; VAGRANT_DEFAULT_PROVIDER="$provider" VAGRANT_CWD="$vagrant_dir" vagrant halt -f >/dev/null 2>&1 || true; rmdir "$exp3_lock" 2>/dev/null || true; exit "$rc"' EXIT
 fi
 
 echo "*** Running experiment VM workflow: $remote_subdir ($provider, dir=$vagrant_dir)"
@@ -84,14 +107,14 @@ echo "*** Running experiment VM workflow: $remote_subdir ($provider, dir=$vagran
 env "$box_env_name=$box_path" VAGRANT_DEFAULT_PROVIDER="$provider" VAGRANT_CWD="$vagrant_dir" vagrant up --provision
 VAGRANT_DEFAULT_PROVIDER="$provider" VAGRANT_CWD="$vagrant_dir" vagrant ssh-config --host "$host_alias" > "$ssh_config"
 
-if [ "$experiment" = "exp2" ]; then
+if [ "$experiment" = "exp2" ] || [ "$experiment" = "exp3" ]; then
   rsync -avH -e "ssh -F $ssh_config -o TCPKeepAlive=no -o ServerAliveInterval=10" --exclude .git --exclude .vagrant --exclude results --exclude paper/bin --exclude box --exclude '*.box' --exclude '*.tar' --exclude '*.tar.gz' --exclude '*.tgz' ./ "$host_alias:$remote_dir/"
 else
   rsync -avH -e "ssh -F $ssh_config -o TCPKeepAlive=no -o ServerAliveInterval=10" --exclude .git --exclude .vagrant --exclude results --exclude paper/bin ./ "$host_alias:$remote_dir/"
 fi
 
 mkdir -p "$result_dir"
-if [ "$experiment" != "exp2" ] && [ "${RUN_IN_VM_CLEAR_LOCAL:-}" = "1" ]; then
+if [ "$experiment" != "exp2" ] && [ "$experiment" != "exp3" ] && [ "${RUN_IN_VM_CLEAR_LOCAL:-}" = "1" ]; then
   rm -rf "$result_dir"/*
 fi
 

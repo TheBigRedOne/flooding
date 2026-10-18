@@ -27,6 +27,7 @@
 #include <cstdlib>
 #include <deque>
 #include <iostream>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <unordered_set>
@@ -34,6 +35,29 @@
 
 namespace ndn {
 namespace examples {
+
+// Advertised prefix. Unset EXP_ADVERTISED_PREFIX keeps the historical /LiveStream
+// registration and NLSR advertisement.
+std::string
+loadAdvertisedPrefix()
+{
+  const char* raw = std::getenv("EXP_ADVERTISED_PREFIX");
+  const std::string prefix = (raw != nullptr && raw[0] != '\0') ? raw : "/LiveStream";
+  if (prefix.size() < 2 || prefix.front() != '/' || prefix.find("//") != std::string::npos) {
+    throw std::runtime_error("EXP_ADVERTISED_PREFIX is not a usable NDN prefix");
+  }
+  for (char character : prefix) {
+    const bool allowed = (character >= 'A' && character <= 'Z') ||
+                         (character >= 'a' && character <= 'z') ||
+                         (character >= '0' && character <= '9') ||
+                         character == '/' || character == '.' || character == '_' ||
+                         character == '-' || character == '~';
+    if (!allowed) {
+      throw std::runtime_error("EXP_ADVERTISED_PREFIX contains an unsupported character");
+    }
+  }
+  return prefix;
+}
 
 // Application-level TLV type carrying the producer's current live-edge frame
 // number in Data MetaInfo (application range [128,252]). Consumers read it to
@@ -73,8 +97,11 @@ public:
   void
   run()
   {
-    // Register the prefix; on success advertise it into NLSR.
-    m_face.setInterestFilter("/LiveStream",
+    // Register the configured prefix; on success advertise that same prefix.
+    m_advertisedPrefix = loadAdvertisedPrefix();
+    std::cout << "[" << std::chrono::system_clock::now().time_since_epoch().count()
+              << "] ADVERTISED_PREFIX: " << m_advertisedPrefix << std::endl;
+    m_face.setInterestFilter(Name(m_advertisedPrefix),
                              std::bind(&Producer::onInterest, this, _2),
                              std::bind(&Producer::onRegisterSuccess, this, _1),
                              std::bind(&Producer::onRegisterFailed, this, _1, _2));
@@ -90,8 +117,10 @@ private:
     auto timestamp = std::chrono::system_clock::now().time_since_epoch().count();
     std::cout << "[" << timestamp << "] PREFIX: Successfully registered prefix: " << prefix << std::endl;
 
-    std::cout << "[" << timestamp << "] PREFIX: Advertising prefix via NLSR" << std::endl;
-    int ret = std::system("nlsrc advertise /LiveStream");
+    std::cout << "[" << timestamp << "] PREFIX: Advertising prefix via NLSR: "
+              << m_advertisedPrefix << std::endl;
+    const std::string command = "nlsrc advertise '" + m_advertisedPrefix + "'";
+    int ret = std::system(command.c_str());
     if (ret != 0) {
       std::cerr << "[" << timestamp << "] ERROR: Failed to advertise prefix with nlsrc (exit code: "
                 << ret << ")" << std::endl;
@@ -265,6 +294,7 @@ private:
 
   time::milliseconds m_interval{20};
   int m_segmentsPerFrame = 1;
+  std::string m_advertisedPrefix{"/LiveStream"};
   time::steady_clock::time_point m_startTime;
 
   std::deque<PendingInterest> m_pendingInterests;
