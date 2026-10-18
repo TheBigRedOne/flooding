@@ -3,13 +3,14 @@
 Importing this module loads Mini-NDN. Host-side tests use exp3_config instead.
 """
 
-from time import sleep, time as wall_time
+from time import monotonic, sleep, time as wall_time
 import os
 import sys
-from typing import Dict
+from typing import Dict, List
 
 import exp
 import exp3_config as cfg
+import exp3_processes as procs
 
 from mininet.log import info, setLogLevel
 from mininet.topo import Topo
@@ -179,24 +180,32 @@ def main() -> int:
         f" EXP_SEGMENTS_PER_FRAME={segments_per_frame}"
         f" EXP_LOG_VALIDATION_NAME=1"
     )
+    producer_exec = os.path.join(experiment_dir, "producer")
+    consumer_exec = os.path.join(experiment_dir, "consumer")
     daemon_exec = os.path.join(experiment_dir, cfg_daemon())
+    if not os.path.exists(daemon_exec):
+        print(f"Error: Exp3 requires {daemon_exec}")
+        return 1
     event_driven = (os.getenv("NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION") or "").strip().lower() == "on"
-    for pair in selected:
-        producer = ndn.net[pair.producer]
-        producer_env = f"{app_common} EXP_ADVERTISED_PREFIX={pair.prefix}"
-        producer.cmd(
-            f"{producer_env} {os.path.join(experiment_dir, 'producer')} &> "
-            f"{os.path.join(results_dir, pair.producer + '.log')} &"
-        )
-        consumer_env = (
-            f"{app_common} EXP_STREAM_PREFIX={pair.prefix} EXP_CONSUMER_ID={pair.consumer} "
-            f"EXP_TRUST_SCHEMA={schema_path}"
-        )
-        ndn.net[pair.consumer].cmd(
-            f"{consumer_env} {os.path.join(experiment_dir, 'consumer')} &> "
-            f"{os.path.join(results_dir, pair.consumer + '.log')} &"
-        )
-        if os.path.exists(daemon_exec):
+    managed: List[procs.ManagedProcess] = []
+    try:
+        for pair in selected:
+            producer = ndn.net[pair.producer]
+            producer_env = f"{app_common} EXP_ADVERTISED_PREFIX={pair.prefix}"
+            producer_log = os.path.join(results_dir, pair.producer + ".log")
+            managed.append(procs.ManagedProcess(
+                pair.producer, "producer-app",
+                _launch(producer, producer_env, producer_exec, "", producer_log),
+                producer_exec, ""))
+            consumer_env = (
+                f"{app_common} EXP_STREAM_PREFIX={pair.prefix} EXP_CONSUMER_ID={pair.consumer} "
+                f"EXP_TRUST_SCHEMA={schema_path}"
+            )
+            consumer_log = os.path.join(results_dir, pair.consumer + ".log")
+            managed.append(procs.ManagedProcess(
+                pair.consumer, "consumer-app",
+                _launch(ndn.net[pair.consumer], consumer_env, consumer_exec, "", consumer_log),
+                consumer_exec, ""))
             consumer_daemon_env = (
                 f"GUARD_PREFIX={pair.prefix} EXP_GUARD_INTERVAL_MS={guard_interval_ms}"
             )
@@ -204,14 +213,26 @@ def main() -> int:
                 f"{consumer_daemon_env} OPTOFLOOD_PRODUCER_INDEX={pair.index}"
                 + (" OPTOFLOOD_NLSR_VERIFY_NOW=1" if event_driven else "")
             )
-            producer.cmd(
-                f"{producer_daemon_env} {daemon_exec} producer &> "
-                f"{os.path.join(results_dir, 'optoflood_' + pair.producer + '.log')} &"
-            )
-            ndn.net[pair.consumer].cmd(
-                f"{consumer_daemon_env} {daemon_exec} consumer &> "
-                f"{os.path.join(results_dir, 'optoflood_' + pair.consumer + '.log')} &"
-            )
+            producer_daemon_log = os.path.join(results_dir, "optoflood_" + pair.producer + ".log")
+            managed.append(procs.ManagedProcess(
+                pair.producer, "producer-daemon",
+                _launch(producer, producer_daemon_env, daemon_exec, "producer", producer_daemon_log),
+                daemon_exec, "producer"))
+            consumer_daemon_log = os.path.join(results_dir, "optoflood_" + pair.consumer + ".log")
+            managed.append(procs.ManagedProcess(
+                pair.consumer, "consumer-daemon",
+                _launch(ndn.net[pair.consumer], consumer_daemon_env, daemon_exec, "consumer",
+                        consumer_daemon_log),
+                daemon_exec, "consumer"))
+    except procs.ProcessError as error:
+        print(f"Error: {error}")
+        if managed:
+            failed_health = os.path.join(results_dir, "process-health.txt")
+            with open(failed_health, "w", encoding="utf-8") as handle:
+                handle.write(procs.HEALTH_HEADER)
+            _stop_managed(ndn, managed, failed_health, wall_time())
+        ndn.stop()
+        return 1
 
     started = wall_time()
     with open(os.path.join(results_dir, "observation_ends.txt"), "w", encoding="utf-8") as handle:
@@ -227,12 +248,15 @@ def main() -> int:
             handle.write(
                 f"producer{pair.index}_final_observation_abs={started + ends[pair.index]:.6f}\n"
             )
+    health_path = os.path.join(results_dir, "process-health.txt")
+    with open(health_path, "w", encoding="utf-8") as handle:
+        handle.write(procs.HEALTH_HEADER)
     cursor = 0.0
     handoff_path = os.path.join(results_dir, "handoffs.txt")
     by_index = {pair.index: pair for pair in selected}
     for when, producer_index, index, source, destination, interval_s in cfg.plan_events(selected, schedules, mode):
         pair = by_index[producer_index]
-        sleep(max(0.0, when - cursor))
+        _wait(max(0.0, when - cursor), ndn, managed, health_path, started)
         cursor = when
         info(f"Handoff {pair.producer} #{index}: {source} -> {destination}\n")
         absolute = wall_time()
@@ -243,17 +267,96 @@ def main() -> int:
                 f"{pair.producer}\t{index}\t{absolute:.6f}\t{absolute - started:.6f}\t"
                 f"{source}\t{destination}\t{interval_s:.6f}\n"
             )
-    sleep(max(0.0, common_end - cursor))
+    _wait(max(0.0, common_end - cursor), ndn, managed, health_path, started)
     for node_name in cfg.physical_hosts(population):
         pcap_path = os.path.join(results_dir, "pcap_nodes", f"{node_name}.pcap")
         ndn.net[node_name].cmd(f"pkill -f '{pcap_path}' || true")
-    sleep(1)
+    _wait(1.0, ndn, managed, health_path, started, "absent-before-shutdown")
+    _stop_managed(ndn, managed, health_path, started)
     ndn.stop()
     return 0
 
 
 def cfg_daemon() -> str:
     return "optoflood-daemon"
+
+
+def _pid_alive(node, pid: int) -> bool:
+    output = node.cmd(f"kill -0 {pid} >/dev/null 2>&1; echo $?")
+    return procs.trailing_status(output) == "0"
+
+
+def _cmdline(node, pid: int) -> str:
+    return node.cmd(f"tr '\\0' ' ' < /proc/{pid}/cmdline 2>/dev/null || true").strip()
+
+
+def _launch(node, env: str, executable: str, argument: str, log_path: str) -> int:
+    output = node.cmd(procs.background_launch(env, executable, argument, log_path))
+    return procs.parse_background_pid(output)
+
+
+def _record(path: str, row: str) -> None:
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write(row)
+
+
+def _poll(ndn: Minindn, managed: List[procs.ManagedProcess], health_path: str,
+          origin: float, detail: str) -> None:
+    rel_s = wall_time() - origin
+    for proc in managed:
+        if proc.premature or _pid_alive(ndn.net[proc.host], proc.pid):
+            continue
+        proc.premature = True
+        _record(health_path, procs.health_row(
+            proc.host, proc.kind, proc.pid, "premature-exit", rel_s, detail))
+
+
+def _wait(seconds: float, ndn: Minindn, managed: List[procs.ManagedProcess],
+          health_path: str, origin: float, detail: str = "absent-during-observation") -> None:
+    deadline = monotonic() + max(0.0, seconds)
+    while True:
+        _poll(ndn, managed, health_path, origin, detail)
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            return
+        sleep(min(1.0, remaining))
+
+
+def _stop_managed(ndn: Minindn, managed: List[procs.ManagedProcess],
+                  health_path: str, origin: float) -> None:
+    """Signal only the processes this driver started, while NFD is still up."""
+    for proc in managed:
+        node = ndn.net[proc.host]
+        if proc.premature:
+            continue
+        if not _pid_alive(node, proc.pid):
+            proc.premature = True
+            _record(health_path, procs.health_row(
+                proc.host, proc.kind, proc.pid, "premature-exit",
+                wall_time() - origin, "absent-before-shutdown"))
+            continue
+        cmdline = _cmdline(node, proc.pid)
+        if not procs.command_owns_pid(cmdline, proc.executable, proc.role):
+            _record(health_path, procs.health_row(
+                proc.host, proc.kind, proc.pid, "shutdown-refused",
+                wall_time() - origin, "cmdline-mismatch"))
+            continue
+        node.cmd(f"kill -TERM {proc.pid} >/dev/null 2>&1 || true")
+        deadline = monotonic() + 2.0
+        while monotonic() < deadline and _pid_alive(node, proc.pid):
+            sleep(0.1)
+        if _pid_alive(node, proc.pid) and procs.command_owns_pid(
+                _cmdline(node, proc.pid), proc.executable, proc.role):
+            node.cmd(f"kill -KILL {proc.pid} >/dev/null 2>&1 || true")
+            sleep(0.1)
+        rel_s = wall_time() - origin
+        if _pid_alive(node, proc.pid):
+            _record(health_path, procs.health_row(
+                proc.host, proc.kind, proc.pid, "shutdown-refused", rel_s, "still-alive"))
+        else:
+            _record(health_path, procs.health_row(
+                proc.host, proc.kind, proc.pid, "intentional-shutdown",
+                rel_s, "sigterm-before-nfd-stop"))
 
 
 if __name__ == "__main__":

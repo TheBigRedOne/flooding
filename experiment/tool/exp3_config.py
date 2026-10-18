@@ -285,6 +285,7 @@ def result_names(population: int) -> List[str]:
         "topology.txt",
         "schedules.txt",
         "observation_ends.txt",
+        "process-health.txt",
         "trust-schema.conf",
     ]
     for pair in pairs_for(population):

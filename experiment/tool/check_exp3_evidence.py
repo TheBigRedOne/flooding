@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Dict, List, Sequence
 
 import exp3_config as config
+import exp3_processes as procs
 
 _STARTUP = re.compile(r"STARTUP: OptoFlood daemon")
 _REGISTERED = re.compile(r"Successfully registered prefix: (\S+)")
@@ -79,6 +80,12 @@ def _daemon_alive(text: str, label: str) -> List[str]:
     if "FATAL:" in text:
         problems.append(f"{label} contains a daemon FATAL record")
     return problems
+
+
+def _app_fatal(text: str, label: str) -> List[str]:
+    if "FATAL:" in text:
+        return [f"{label} contains an application FATAL record"]
+    return []
 
 
 def _consumer_validated(log_text: str, consumer: str, prefix: str, handoff_time: float) -> bool:
@@ -181,12 +188,16 @@ def inspect_run(run_dir: Path) -> List[str]:
             problems.append(f"{pair.producer} registered {registered or ['none']}; expected {pair.prefix}")
         if advertised != [pair.prefix]:
             problems.append(f"{pair.producer} advertised {advertised or ['none']}; expected {pair.prefix}")
+        consumer_log = _read(run_dir / f"{pair.consumer}.log")
         daemon_log = _read(run_dir / f"optoflood_{pair.producer}.log")
-        problems.extend(_daemon_alive(daemon_log, pair.producer))
+        problems.extend(_daemon_alive(daemon_log, f"{pair.producer} daemon"))
+        problems.extend(_app_fatal(producer_log, pair.producer))
+        consumer_daemon_log = _read(run_dir / f"optoflood_{pair.consumer}.log")
+        problems.extend(_daemon_alive(consumer_daemon_log, f"{pair.consumer} daemon"))
+        problems.extend(_app_fatal(consumer_log, pair.consumer))
         guards = _GUARD_REGISTERED.findall(daemon_log)
         if guards != [pair.guard]:
             problems.append(f"{pair.producer} guard registration {guards or ['none']}; expected {pair.guard}")
-        consumer_log = _read(run_dir / f"{pair.consumer}.log")
         for foreign in _foreign_validations(consumer_log, pair.identity):
             problems.append(
                 f"{pair.consumer} validated {foreign}, which {pair.identity} cannot sign"
@@ -225,6 +236,54 @@ def inspect_run(run_dir: Path) -> List[str]:
         if f"certs/{pair.producer}.cert" not in schema:
             problems.append(f"trust schema does not include {pair.producer}.cert")
     problems.extend(_observation_ends(run_dir / "observation_ends.txt", selected, mode))
+    try:
+        common_end = float(params.get("common_end_s", ""))
+    except ValueError:
+        common_end = -1.0
+    if common_end <= 0:
+        problems.append("common_end_s is missing")
+    else:
+        problems.extend(_process_health(run_dir / "process-health.txt", selected, common_end))
+    return problems
+
+
+def _process_health(path: Path, selected: Sequence[config.Pair], common_end: float) -> List[str]:
+    problems = []
+    rows = []
+    if path.is_file():
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            if not line.strip() or line.split("\t", 1)[0] == "host":
+                continue
+            parts = line.split("\t")
+            if len(parts) != 6:
+                problems.append("process-health.txt row does not have six columns")
+                continue
+            rows.append(parts)
+    expected = procs.expected_processes(
+        tuple(pair.producer for pair in selected),
+        tuple(pair.consumer for pair in selected),
+    )
+    for host, kind in expected:
+        own = [row for row in rows if row[0] == host and row[1] == kind]
+        premature = [row for row in own if row[3] == "premature-exit"]
+        refused = [row for row in own if row[3] == "shutdown-refused"]
+        shutdowns = [row for row in own if row[3] == "intentional-shutdown"]
+        if premature:
+            problems.append(f"{host} {kind} exited during observation at {premature[0][4]}")
+        if refused:
+            problems.append(f"{host} {kind} shutdown was refused: {refused[0][5]}")
+        if len(shutdowns) != 1:
+            problems.append(f"{host} {kind} has {len(shutdowns)} intentional shutdown records")
+            continue
+        try:
+            rel_s = float(shutdowns[0][4])
+        except ValueError:
+            problems.append(f"{host} {kind} shutdown time is not numeric")
+            continue
+        if rel_s + 0.05 < common_end:
+            problems.append(
+                f"{host} {kind} shut down at {rel_s:.3f}s before the common end {common_end:.3f}s"
+            )
     return problems
 
 

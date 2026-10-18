@@ -11,6 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import exp3_config as config
+import exp3_processes as procs
 import check_exp3_evidence as checker
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -131,7 +132,8 @@ def _populate(root: Path, population: int) -> Path:
         encoding="utf-8",
     )
     (run_dir / "params.txt").write_text(
-        f"exp3_population=p{population}\nexp3_campaign={config.CAMPAIGN_ID}\nexp3_schedule=smoke\n",
+        f"exp3_population=p{population}\nexp3_campaign={config.CAMPAIGN_ID}\n"
+        f"exp3_schedule=smoke\ncommon_end_s={config.SMOKE_WARMUP_S + config.SMOKE_TAIL_S:.6f}\n",
         encoding="utf-8",
     )
     lines = ["producer\tindex\tabs_time\trel_time\tfrom_node\tto_node\tinterval_s\n"]
@@ -146,6 +148,19 @@ def _populate(root: Path, population: int) -> Path:
             f"{pair.producer}\t{pair.index}\t{config.SMOKE_WARMUP_S + config.SMOKE_TAIL_S:.6f}\t{endpoint:.6f}\n"
         )
     (run_dir / "observation_ends.txt").write_text("".join(observation), encoding="utf-8")
+    shutdown_at = config.SMOKE_WARMUP_S + config.SMOKE_TAIL_S + 1.0
+    health = [procs.HEALTH_HEADER]
+    for pair in selected:
+        identities = (
+            (pair.producer, "producer-app", 1100 + pair.index, ""),
+            (pair.consumer, "consumer-app", 1200 + pair.index, ""),
+            (pair.producer, "producer-daemon", 1300 + pair.index, "producer"),
+            (pair.consumer, "consumer-daemon", 1400 + pair.index, "consumer"),
+        )
+        for host, kind, pid, _role in identities:
+            health.append(procs.health_row(
+                host, kind, pid, "intentional-shutdown", shutdown_at, "sigterm-before-nfd-stop"))
+    (run_dir / "process-health.txt").write_text("".join(health), encoding="utf-8")
     received = int((HANDOFF + 1.0) * 1e9)
     for pair in selected:
         flood_id = config.guard_flood_id(pair.index, 1)
@@ -159,6 +174,10 @@ def _populate(root: Path, population: int) -> Path:
             f"producer_index={pair.index} pid={pair.index}\n"
             f"[1] GUARD-PRODUCER: registered guard prefix {pair.guard}\n"
             f"[1] GUARD-PRODUCER: flooded guard NewFaceSeq=1 FloodId={flood_id} size=10 bytes\n",
+            encoding="utf-8",
+        )
+        (run_dir / f"optoflood_{pair.consumer}.log").write_text(
+            f"[1] STARTUP: OptoFlood daemon role='consumer' prefix={pair.prefix} pid={pair.index}\n",
             encoding="utf-8",
         )
         (run_dir / f"{pair.consumer}.log").write_text(
@@ -225,6 +244,62 @@ class Exp3EvidenceTest(unittest.TestCase):
             )
             problems = checker.inspect_run(run_dir)
             self.assertTrue(any("cannot sign" in problem for problem in problems))
+
+    def test_teardown_fatal_and_premature_exit_fail(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = _populate(Path(tmp), 1)
+            daemon = run_dir / "optoflood_producer1.log"
+            daemon.write_text(
+                daemon.read_text(encoding="utf-8")
+                + "[51500000000] FATAL: socket read error (End of file)\n",
+                encoding="utf-8",
+            )
+            problems = checker.inspect_run(run_dir)
+            self.assertTrue(any("FATAL" in problem for problem in problems))
+            daemon.write_text(
+                "[1] STARTUP: OptoFlood daemon role='producer' prefix=/LiveStream/v0 "
+                "producer_index=1 pid=1\n"
+                "[1] GUARD-PRODUCER: registered guard prefix /LiveStream/v0/_guard\n"
+                "[1] GUARD-PRODUCER: flooded guard NewFaceSeq=1 FloodId=4294967297 size=10 bytes\n",
+                encoding="utf-8",
+            )
+            health = (run_dir / "process-health.txt").read_text(encoding="utf-8")
+            health = health.replace(
+                "producer1\tproducer-daemon\t1301\tintentional-shutdown",
+                "producer1\tproducer-daemon\t1301\tpremature-exit",
+            )
+            (run_dir / "process-health.txt").write_text(health, encoding="utf-8")
+            problems = checker.inspect_run(run_dir)
+            self.assertTrue(any("producer-daemon exited" in problem for problem in problems))
+            self.assertTrue(any("intentional shutdown" in problem for problem in problems))
+            consumer_daemon = run_dir / "optoflood_consumer1.log"
+            consumer_daemon.write_text(
+                consumer_daemon.read_text(encoding="utf-8")
+                + "[1000000000] FATAL: socket read error (End of file)\n",
+                encoding="utf-8",
+            )
+            problems = checker.inspect_run(run_dir)
+            self.assertTrue(any("consumer1 daemon contains a daemon FATAL" in problem for problem in problems))
+
+
+class ProcessLaunchTest(unittest.TestCase):
+    def test_pid_parsing_refuses_ambiguous_or_privileged_pids(self) -> None:
+        self.assertEqual(procs.parse_background_pid("noise\n4321\n"), 4321)
+        with self.assertRaises(procs.ProcessError):
+            procs.parse_background_pid("1\n")
+        with self.assertRaises(procs.ProcessError):
+            procs.parse_background_pid("4321\n4322\n")
+
+    def test_shutdown_signal_matches_only_the_started_command(self) -> None:
+        executable = "/home/vagrant/flooding/experiment/extended/exp3/optoflood-daemon"
+        self.assertTrue(procs.command_owns_pid(
+            f"{executable} producer", executable, "producer"))
+        self.assertFalse(procs.command_owns_pid("/usr/bin/nfd", executable, "producer"))
+        self.assertFalse(procs.command_owns_pid(
+            f"{executable} consumer", executable, "producer"))
+        self.assertTrue(procs.command_owns_pid(
+            "/home/vagrant/flooding/experiment/extended/exp3/producer",
+            "/home/vagrant/flooding/experiment/extended/exp3/producer", ""))
 
 
 if __name__ == "__main__":

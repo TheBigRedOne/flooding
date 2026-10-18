@@ -19,6 +19,7 @@ EXP3_VM_PREREQS := scripts/run-in-vm.sh \
 	experiment/tool/exp.py \
 	experiment/tool/exp3_driver.py \
 	experiment/tool/exp3_config.py \
+	experiment/tool/exp3_processes.py \
 	experiment/tool/check_exp3_evidence.py
 
 define exp3_outputs
@@ -28,6 +29,7 @@ $(1)/handoffs.txt \
 $(1)/topology.txt \
 $(1)/schedules.txt \
 $(1)/observation_ends.txt \
+$(1)/process-health.txt \
 $(1)/trust-schema.conf \
 $(foreach pair,$(2),$(1)/producer$(pair).log $(1)/consumer$(pair).log $(1)/optoflood_producer$(pair).log $(1)/optoflood_consumer$(pair).log $(1)/certs/producer$(pair).cert) \
 $(foreach node,$(3),$(1)/pcap_nodes/$(node).pcap $(1)/tcpdump_$(node).log $(1)/minindn-logs/$(node)/nfd.log $(1)/minindn-logs/$(node)/nlsr.log)
