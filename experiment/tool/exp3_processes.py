@@ -87,6 +87,106 @@ def command_owns_capture(cmdline: str, pcap_path: str) -> bool:
     return command_owns_pid(cmdline, "tcpdump", "") and pcap_path in cmdline.split()
 
 
+# echo $! returns at fork. tcpdump's cmdline appears only after exec. Each
+# observation is a Mininet shell round trip, so the bound covers several of
+# those trips. A matching observation returns immediately; this is not a sleep.
+CAPTURE_STARTUP_TIMEOUT_S = 2.0
+CAPTURE_STARTUP_POLL_S = 0.05
+_RUNNING_STATES = set("RSDTtWIP")
+_TRANSIENT_SHELLS = {"sh", "bash", "dash", "busybox"}
+
+
+def process_state(stat_text: str) -> str:
+    """Return the state character from /proc/pid/stat, or empty when absent."""
+    for line in stat_text.splitlines():
+        end = line.rfind(")")
+        if end < 0 or end + 2 >= len(line):
+            continue
+        rest = line[end + 2:].strip()
+        if rest:
+            return rest.split(None, 1)[0]
+    return ""
+
+
+def pid_state_is_running(state: str) -> bool:
+    """False for a missing process, a zombie, or a dead task."""
+    return state in _RUNNING_STATES
+
+
+def split_capture_observation(output: str) -> Tuple[str, str]:
+    """Split one combined /proc snapshot into state and command line."""
+    state_text, marker, command_text = output.partition("__CMDLINE__")
+    if not marker:
+        return "", ""
+    return process_state(state_text.replace("__STATE__", "")), " ".join(command_text.split())
+
+
+def _transient_shell(cmdline: str) -> bool:
+    tokens = cmdline.split()
+    if not tokens:
+        return True
+    name = tokens[0].rsplit("/", 1)[-1].lstrip("-")
+    return name in _TRANSIENT_SHELLS
+
+
+def capture_startup_status(state: str, cmdline: str, pcap_path: str) -> str:
+    """Classify one startup observation: ready, wait, exited, or mismatch."""
+    if not pid_state_is_running(state):
+        return "exited"
+    if command_owns_capture(cmdline, pcap_path):
+        return "ready"
+    if _transient_shell(cmdline):
+        return "wait"
+    return "mismatch"
+
+
+def resolve_capture_startup(
+    observations: Sequence[Tuple[str, str]],
+    pcap_path: str,
+    timeout_s: float = CAPTURE_STARTUP_TIMEOUT_S,
+    poll_s: float = CAPTURE_STARTUP_POLL_S,
+) -> str:
+    """Resolve ordered (state, cmdline) observations. The first is at fork time.
+
+    A trace that is still a transient shell before the deadline stays ``wait``.
+    The driver polls again. ``timeout`` means the deadline was reached first.
+    """
+    elapsed = 0.0
+    for state, cmdline in observations:
+        status = capture_startup_status(state, cmdline, pcap_path)
+        if status != "wait":
+            return status
+        if elapsed >= timeout_s:
+            return "timeout"
+        elapsed += poll_s
+    if elapsed >= timeout_s:
+        return "timeout"
+    return "wait"
+
+
+def capture_stop_allowed(cmdline: str, pcap_path: str) -> bool:
+    """Signal only the tcpdump that owns this capture. A shell or recycled pid does not."""
+    return command_owns_capture(cmdline, pcap_path)
+
+
+def capture_failure_message(
+    host: str,
+    pid: int,
+    status: str,
+    state: str,
+    cmdline: str,
+    log_text: str,
+) -> str:
+    """PID, identity, and tcpdump stderr for a startup failure. The run does not continue."""
+    log = log_text.strip() or "<empty>"
+    if len(log) > 1000:
+        log = log[-1000:]
+    return (
+        f"tcpdump startup {status} on {host} pid {pid}: "
+        f"state={state or 'absent'} cmdline={cmdline or '<empty>'}\n{log}"
+    )
+
+
 def health_row(host: str, kind: str, pid: int, event: str, rel_s: float, detail: str) -> str:
     if kind not in PROCESS_KINDS:
         raise ProcessError(f"unknown process kind {kind}")

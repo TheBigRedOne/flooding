@@ -119,7 +119,25 @@ if [ "$experiment" != "exp2" ] && [ "$experiment" != "exp3" ] && [ "${RUN_IN_VM_
 fi
 
 # Use ssh -F directly so the keepalive options appended to $ssh_config above take effect on the long-running command.
-ssh -F "$ssh_config" -o TCPKeepAlive=no -o ServerAliveInterval=10 "$host_alias" "set -e; cd $remote_dir/$remote_subdir && make clean && $remote_make; mkdir -p results/minindn-logs; if [ -d /tmp/minindn ]; then for name in $mobility_log_nodes; do node=/tmp/minindn/\$name; if [ -d \"\$node/log\" ]; then mkdir -p \"results/minindn-logs/\$name\"; cp -f \"\$node/log/nfd.log\" \"results/minindn-logs/\$name/\" 2>/dev/null || true; cp -f \"\$node/log/nlsr.log\" \"results/minindn-logs/\$name/\" 2>/dev/null || true; fi; done; fi"
+copy_guest_diagnostics() {
+  ssh -F "$ssh_config" -o TCPKeepAlive=no -o ServerAliveInterval=10 "$host_alias" "set -e; cd $remote_dir/$remote_subdir && mkdir -p results/minindn-logs; if [ -d /tmp/minindn ]; then for name in $mobility_log_nodes; do node=/tmp/minindn/\$name; if [ -d \"\$node/log\" ]; then mkdir -p \"results/minindn-logs/\$name\"; cp -f \"\$node/log/nfd.log\" \"results/minindn-logs/\$name/\" 2>/dev/null || true; cp -f \"\$node/log/nlsr.log\" \"results/minindn-logs/\$name/\" 2>/dev/null || true; fi; done; fi"
+}
+
+if [ "$experiment" = "exp3" ]; then
+  # set -e would skip every later copy when the guest make fails. Collection is
+  # best-effort and does not change the guest status.
+  guest_status=0
+  ssh -F "$ssh_config" -o TCPKeepAlive=no -o ServerAliveInterval=10 "$host_alias" "set -e; cd $remote_dir/$remote_subdir && make clean && $remote_make" || guest_status=$?
+  if [ "$guest_status" -ne 0 ]; then
+    copy_guest_diagnostics || true
+    rsync -avH -e "ssh -F $ssh_config -o TCPKeepAlive=no -o ServerAliveInterval=10" "$host_alias:$remote_dir/$remote_subdir/results/." "$result_dir/" || true
+    echo "Exp3 guest command failed with status ${guest_status}; diagnostic results were copied when available" >&2
+    exit "$guest_status"
+  fi
+  copy_guest_diagnostics
+else
+  ssh -F "$ssh_config" -o TCPKeepAlive=no -o ServerAliveInterval=10 "$host_alias" "set -e; cd $remote_dir/$remote_subdir && make clean && $remote_make; mkdir -p results/minindn-logs; if [ -d /tmp/minindn ]; then for name in $mobility_log_nodes; do node=/tmp/minindn/\$name; if [ -d \"\$node/log\" ]; then mkdir -p \"results/minindn-logs/\$name\"; cp -f \"\$node/log/nfd.log\" \"results/minindn-logs/\$name/\" 2>/dev/null || true; cp -f \"\$node/log/nlsr.log\" \"results/minindn-logs/\$name/\" 2>/dev/null || true; fi; done; fi"
+fi
 
 rsync -avH -e "ssh -F $ssh_config -o TCPKeepAlive=no -o ServerAliveInterval=10" "$host_alias:$remote_dir/$remote_subdir/results/." "$result_dir/"
 VAGRANT_DEFAULT_PROVIDER="$provider" VAGRANT_CWD="$vagrant_dir" vagrant halt -f || true

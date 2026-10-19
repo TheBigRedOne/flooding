@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -309,6 +311,107 @@ class ProcessLaunchTest(unittest.TestCase):
         self.assertTrue(procs.command_owns_capture(f"tcpdump -i any -U -w {own} udp port 6363", own))
         self.assertFalse(procs.command_owns_capture(f"tcpdump -i any -U -w {other} udp port 6363", own))
         self.assertFalse(procs.command_owns_capture(f"nfd -w {own}", own))
+
+    def test_capture_startup_waits_through_transient_shell_then_accepts_tcpdump(self) -> None:
+        own = "/tmp/exp3/pcap_nodes/core.pcap"
+        command = f"tcpdump -i any -U -w {own} udp port 6363"
+        self.assertEqual(procs.capture_startup_status("S", "bash", own), "wait")
+        self.assertEqual(procs.capture_startup_status("S", "", own), "wait")
+        self.assertEqual(
+            procs.resolve_capture_startup(
+                (("S", "bash"), ("S", command)), own, timeout_s=2.0, poll_s=0.05,
+            ),
+            "ready",
+        )
+        self.assertTrue(procs.capture_stop_allowed(command, own))
+        self.assertFalse(procs.capture_stop_allowed("bash", own))
+
+    def test_capture_startup_rejects_exit_mismatch_and_deadline(self) -> None:
+        own = "/tmp/exp3/pcap_nodes/core.pcap"
+        other = "/tmp/exp3/pcap_nodes/acc1.pcap"
+        self.assertEqual(procs.capture_startup_status("Z", "", own), "exited")
+        self.assertEqual(procs.capture_startup_status("", "", own), "exited")
+        self.assertFalse(procs.pid_state_is_running("Z"))
+        self.assertTrue(procs.pid_state_is_running("S"))
+        self.assertEqual(procs.process_state("4321 (tcpdump) Z 1 1"), "Z")
+        self.assertEqual(
+            procs.resolve_capture_startup((("Z", ""),), own, timeout_s=2.0, poll_s=0.05),
+            "exited",
+        )
+        wrong = f"tcpdump -i any -U -w {other} udp port 6363"
+        self.assertEqual(procs.capture_startup_status("S", wrong, own), "mismatch")
+        self.assertEqual(procs.capture_startup_status("R", "/usr/bin/nfd", own), "mismatch")
+        self.assertFalse(procs.capture_stop_allowed("/usr/bin/nfd", own))
+        self.assertFalse(procs.capture_stop_allowed(wrong, own))
+        waits = tuple(("S", "bash") for _ in range(3))
+        self.assertEqual(
+            procs.resolve_capture_startup(waits, own, timeout_s=0.1, poll_s=0.05),
+            "timeout",
+        )
+        self.assertEqual(
+            procs.resolve_capture_startup((("S", "bash"),), own, timeout_s=2.0, poll_s=0.05),
+            "wait",
+        )
+        message = procs.capture_failure_message(
+            "core", 4321, "timeout", "S", "bash",
+            "tcpdump: listening on any, link-type LINUX_SLL2\n",
+        )
+        self.assertIn("pid 4321", message)
+        self.assertIn("state=S", message)
+        self.assertIn("cmdline=bash", message)
+        self.assertIn("LINUX_SLL2", message)
+
+    def test_snapshot_parser_and_final_zombie_are_not_running(self) -> None:
+        output = "__STATE__\n4321 (tcpdump) S 1 1\n__CMDLINE__\ntcpdump -i any -U -w /tmp/core.pcap\n"
+        state, cmdline = procs.split_capture_observation(output)
+        self.assertEqual(state, "S")
+        self.assertIn("/tmp/core.pcap", cmdline.split())
+        self.assertTrue(procs.capture_stop_allowed(cmdline, "/tmp/core.pcap"))
+        self.assertFalse(procs.pid_state_is_running(procs.process_state("4321 (tcpdump) Z 1 1")))
+
+    def test_exp3_guest_failure_keeps_nonzero_status_after_collection(self) -> None:
+        shell = shutil.which("sh")
+        if shell is None:
+            for candidate in (
+                Path(r"C:\Program Files\Git\usr\bin\sh.exe"),
+                Path(r"C:\Program Files\Git\bin\bash.exe"),
+            ):
+                if candidate.is_file():
+                    shell = str(candidate)
+                    break
+        if shell is None:
+            self.skipTest("POSIX shell is required to execute the Exp3 collection status rule")
+        script = r"""
+set -eu
+guest_status=0
+"$2" -c 'exit 7' || guest_status=$?
+echo collected > "$1" || true
+if [ "$guest_status" -ne 0 ]; then
+  exit "$guest_status"
+fi
+exit 0
+"""
+        with tempfile.TemporaryDirectory() as temporary:
+            marker = Path(temporary) / "collected"
+            failed = subprocess.run(
+                [shell, "-c", script, "sh", str(marker), shell],
+                capture_output=True, text=True, check=False,
+            )
+            self.assertEqual(failed.returncode, 7, failed.stderr)
+            self.assertEqual(marker.read_text(encoding="utf-8").strip(), "collected")
+        source = (ROOT / "scripts" / "run-in-vm.sh").read_text(encoding="utf-8")
+        self.assertIn('|| guest_status=$?', source)
+        self.assertIn('exit "$guest_status"', source)
+        self.assertIn(
+            'make clean && $remote_make; mkdir -p results/minindn-logs',
+            source,
+        )
+        self.assertLess(source.index("refusing to replace existing Exp3 results"), source.index("guest_status=0"))
+        syntax = subprocess.run(
+            [shell, "-n", str(ROOT / "scripts" / "run-in-vm.sh")],
+            capture_output=True, text=True, check=False,
+        )
+        self.assertEqual(syntax.returncode, 0, syntax.stderr)
 
 
 class ScheduleClockTest(unittest.TestCase):

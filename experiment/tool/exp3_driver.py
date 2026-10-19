@@ -6,7 +6,7 @@ Importing this module loads Mini-NDN. Host-side tests use exp3_config instead.
 from time import monotonic, sleep, time as wall_time
 import os
 import sys
-from typing import Dict, List
+from typing import Dict, List, Optional, Tuple
 
 import exp
 import exp3_config as cfg
@@ -172,6 +172,7 @@ def main() -> int:
         handle.write(cfg.trust_schema_text(cert_paths))
 
     captures: List[procs.Capture] = []
+    inflight: Optional[procs.Capture] = None
     try:
         for node_name in cfg.physical_hosts(population):
             node = ndn.net[node_name]
@@ -180,16 +181,15 @@ def main() -> int:
             pid = _launch(
                 node, "", "tcpdump", f"-i any -U -w {pcap_path} udp port 6363", log_path,
             )
-            if not _pid_alive(node, pid) or not procs.command_owns_capture(
-                    _cmdline(node, pid), pcap_path):
-                raise procs.ProcessError(f"tcpdump did not stay up on {node_name}")
-            captures.append(procs.Capture(node_name, pid, pcap_path, log_path))
+            inflight = procs.Capture(node_name, pid, pcap_path, log_path)
+            _await_capture(node, node_name, pid, pcap_path, log_path)
+            captures.append(inflight)
+            inflight = None
     except procs.ProcessError as error:
         print(f"Error: {error}")
-        for capture in captures:
-            node = ndn.net[capture.host]
-            if procs.command_owns_capture(_cmdline(node, capture.pid), capture.pcap):
-                node.cmd(f"kill -TERM {capture.pid} >/dev/null 2>&1 || true")
+        if inflight is not None:
+            captures.append(inflight)
+        _stop_owned_captures(ndn, captures)
         ndn.stop()
         return 1
 
@@ -308,13 +308,53 @@ def cfg_daemon() -> str:
     return "optoflood-daemon"
 
 
+def _process_state(node, pid: int) -> str:
+    return procs.process_state(node.cmd(f"cat /proc/{pid}/stat 2>/dev/null || true"))
+
+
 def _pid_alive(node, pid: int) -> bool:
-    output = node.cmd(f"kill -0 {pid} >/dev/null 2>&1; echo $?")
-    return procs.trailing_status(output) == "0"
+    """A zombie is not a running capture. kill -0 succeeds on a zombie."""
+    return procs.pid_state_is_running(_process_state(node, pid))
 
 
 def _cmdline(node, pid: int) -> str:
     return node.cmd(f"tr '\\0' ' ' < /proc/{pid}/cmdline 2>/dev/null || true").strip()
+
+
+def _capture_snapshot(node, pid: int) -> Tuple[str, str]:
+    output = node.cmd(
+        "echo __STATE__; cat /proc/{0}/stat 2>/dev/null || true; "
+        "echo __CMDLINE__; tr '\\0' ' ' < /proc/{0}/cmdline 2>/dev/null || true".format(pid)
+    )
+    return procs.split_capture_observation(output)
+
+
+def _await_capture(node, host: str, pid: int, pcap_path: str, log_path: str) -> None:
+    """Poll until tcpdump owns this PCAP, or fail on exit, mismatch, or deadline."""
+    deadline = monotonic() + procs.CAPTURE_STARTUP_TIMEOUT_S
+    while True:
+        state, cmdline = _capture_snapshot(node, pid)
+        status = procs.capture_startup_status(state, cmdline, pcap_path)
+        if status == "ready":
+            return
+        if status == "wait" and monotonic() < deadline:
+            sleep(procs.CAPTURE_STARTUP_POLL_S)
+            continue
+        if status == "wait":
+            status = "timeout"
+        try:
+            log_text = open(log_path, encoding="utf-8", errors="replace").read()
+        except OSError:
+            log_text = ""
+        raise procs.ProcessError(procs.capture_failure_message(
+            host, pid, status, state, cmdline, log_text))
+
+
+def _stop_owned_captures(ndn: Minindn, captures: List[procs.Capture]) -> None:
+    for capture in captures:
+        node = ndn.net[capture.host]
+        if procs.capture_stop_allowed(_cmdline(node, capture.pid), capture.pcap):
+            node.cmd(f"kill -TERM {capture.pid} >/dev/null 2>&1 || true")
 
 
 def _launch(node, env: str, executable: str, argument: str, log_path: str) -> int:
