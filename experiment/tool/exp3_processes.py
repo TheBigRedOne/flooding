@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Sequence, Tuple
+import re
+from typing import Literal, Sequence, Tuple
 
 PROCESS_KINDS = (
     "producer-app",
@@ -16,6 +17,17 @@ HEALTH_EVENTS = ("premature-exit", "intentional-shutdown", "shutdown-refused")
 
 class ProcessError(ValueError):
     """Raised when a managed-process command cannot be identified safely."""
+
+
+class Capture:
+    def __init__(self, host: str, pid: int, pcap: str, log: str) -> None:
+        if pid <= 1:
+            raise ProcessError(f"refusing to manage tcpdump pid {pid}")
+        self.host = host
+        self.pid = pid
+        self.pcap = pcap
+        self.log = log
+        self.dead = False
 
 
 class ManagedProcess:
@@ -62,11 +74,17 @@ def command_owns_pid(cmdline: str, executable: str, role: str) -> bool:
     """
     tokens = cmdline.split()
     base = executable.rsplit("/", 1)[-1]
-    if executable not in tokens and base not in tokens:
+    names = {token.rsplit("/", 1)[-1] for token in tokens}
+    if executable not in tokens and base not in names:
         return False
     if role and role not in tokens:
         return False
     return True
+
+
+def command_owns_capture(cmdline: str, pcap_path: str) -> bool:
+    """True only for the tcpdump writing this capture file."""
+    return command_owns_pid(cmdline, "tcpdump", "") and pcap_path in cmdline.split()
 
 
 def health_row(host: str, kind: str, pid: int, event: str, rel_s: float, detail: str) -> str:
@@ -89,3 +107,52 @@ def expected_processes(producers: Sequence[str], consumers: Sequence[str]) -> Tu
             (consumer, "consumer-daemon"),
         ))
     return tuple(rows)
+
+
+_PCAP_MAGICS: dict[bytes, Literal["little", "big"]] = {
+    b"\xd4\xc3\xb2\xa1": "little",
+    b"\xa1\xb2\xc3\xd4": "big",
+    b"\x4d\x3c\xb2\xa1": "little",
+    b"\xa1\xb2\x3c\x4d": "big",
+}
+_CAPTURED = re.compile(r"(\d+) packets captured")
+_KERNEL_DROPS = re.compile(r"(\d+) packets dropped by kernel")
+_INTERFACE_DROPS = re.compile(r"(\d+) packets dropped by interface")
+
+
+def inspect_pcap(data: bytes) -> Tuple[str, int]:
+    """Walk a classic pcap. Empty payload with a valid header is decodable."""
+    if len(data) < 24:
+        return "truncated-header", 0
+    endian = _PCAP_MAGICS.get(data[:4])
+    if endian is None:
+        return "bad-magic", 0
+    offset = 24
+    count = 0
+    while offset < len(data):
+        if offset + 16 > len(data):
+            return "truncated-record", count
+        included = int.from_bytes(data[offset + 8:offset + 12], endian)
+        if included > 262144:
+            return "bad-record", count
+        nxt = offset + 16 + included
+        if nxt > len(data):
+            return "truncated-record", count
+        offset = nxt
+        count += 1
+    if count == 0:
+        return "ok-empty", 0
+    return "ok", count
+
+
+def tcpdump_drop_detail(log_text: str) -> str:
+    """Return kernel and interface drop counts, or 'unavailable' when tcpdump did not report them."""
+    kernel = _KERNEL_DROPS.search(log_text)
+    interface = _INTERFACE_DROPS.search(log_text)
+    captured = _CAPTURED.search(log_text)
+    if kernel is None and interface is None and captured is None:
+        return "unavailable"
+    kernel_n = kernel.group(1) if kernel else "absent"
+    interface_n = interface.group(1) if interface else "absent"
+    captured_n = captured.group(1) if captured else "absent"
+    return f"captured={captured_n} kernel_dropped={kernel_n} interface_dropped={interface_n}"

@@ -68,8 +68,8 @@ def main() -> int:
         if mode not in {"smoke", "full"}:
             raise cfg.Exp3ConfigError(f"EXP3_SCHEDULE must be smoke or full; got {mode!r}")
         run_id = "smoke" if mode == "smoke" else (os.getenv("EXP3_RUN_ID") or "").strip()
-        if mode == "full" and run_id not in cfg.RUN_IDS:
-            raise cfg.Exp3ConfigError(f"EXP3_RUN_ID must be r1..r5; got {run_id!r}")
+        if mode == "full" and run_id not in cfg.RUN_IDS and run_id != cfg.PILOT_RUN_ID:
+            raise cfg.Exp3ConfigError(f"EXP3_RUN_ID must be r1..r5 or pilot; got {run_id!r}")
         run_seed = cfg.run_seed_for(run_id, os.getenv("EXP3_RUN_SEED") or "")
         selected = cfg.pairs_for(population)
         if mode == "smoke":
@@ -110,7 +110,10 @@ def main() -> int:
                 + f"\t{ends[pair.index]:.6f}\t{ends[pair.index]:.6f}\n"
             )
     with open(os.path.join(results_dir, "handoffs.txt"), "w", encoding="utf-8") as handle:
-        handle.write("producer\tindex\tabs_time\trel_time\tfrom_node\tto_node\tinterval_s\n")
+        handle.write(
+            "producer\tindex\tabs_time\trel_time\tfrom_node\tto_node\tinterval_s"
+            "\tplanned_rel_s\tlateness_s\n"
+        )
     exp._write_nlsr_params_file(
         results_dir, {**nlsr_applied, **feature_params, **scalar_params},
         8 if mode == "full" else 1,
@@ -168,11 +171,27 @@ def main() -> int:
     with open(schema_path, "w", encoding="utf-8") as handle:
         handle.write(cfg.trust_schema_text(cert_paths))
 
-    for node_name in cfg.physical_hosts(population):
-        node = ndn.net[node_name]
-        pcap_path = os.path.join(results_dir, "pcap_nodes", f"{node_name}.pcap")
-        log_path = os.path.join(results_dir, f"tcpdump_{node_name}.log")
-        node.cmd(f"tcpdump -i any -U -w {pcap_path} udp port 6363 &> {log_path} &")
+    captures: List[procs.Capture] = []
+    try:
+        for node_name in cfg.physical_hosts(population):
+            node = ndn.net[node_name]
+            pcap_path = os.path.join(results_dir, "pcap_nodes", f"{node_name}.pcap")
+            log_path = os.path.join(results_dir, f"tcpdump_{node_name}.log")
+            pid = _launch(
+                node, "", "tcpdump", f"-i any -U -w {pcap_path} udp port 6363", log_path,
+            )
+            if not _pid_alive(node, pid) or not procs.command_owns_capture(
+                    _cmdline(node, pid), pcap_path):
+                raise procs.ProcessError(f"tcpdump did not stay up on {node_name}")
+            captures.append(procs.Capture(node_name, pid, pcap_path, log_path))
+    except procs.ProcessError as error:
+        print(f"Error: {error}")
+        for capture in captures:
+            node = ndn.net[capture.host]
+            if procs.command_owns_capture(_cmdline(node, capture.pid), capture.pcap):
+                node.cmd(f"kill -TERM {capture.pid} >/dev/null 2>&1 || true")
+        ndn.stop()
+        return 1
 
     app_common = (
         f"EXP_REQUEST_INTERVAL_MS={request_interval_ms}"
@@ -235,6 +254,7 @@ def main() -> int:
         return 1
 
     started = wall_time()
+    mono_origin = monotonic()
     with open(os.path.join(results_dir, "observation_ends.txt"), "w", encoding="utf-8") as handle:
         handle.write("producer\tindex\trel_end_s\tabs_end\n")
         for pair in selected:
@@ -251,28 +271,35 @@ def main() -> int:
     health_path = os.path.join(results_dir, "process-health.txt")
     with open(health_path, "w", encoding="utf-8") as handle:
         handle.write(procs.HEALTH_HEADER)
-    cursor = 0.0
+    capture_path = os.path.join(results_dir, "capture-health.txt")
+    with open(capture_path, "w", encoding="utf-8") as handle:
+        handle.write("host\tpid\tevent\trel_s\tdetail\n")
+    for capture in captures:
+        _record(capture_path, (
+            f"{capture.host}\t{capture.pid}\tstarted\t0.000000\ttcpdump\n"
+        ))
     handoff_path = os.path.join(results_dir, "handoffs.txt")
     by_index = {pair.index: pair for pair in selected}
+    lateness_by_producer: Dict[str, List[float]] = {pair.producer: [] for pair in selected}
     for when, producer_index, index, source, destination, interval_s in cfg.plan_events(selected, schedules, mode):
         pair = by_index[producer_index]
-        _wait(max(0.0, when - cursor), ndn, managed, health_path, started)
-        cursor = when
-        info(f"Handoff {pair.producer} #{index}: {source} -> {destination}\n")
+        _wait_until(mono_origin + when, ndn, managed, captures, health_path, capture_path, started)
         absolute = wall_time()
+        actual_rel = absolute - started
+        late = cfg.scheduling_lateness(actual_rel, when)
+        lateness_by_producer[pair.producer].append(late)
+        info(f"Handoff {pair.producer} #{index}: {source} -> {destination}\n")
         ndn.net.configLinkStatus(pair.producer, source, "down")
         ndn.net.configLinkStatus(pair.producer, destination, "up")
         with open(handoff_path, "a", encoding="utf-8") as handle:
             handle.write(
-                f"{pair.producer}\t{index}\t{absolute:.6f}\t{absolute - started:.6f}\t"
-                f"{source}\t{destination}\t{interval_s:.6f}\n"
+                f"{pair.producer}\t{index}\t{absolute:.6f}\t{actual_rel:.6f}\t"
+                f"{source}\t{destination}\t{interval_s:.6f}\t{when:.6f}\t{late:.6f}\n"
             )
-    _wait(max(0.0, common_end - cursor), ndn, managed, health_path, started)
-    for node_name in cfg.physical_hosts(population):
-        pcap_path = os.path.join(results_dir, "pcap_nodes", f"{node_name}.pcap")
-        ndn.net[node_name].cmd(f"pkill -f '{pcap_path}' || true")
-    _wait(1.0, ndn, managed, health_path, started, "absent-before-shutdown")
+    _wait_until(mono_origin + common_end, ndn, managed, captures, health_path, capture_path, started)
+    _finish_captures(ndn, captures, capture_path, started, common_end)
     _stop_managed(ndn, managed, health_path, started)
+    _write_timing_summary(os.path.join(results_dir, "timing-summary.txt"), lateness_by_producer)
     ndn.stop()
     return 0
 
@@ -311,15 +338,108 @@ def _poll(ndn: Minindn, managed: List[procs.ManagedProcess], health_path: str,
             proc.host, proc.kind, proc.pid, "premature-exit", rel_s, detail))
 
 
-def _wait(seconds: float, ndn: Minindn, managed: List[procs.ManagedProcess],
-          health_path: str, origin: float, detail: str = "absent-during-observation") -> None:
-    deadline = monotonic() + max(0.0, seconds)
+def _poll_captures(ndn: Minindn, captures: List[procs.Capture], capture_path: str, origin: float) -> None:
+    rel_s = wall_time() - origin
+    for capture in captures:
+        if capture.dead:
+            continue
+        node = ndn.net[capture.host]
+        if _pid_alive(node, capture.pid) and procs.command_owns_capture(
+                _cmdline(node, capture.pid), capture.pcap):
+            continue
+        capture.dead = True
+        _record(capture_path, (
+            f"{capture.host}\t{capture.pid}\terror\t{rel_s:.6f}\tdied-during-observation\n"
+        ))
+
+
+def _wait_until(deadline: float, ndn: Minindn, managed: List[procs.ManagedProcess],
+                captures: List[procs.Capture], health_path: str, capture_path: str, origin: float) -> None:
+    """Sleep until an absolute monotonic deadline. A passed deadline does not wait."""
     while True:
-        _poll(ndn, managed, health_path, origin, detail)
+        _poll(ndn, managed, health_path, origin, "absent-during-observation")
+        _poll_captures(ndn, captures, capture_path, origin)
         remaining = deadline - monotonic()
         if remaining <= 0:
             return
         sleep(min(1.0, remaining))
+
+
+def _finish_captures(ndn: Minindn, captures: List[procs.Capture], capture_path: str,
+                     origin: float, common_end: float) -> None:
+    """Stop tcpdump after the common endpoint and while NFD is still up."""
+    for capture in captures:
+        node = ndn.net[capture.host]
+        rel_s = wall_time() - origin
+        if capture.dead or not _pid_alive(node, capture.pid):
+            capture.dead = True
+            _record(capture_path, (
+                f"{capture.host}\t{capture.pid}\trunning-at-common-end\t{rel_s:.6f}\tdead\n"
+            ))
+            continue
+        _record(capture_path, (
+            f"{capture.host}\t{capture.pid}\trunning-at-common-end\t{common_end:.6f}\talive\n"
+        ))
+        if not procs.command_owns_capture(_cmdline(node, capture.pid), capture.pcap):
+            _record(capture_path, (
+                f"{capture.host}\t{capture.pid}\tshutdown-refused\t{rel_s:.6f}\tcmdline-mismatch\n"
+            ))
+            continue
+        node.cmd(f"kill -TERM {capture.pid} >/dev/null 2>&1 || true")
+        deadline = monotonic() + 3.0
+        while monotonic() < deadline and _pid_alive(node, capture.pid):
+            sleep(0.1)
+        if _pid_alive(node, capture.pid) and procs.command_owns_capture(
+                _cmdline(node, capture.pid), capture.pcap):
+            node.cmd(f"kill -KILL {capture.pid} >/dev/null 2>&1 || true")
+            sleep(0.1)
+        stopped = wall_time() - origin
+        if _pid_alive(node, capture.pid):
+            _record(capture_path, (
+                f"{capture.host}\t{capture.pid}\tfinalized\t{stopped:.6f}\tstill-alive\n"
+            ))
+            continue
+        _record(capture_path, (
+            f"{capture.host}\t{capture.pid}\tstopped\t{stopped:.6f}\tsigterm-after-common-end\n"
+        ))
+        _record(capture_path, (
+            f"{capture.host}\t{capture.pid}\tfinalized\t{stopped:.6f}\texited\n"
+        ))
+        try:
+            log_text = open(capture.log, encoding="utf-8", errors="replace").read()
+        except OSError:
+            log_text = ""
+        _record(capture_path, (
+            f"{capture.host}\t{capture.pid}\tdrops\t{stopped:.6f}\t"
+            f"{procs.tcpdump_drop_detail(log_text)}\n"
+        ))
+        try:
+            payload = open(capture.pcap, "rb").read()
+        except OSError:
+            payload = b""
+        status, count = procs.inspect_pcap(payload)
+        _record(capture_path, (
+            f"{capture.host}\t{capture.pid}\tdecode\t{stopped:.6f}\t{status} packets={count}\n"
+        ))
+
+
+def _write_timing_summary(path: str, lateness_by_producer: Dict[str, List[float]]) -> None:
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write("scope\tn\tmax_lateness_s\tmedian_lateness_s\tp90_lateness_s\n")
+        combined: List[float] = []
+        for producer in sorted(lateness_by_producer):
+            values = lateness_by_producer[producer]
+            combined.extend(values)
+            if not values:
+                continue
+            maximum, median, upper = cfg.lateness_summary(values)
+            handle.write(
+                f"{producer}\t{len(values)}\t{maximum:.6f}\t{median:.6f}\t{upper:.6f}\n"
+            )
+        if combined:
+            maximum, median, upper = cfg.lateness_summary(combined)
+            handle.write(f"run\t{len(combined)}\t{maximum:.6f}\t{median:.6f}\t{upper:.6f}\n")
+        handle.write("review\tlateness-recorded-not-thresholded\n")
 
 
 def _stop_managed(ndn: Minindn, managed: List[procs.ManagedProcess],

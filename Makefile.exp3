@@ -30,6 +30,8 @@ $(1)/topology.txt \
 $(1)/schedules.txt \
 $(1)/observation_ends.txt \
 $(1)/process-health.txt \
+$(1)/capture-health.txt \
+$(1)/timing-summary.txt \
 $(1)/trust-schema.conf \
 $(foreach pair,$(2),$(1)/producer$(pair).log $(1)/consumer$(pair).log $(1)/optoflood_producer$(pair).log $(1)/optoflood_consumer$(pair).log $(1)/certs/producer$(pair).cert) \
 $(foreach node,$(3),$(1)/pcap_nodes/$(node).pcap $(1)/tcpdump_$(node).log $(1)/minindn-logs/$(node)/nfd.log $(1)/minindn-logs/$(node)/nlsr.log)
@@ -70,3 +72,42 @@ endef
 $(foreach run,$(EXP3_FULL_RUNS),$(eval $(call exp3_full_rule,P1,$(run),p1,1,$(EXP3_P1_NODES))))
 $(foreach run,$(EXP3_FULL_RUNS),$(eval $(call exp3_full_rule,P2,$(run),p2,1 2,$(EXP3_P2_NODES))))
 $(foreach run,$(EXP3_FULL_RUNS),$(eval $(call exp3_full_rule,P4,$(run),p4,1 2 3 4,$(EXP3_P4_NODES))))
+
+# One P=4 full sequence in a non-formal directory. Seed 1 matches formal p4/r1.
+EXP3_P4_PILOT_DIR := $(EXP3_ROOT)/p4/pilot
+EXP3_P4_PILOT_OUTPUTS := $(call exp3_outputs,$(EXP3_P4_PILOT_DIR),1 2 3 4,$(EXP3_P4_NODES))
+
+$(EXP3_P4_PILOT_OUTPUTS) &: $(EXP3_VM_PREREQS)
+	RUN_IN_VM_PROFILE=exp3 MOBILITY_LOG_NODES="$(EXP3_P4_NODES)" RUN_IN_VM_REMOTE_MAKE="$(SOLUTION_NLSR_ENV) EXP3_POPULATION='p4' EXP3_SCHEDULE='full' EXP3_RUN_ID='pilot' EXP3_RUN_SEED='1' EXP_REQUEST_INTERVAL_MS='20' make exp3" sh $(EXP3_VM_PREREQS) $@
+
+.PHONY: experiment-exp3-p4-pilot check-exp3-p4-pilot check-exp3-static
+
+experiment-exp3-p4-pilot: $(EXP3_P4_PILOT_OUTPUTS)
+
+check-exp3-p4-pilot:
+	python3 experiment/tool/check_exp3_evidence.py $(EXP3_P4_PILOT_DIR)
+
+check-exp3-static:
+	python3 -m unittest experiment.tool.test_exp3 experiment.tool.test_exp3_metrics
+	python3 -m mypy --config-file mypy.ini experiment/tool/exp3_config.py experiment/tool/exp3_processes.py experiment/tool/exp3_driver.py experiment/tool/check_exp3_evidence.py experiment/tool/test_exp3.py experiment/tool/exp3_metrics.py experiment/tool/run_exp3_analysis.py experiment/tool/plot_exp3.py experiment/tool/test_exp3_metrics.py
+
+# Host-side measurement only. These targets have no VM, box, or experiment prerequisite.
+.PHONY: analyze-exp3-run analyze-exp3-p4-pilot analyze-exp3-campaign plot-exp3 plot-exp3-pilot test-exp3-metrics
+
+analyze-exp3-run:
+	python3 experiment/tool/run_exp3_analysis.py $(EXP3_POPULATION) $(EXP3_RUN_ID)
+
+analyze-exp3-p4-pilot:
+	python3 experiment/tool/run_exp3_analysis.py p4 pilot
+
+analyze-exp3-campaign:
+	python3 experiment/tool/run_exp3_analysis.py --campaign
+
+plot-exp3:
+	python3 experiment/tool/plot_exp3.py
+
+plot-exp3-pilot:
+	python3 experiment/tool/plot_exp3.py --pilot
+
+test-exp3-metrics:
+	python3 -m unittest experiment.tool.test_exp3_metrics

@@ -6,6 +6,7 @@ Schedules for one producer depend only on the run seed and that producer index.
 
 from __future__ import annotations
 
+import math
 import random
 from pathlib import Path
 from typing import List, Mapping, Sequence, Tuple
@@ -34,6 +35,7 @@ PREFIXES = {
     4: "/LiveStream/v3",
 }
 RUN_IDS = ("r1", "r2", "r3", "r4", "r5")
+PILOT_RUN_ID = "pilot"
 INTERVAL_BASE_S = 90.0
 INTERVAL_JITTER_S = 60.0
 FRAME_PERIOD_MS = 20
@@ -120,6 +122,8 @@ def links(population: int) -> Tuple[Tuple[str, str, int, str], ...]:
 
 
 def run_seed_for(run_id: str, explicit: str = "") -> int:
+    if run_id == PILOT_RUN_ID and not explicit.strip():
+        raise Exp3ConfigError("EXP3_RUN_SEED is required for the pilot")
     if explicit.strip():
         try:
             seed = int(explicit, 10)
@@ -132,7 +136,7 @@ def run_seed_for(run_id: str, explicit: str = "") -> int:
         return RUN_IDS.index(run_id) + 1
     if run_id == "smoke":
         return 0
-    raise Exp3ConfigError(f"EXP3_RUN_ID must be smoke or r1..r5; got {run_id!r}")
+    raise Exp3ConfigError(f"EXP3_RUN_ID must be smoke, pilot, or r1..r5; got {run_id!r}")
 
 
 def producer_seed(run_seed: int, producer_index: int) -> int:
@@ -157,6 +161,57 @@ def smoke_intervals() -> Tuple[float, ...]:
 
 def schedule_end(intervals: Sequence[float]) -> float:
     return float(sum(intervals))
+
+
+def seconds_until_deadline(monotonic_now: float, monotonic_origin: float, planned_rel_s: float) -> float:
+    """Wait only until the original deadline. Overrun produces a zero wait."""
+    return max(0.0, monotonic_origin + planned_rel_s - monotonic_now)
+
+
+def scheduling_lateness(actual_rel_s: float, planned_rel_s: float) -> float:
+    return actual_rel_s - planned_rel_s
+
+
+def scheduled_arrivals(planned: Sequence[float], overheads: Sequence[float]) -> Tuple[float, ...]:
+    """Arrival times when each event costs `overhead` after its deadline check.
+
+    The next deadline stays on the original clock. Overhead is not added to it.
+    """
+    if len(planned) != len(overheads):
+        raise Exp3ConfigError("each planned event needs one overhead")
+    now = 0.0
+    origin = 0.0
+    arrivals = []
+    for planned_rel, overhead in zip(planned, overheads):
+        now += seconds_until_deadline(now, origin, planned_rel)
+        arrivals.append(now)
+        if overhead < 0:
+            raise Exp3ConfigError("event overhead must be non-negative")
+        now += overhead
+    return tuple(arrivals)
+
+
+def event_window_end(position: int, actual_times: Sequence[float], planned_end: float) -> float:
+    """End of one producer window. The last window ends at the planned endpoint."""
+    if position < 0 or position >= len(actual_times):
+        raise Exp3ConfigError(f"handoff position {position} is outside {len(actual_times)} events")
+    if position < len(actual_times) - 1:
+        return actual_times[position + 1]
+    return planned_end
+
+
+def lateness_summary(values: Sequence[float]) -> Tuple[float, float, float]:
+    """Maximum, median, and nearest-rank 90th percentile. Not an acceptance cut."""
+    if not values:
+        raise Exp3ConfigError("lateness summary requires observations")
+    ordered = sorted(values)
+    count = len(ordered)
+    if count % 2:
+        median = ordered[count // 2]
+    else:
+        median = (ordered[count // 2 - 1] + ordered[count // 2]) / 2.0
+    rank = max(0, math.ceil(0.9 * count) - 1)
+    return ordered[-1], median, ordered[rank]
 
 
 def plan_events(
@@ -286,6 +341,8 @@ def result_names(population: int) -> List[str]:
         "schedules.txt",
         "observation_ends.txt",
         "process-health.txt",
+        "capture-health.txt",
+        "timing-summary.txt",
         "trust-schema.conf",
     ]
     for pair in pairs_for(population):

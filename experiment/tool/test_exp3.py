@@ -194,6 +194,8 @@ def _populate(root: Path, population: int) -> Path:
                 + f"OptoFlood TFIB update prefix={pair.prefix} face=4 newFaceSeq=1 floodId={flood_id}\n",
                 encoding="utf-8",
             )
+    for extra in ("capture-health.txt", "timing-summary.txt"):
+        (run_dir / extra).unlink(missing_ok=True)
     return run_dir
 
 
@@ -300,6 +302,188 @@ class ProcessLaunchTest(unittest.TestCase):
         self.assertTrue(procs.command_owns_pid(
             "/home/vagrant/flooding/experiment/extended/exp3/producer",
             "/home/vagrant/flooding/experiment/extended/exp3/producer", ""))
+        self.assertTrue(procs.command_owns_pid("/usr/bin/tcpdump -i any", "tcpdump", ""))
+        self.assertFalse(procs.command_owns_pid("/usr/bin/nfd", "tcpdump", ""))
+        own = "/tmp/exp3/pcap_nodes/core.pcap"
+        other = "/tmp/exp3/pcap_nodes/acc1.pcap"
+        self.assertTrue(procs.command_owns_capture(f"tcpdump -i any -U -w {own} udp port 6363", own))
+        self.assertFalse(procs.command_owns_capture(f"tcpdump -i any -U -w {other} udp port 6363", own))
+        self.assertFalse(procs.command_owns_capture(f"nfd -w {own}", own))
+
+
+class ScheduleClockTest(unittest.TestCase):
+    def test_overhead_does_not_move_later_deadlines(self) -> None:
+        arrivals = config.scheduled_arrivals((10.0, 20.0, 30.0), (0.4, 0.4, 0.4))
+        self.assertEqual(arrivals, (10.0, 20.0, 30.0))
+        late = config.scheduled_arrivals((10.0, 20.0), (15.0, 0.0))
+        self.assertEqual(late, (10.0, 25.0))
+        self.assertAlmostEqual(config.scheduling_lateness(25.0, 20.0), 5.0)
+
+    def test_equal_planned_times_keep_producer_order(self) -> None:
+        selected = config.pairs_for(2)
+        events = config.plan_events(
+            selected,
+            {1: config.smoke_intervals(), 2: config.smoke_intervals()},
+            "smoke",
+        )
+        self.assertEqual([item[1] for item in events], [1, 2])
+        self.assertEqual(events[0][0], events[1][0])
+
+    def test_p1_schedule_matches_across_populations_and_pilot_seed(self) -> None:
+        alone = config.sample_intervals(1, 1)
+        self.assertEqual(alone, config.sample_intervals(1, 1))
+        self.assertEqual(config.run_seed_for("pilot", "1"), config.run_seed_for("r1"))
+        self.assertEqual(config.sample_intervals(config.run_seed_for("pilot", "1"), 2),
+                         config.sample_intervals(config.run_seed_for("r1"), 2))
+        with self.assertRaises(config.Exp3ConfigError):
+            config.run_seed_for("pilot")
+
+
+class WindowAndCaptureTest(unittest.TestCase):
+    def test_non_positive_window_is_infrastructure_invalid(self) -> None:
+        self.assertLess(
+            config.event_window_end(0, (10.0, 20.0), 50.0),
+            config.event_window_end(1, (10.0, 20.0), 50.0),
+        )
+        self.assertEqual(config.event_window_end(1, (10.0, 60.0), 50.0), 50.0)
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = _full_run(Path(tmp))
+            (run_dir / "observation_ends.txt").write_text(
+                "producer\tindex\trel_end_s\tabs_end\nproducer1\t1\t1.000000\t1700000001.000000\n",
+                encoding="utf-8",
+            )
+            problems = checker.inspect_run(run_dir)
+            self.assertTrue(any("observation endpoint" in problem or "non-positive" in problem
+                                for problem in problems))
+
+    def test_unsuccessful_recovery_remains_a_valid_full_run(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = _full_run(Path(tmp))
+            for path in run_dir.glob("minindn-logs/*/nfd.log"):
+                path.write_text("no recovery state\n", encoding="utf-8")
+            (run_dir / "consumer1.log").write_text("no validated data\n", encoding="utf-8")
+            self.assertEqual(checker.inspect_run(run_dir), [])
+
+    def test_capture_lifecycle_distinguishes_empty_from_failed(self) -> None:
+        header = b"\xd4\xc3\xb2\xa1" + b"\x00" * 20
+        self.assertEqual(procs.inspect_pcap(header), ("ok-empty", 0))
+        self.assertEqual(procs.inspect_pcap(b"not-a-pcap-file-at-all!!"), ("bad-magic", 0))
+        self.assertEqual(procs.inspect_pcap(header + b"\x00" * 10), ("truncated-record", 0))
+        self.assertEqual(
+            procs.tcpdump_drop_detail("0 packets captured\n0 packets dropped by kernel\n"),
+            "captured=0 kernel_dropped=0 interface_dropped=absent",
+        )
+        self.assertEqual(procs.tcpdump_drop_detail(""), "unavailable")
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = _full_run(Path(tmp))
+            health = (run_dir / "capture-health.txt").read_text(encoding="utf-8")
+            health = health.replace("\talive\n", "\tdead\n")
+            (run_dir / "capture-health.txt").write_text(health, encoding="utf-8")
+            problems = checker.inspect_run(run_dir)
+            self.assertTrue(any("was not running" in problem for problem in problems))
+
+    def test_legacy_smoke_is_not_a_current_capture_pass(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = _populate(Path(tmp), 1)
+            self.assertEqual(checker.evidence_format(run_dir), "legacy-smoke")
+            self.assertFalse((run_dir / "capture-health.txt").exists())
+            self.assertEqual(checker.inspect_run(run_dir), [])
+            header = (run_dir / "handoffs.txt").read_text(encoding="utf-8").splitlines()[0]
+            header = header + "\tplanned_rel_s\tlateness_s"
+            body = (run_dir / "handoffs.txt").read_text(encoding="utf-8").splitlines()[1:]
+            (run_dir / "handoffs.txt").write_text(
+                header + "\n" + "\n".join(line + "\t20.000000\t0.000000" for line in body) + "\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(checker.evidence_format(run_dir), "current")
+            problems = checker.inspect_run(run_dir)
+            self.assertTrue(any("missing capture-health.txt" in problem for problem in problems))
+            self.assertTrue(any("missing timing-summary.txt" in problem for problem in problems))
+
+    def test_zero_kernel_drops_are_not_unavailable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = _full_run(Path(tmp))
+            health = (run_dir / "capture-health.txt").read_text(encoding="utf-8")
+            self.assertEqual(checker.inspect_run(run_dir), [])
+            (run_dir / "capture-health.txt").write_text(
+                health.replace("kernel_dropped=0", "kernel_dropped=absent"),
+                encoding="utf-8",
+            )
+            problems = checker.inspect_run(run_dir)
+            self.assertTrue(any("kernel drop" in problem for problem in problems))
+
+
+def _pcap_header() -> bytes:
+    return b"\xd4\xc3\xb2\xa1" + b"\x00" * 20
+
+
+def _full_run(root: Path) -> Path:
+    run_dir = _populate(root, 1)
+    intervals = config.sample_intervals(1, 1)
+    origin = 1_700_000_000.0
+    planned_end = origin + config.schedule_end(intervals)
+    shutdown_at = config.schedule_end(intervals) + 0.2
+    (run_dir / "process-health.txt").write_text(
+        procs.HEALTH_HEADER
+        + "".join(
+            procs.health_row(host, kind, pid, "intentional-shutdown", shutdown_at, "sigterm-before-nfd-stop")
+            for host, kind, pid in (
+                ("producer1", "producer-app", 1101),
+                ("consumer1", "consumer-app", 1201),
+                ("producer1", "producer-daemon", 1301),
+                ("consumer1", "consumer-daemon", 1401),
+            )
+        ),
+        encoding="utf-8",
+    )
+    cursor = 0.0
+    lines = [
+        "producer\tindex\tabs_time\trel_time\tfrom_node\tto_node\tinterval_s"
+        "\tplanned_rel_s\tlateness_s\n"
+    ]
+    sequence = config.pairs_for(1)[0].sequence
+    for index in range(1, 9):
+        cursor += intervals[index - 1]
+        lines.append(
+            f"producer1\t{index}\t{origin + cursor:.6f}\t{cursor:.6f}\t"
+            f"{sequence[index - 1]}\t{sequence[index]}\t{intervals[index - 1]:.6f}\t"
+            f"{cursor:.6f}\t0.000000\n"
+        )
+    (run_dir / "handoffs.txt").write_text("".join(lines), encoding="utf-8")
+    (run_dir / "params.txt").write_text(
+        f"exp3_population=p1\nexp3_campaign={config.CAMPAIGN_ID}\nexp3_schedule=full\n"
+        f"exp3_run_id=r1\nexp3_run_seed=1\ncommon_end_s={config.schedule_end(intervals):.6f}\n"
+        f"producer1_prefix=/LiveStream/v0\n",
+        encoding="utf-8",
+    )
+    (run_dir / "observation_ends.txt").write_text(
+        f"producer\tindex\trel_end_s\tabs_end\n"
+        f"producer1\t1\t{config.schedule_end(intervals):.6f}\t{planned_end:.6f}\n",
+        encoding="utf-8",
+    )
+    values = [0.0] * 8
+    maximum, median, upper = config.lateness_summary(values)
+    (run_dir / "timing-summary.txt").write_text(
+        "scope\tn\tmax_lateness_s\tmedian_lateness_s\tp90_lateness_s\n"
+        f"producer1\t8\t{maximum:.6f}\t{median:.6f}\t{upper:.6f}\n"
+        f"run\t8\t{maximum:.6f}\t{median:.6f}\t{upper:.6f}\n"
+        "review\tlateness-recorded-not-thresholded\n",
+        encoding="utf-8",
+    )
+    stopped = config.schedule_end(intervals) + 0.2
+    health = ["host\tpid\tevent\trel_s\tdetail\n"]
+    for offset, host in enumerate(config.physical_hosts(1), start=2):
+        health.extend([
+            f"{host}\t{2000 + offset}\tstarted\t0.000000\ttcpdump\n",
+            f"{host}\t{2000 + offset}\trunning-at-common-end\t{config.schedule_end(intervals):.6f}\talive\n",
+            f"{host}\t{2000 + offset}\tstopped\t{stopped:.6f}\tsigterm-after-common-end\n",
+            f"{host}\t{2000 + offset}\tfinalized\t{stopped:.6f}\texited\n",
+            f"{host}\t{2000 + offset}\tdrops\t{stopped:.6f}\tcaptured=0 kernel_dropped=0 interface_dropped=0\n",
+            f"{host}\t{2000 + offset}\tdecode\t{stopped:.6f}\tok-empty packets=0\n",
+        ])
+        (run_dir / "pcap_nodes" / f"{host}.pcap").write_bytes(_pcap_header())
+    (run_dir / "capture-health.txt").write_text("".join(health), encoding="utf-8")
+    return run_dir
 
 
 if __name__ == "__main__":

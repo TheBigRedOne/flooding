@@ -60,7 +60,7 @@ def _handoffs(path: Path) -> List[Dict[str, str]]:
         parts = line.split("\t")
         if len(parts) < 7:
             continue
-        rows.append({
+        row = {
             "producer": parts[0],
             "index": parts[1],
             "abs_time": parts[2],
@@ -68,7 +68,11 @@ def _handoffs(path: Path) -> List[Dict[str, str]]:
             "from_node": parts[4],
             "to_node": parts[5],
             "interval_s": parts[6],
-        })
+        }
+        if len(parts) >= 9:
+            row["planned_rel_s"] = parts[7]
+            row["lateness_s"] = parts[8]
+        rows.append(row)
     return rows
 
 
@@ -220,11 +224,16 @@ def inspect_run(run_dir: Path) -> List[str]:
                             f"{pair.consumer} did not validate {pair.prefix} after the smoke handoff"
                         )
                     problems.extend(_shared_forwarding(run_dir, pair.prefix, expected_id, own[0]["to_node"]))
+    problems.extend(_timing_validity(rows, run_dir, selected, mode, params))
+    legacy_optional = {"capture-health.txt", "timing-summary.txt"}
+    legacy_smoke = mode == "smoke" and evidence_format(run_dir) == "legacy-smoke"
     for name in config.result_names(population):
         path = run_dir / name
+        if legacy_smoke and name in legacy_optional and not path.is_file():
+            continue
         if not path.is_file():
             problems.append(f"missing {name}")
-        elif name.endswith(".pcap") and path.stat().st_size <= 24:
+        elif name.endswith(".pcap") and mode != "full" and path.stat().st_size <= 24:
             problems.append(f"pcap has no packets: {name}")
         elif not name.startswith("tcpdump_") and path.stat().st_size <= 0:
             problems.append(f"empty {name}")
@@ -244,6 +253,184 @@ def inspect_run(run_dir: Path) -> List[str]:
         problems.append("common_end_s is missing")
     else:
         problems.extend(_process_health(run_dir / "process-health.txt", selected, common_end))
+        if mode == "full" or (run_dir / "capture-health.txt").is_file():
+            problems.extend(_capture_health(
+                run_dir / "capture-health.txt", population, mode, common_end))
+    return problems
+
+
+def _timing_validity(
+    rows: List[Dict[str, str]],
+    run_dir: Path,
+    selected: Sequence[config.Pair],
+    mode: str,
+    params: Dict[str, str],
+) -> List[str]:
+    problems: List[str] = []
+    endpoints: Dict[str, float] = {}
+    endpoint_path = run_dir / "observation_ends.txt"
+    if endpoint_path.is_file():
+        for line in endpoint_path.read_text(encoding="utf-8", errors="replace").splitlines():
+            if not line.strip() or line.split("\t", 1)[0] == "producer":
+                continue
+            parts = line.split("\t")
+            if len(parts) >= 4:
+                try:
+                    endpoints[parts[0]] = float(parts[3])
+                except ValueError:
+                    problems.append(f"{parts[0]} planned observation endpoint is not numeric")
+    grouped: Dict[str, List[Dict[str, str]]] = {}
+    for row in rows:
+        grouped.setdefault(row["producer"], []).append(row)
+    for pair in selected:
+        own = grouped.get(pair.producer, [])
+        actual: List[float] = []
+        for row in own:
+            try:
+                actual.append(float(row["abs_time"]))
+                relative = float(row["rel_time"])
+            except ValueError:
+                problems.append(f"{pair.producer} handoff timestamp is not numeric")
+                continue
+            if "planned_rel_s" not in row:
+                if mode == "full":
+                    problems.append(f"{pair.producer} handoff is missing planned_rel_s")
+                continue
+            try:
+                planned = float(row["planned_rel_s"])
+                lateness = float(row["lateness_s"])
+            except ValueError:
+                problems.append(f"{pair.producer} planned timestamp or lateness is not numeric")
+                continue
+            if abs((relative - planned) - lateness) > 1e-3:
+                problems.append(f"{pair.producer} lateness does not equal actual minus planned time")
+        for earlier, later in zip(actual, actual[1:]):
+            if later <= earlier:
+                problems.append(f"{pair.producer} handoff timestamps are not strictly increasing")
+                break
+        planned_end = endpoints.get(pair.producer)
+        if planned_end is None or len(actual) != len(own) or not actual:
+            continue
+        if actual[-1] >= planned_end:
+            problems.append(
+                f"{pair.producer} final handoff is not before its planned observation endpoint"
+            )
+        for position, start in enumerate(actual):
+            end = config.event_window_end(position, actual, planned_end)
+            if end <= start:
+                problems.append(f"{pair.producer} handoff {position + 1} has a non-positive window")
+        if mode != "full":
+            continue
+        try:
+            seed = int(params.get("exp3_run_seed", ""))
+        except ValueError:
+            problems.append("exp3_run_seed is not an integer")
+            continue
+        if params.get(f"producer{pair.index}_prefix") != pair.prefix:
+            problems.append(f"params prefix for {pair.producer} is not {pair.prefix}")
+        intervals = config.sample_intervals(seed, pair.index)
+        planned_cursor = 0.0
+        for offset, row in enumerate(own):
+            planned_cursor += intervals[offset]
+            if "planned_rel_s" not in row:
+                continue
+            try:
+                planned = float(row["planned_rel_s"])
+                recorded_interval = float(row["interval_s"])
+            except ValueError:
+                continue
+            if abs(planned - planned_cursor) > 1e-4 or abs(recorded_interval - intervals[offset]) > 1e-4:
+                problems.append(f"{pair.producer} handoff {offset + 1} does not match the seeded schedule")
+    if mode == "full":
+        problems.extend(_timing_summary(run_dir / "timing-summary.txt", rows, selected))
+    return problems
+
+
+def _timing_summary(path: Path, rows: List[Dict[str, str]], selected: Sequence[config.Pair]) -> List[str]:
+    problems: List[str] = []
+    if not path.is_file():
+        return ["missing timing-summary.txt"]
+    text = path.read_text(encoding="utf-8", errors="replace")
+    if "lateness-recorded-not-thresholded" not in text:
+        problems.append("timing summary does not state that lateness is not an acceptance threshold")
+    found: Dict[str, tuple] = {}
+    for line in text.splitlines():
+        parts = line.split("\t")
+        if len(parts) == 5 and parts[0] not in {"scope", "review"}:
+            try:
+                found[parts[0]] = (int(parts[1]), float(parts[2]), float(parts[3]), float(parts[4]))
+            except ValueError:
+                problems.append(f"timing summary row is not numeric: {parts[0]}")
+    grouped: Dict[str, List[float]] = {pair.producer: [] for pair in selected}
+    combined: List[float] = []
+    for row in rows:
+        if "lateness_s" not in row:
+            continue
+        try:
+            value = float(row["lateness_s"])
+        except ValueError:
+            continue
+        grouped.setdefault(row["producer"], []).append(value)
+        combined.append(value)
+    for producer, values in grouped.items():
+        if not values:
+            continue
+        maximum, median, upper = config.lateness_summary(values)
+        recorded = found.get(producer)
+        if recorded is None:
+            problems.append(f"timing summary has no row for {producer}")
+            continue
+        if recorded[0] != len(values) or abs(recorded[1] - maximum) > 1e-4:
+            problems.append(f"timing summary for {producer} does not match handoff lateness")
+        if abs(recorded[2] - median) > 1e-4 or abs(recorded[3] - upper) > 1e-4:
+            problems.append(f"timing summary for {producer} median or upper tail does not match")
+    if combined:
+        maximum, median, upper = config.lateness_summary(combined)
+        recorded = found.get("run")
+        if recorded is None or recorded[0] != len(combined) or abs(recorded[1] - maximum) > 1e-4:
+            problems.append("timing summary run row does not match handoff lateness")
+        elif abs(recorded[2] - median) > 1e-4 or abs(recorded[3] - upper) > 1e-4:
+            problems.append("timing summary run median or upper tail does not match")
+    return problems
+
+
+def _capture_health(path: Path, population: int, mode: str, common_end: float) -> List[str]:
+    problems: List[str] = []
+    if not path.is_file():
+        return ["missing capture-health.txt"] if mode == "full" else []
+    rows: Dict[tuple, List[str]] = {}
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if not line.strip() or line.split("\t", 1)[0] == "host":
+            continue
+        parts = line.split("\t")
+        if len(parts) != 5:
+            problems.append("capture-health.txt row does not have five columns")
+            continue
+        rows.setdefault((parts[0], parts[2]), []).append(parts[4])
+        if parts[2] == "stopped":
+            try:
+                if float(parts[3]) + 0.05 < common_end:
+                    problems.append(
+                        f"{parts[0]} capture stopped before the common observation endpoint"
+                    )
+            except ValueError:
+                problems.append(f"{parts[0]} capture stop time is not numeric")
+    for host in config.physical_hosts(population):
+        if "error" in {event for (name, event) in rows if name == host}:
+            problems.append(f"{host} capture failed during observation")
+        running = rows.get((host, "running-at-common-end"), [])
+        if running != ["alive"]:
+            problems.append(f"{host} capture was not running at the common observation endpoint")
+        if "sigterm-after-common-end" not in rows.get((host, "stopped"), []):
+            problems.append(f"{host} capture was not stopped after the common observation endpoint")
+        if "exited" not in rows.get((host, "finalized"), []):
+            problems.append(f"{host} capture was not finalized")
+        drops = rows.get((host, "drops"), [])
+        if not drops or not re.search(r"kernel_dropped=\d+", drops[-1]):
+            problems.append(f"{host} capture did not report kernel drop statistics")
+        decode = rows.get((host, "decode"), [])
+        if not decode or not (decode[-1].startswith("ok ") or decode[-1].startswith("ok-empty ")):
+            problems.append(f"{host} capture is not a decodable pcap")
     return problems
 
 
@@ -340,6 +527,26 @@ def _observation_ends(path: Path, selected: Sequence[config.Pair], mode: str) ->
     return problems
 
 
+def evidence_format(run_dir: Path) -> str:
+    """Legacy smoke files have the original seven handoff columns and neither new health file.
+
+    A current run writes planned_rel_s. Deleting capture-health.txt does not make it legacy.
+    """
+    handoff_path = run_dir / "handoffs.txt"
+    header = ""
+    if handoff_path.is_file():
+        lines = handoff_path.read_text(encoding="utf-8", errors="replace").splitlines()
+        header = lines[0] if lines else ""
+    current = (
+        "planned_rel_s" in header
+        or (run_dir / "capture-health.txt").is_file()
+        or (run_dir / "timing-summary.txt").is_file()
+    )
+    if current:
+        return "current"
+    return "legacy-smoke"
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     if len(arguments) != 1:
@@ -352,7 +559,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         for problem in problems:
             print(f"  {problem}")
         return 1
-    print(f"Exp3 evidence check passed: {run_dir}")
+    if evidence_format(run_dir) == "legacy-smoke":
+        print(
+            "Exp3 legacy smoke evidence check passed "
+            "(capture-health and timing-summary were not part of this run's contract): "
+            f"{run_dir}"
+        )
+    else:
+        print(f"Exp3 evidence check passed: {run_dir}")
     return 0
 
 

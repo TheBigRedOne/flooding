@@ -109,6 +109,10 @@ PLOT_TOOL_SRCS := experiment/tool/plot_latency.py \
                   experiment/tool/exp3_processes.py \
                   experiment/tool/check_exp3_evidence.py \
                   experiment/tool/test_exp3.py \
+                  experiment/tool/exp3_metrics.py \
+                  experiment/tool/run_exp3_analysis.py \
+                  experiment/tool/plot_exp3.py \
+                  experiment/tool/test_exp3_metrics.py \
                   experiment/tool/exp2_scale_metrics.py \
                   experiment/tool/run_exp2_scale_analysis.py \
                   experiment/tool/plot_exp2_scale.py \
