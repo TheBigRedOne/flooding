@@ -117,6 +117,11 @@ PREFIX_RFV_FIELDS = (
     "prefix_rfv_bytes",
     "event_window_nlsr_bytes_diagnostic",
     "nlsr_diagnostic_is_network_total",
+    "flood_interest_packets",
+    "flood_guard_data_packets",
+    "flood_content_data_packets",
+    "flood_other_data_packets",
+    "prefix_rfv_packets",
 )
 NETWORK_FIELDS = (
     "configuration",
@@ -140,6 +145,15 @@ NETWORK_FIELDS = (
     "nlsr_control_rate_bytes_per_s",
     "network_accounting",
     "population_multiplier_applied",
+    "flood_interest_packets",
+    "flood_data_packets",
+    "flood_guard_data_packets",
+    "flood_content_data_packets",
+    "flood_other_data_packets",
+    "unassigned_flood_packets",
+    "ambiguous_flood_packets",
+    "assigned_flood_outside_event_windows_packets",
+    "network_rfv_packets",
 )
 SUMMARY_FIELDS = (
     "configuration",
@@ -877,8 +891,18 @@ def measure_run(
     ambiguous_interest = 0
     ambiguous_data = 0
     outside = 0
+    network_interest_packets = 0
+    network_guard_packets = 0
+    network_content_packets = 0
+    network_other_packets = 0
+    unassigned_interest_packets = 0
+    unassigned_data_packets = 0
+    ambiguous_interest_packets = 0
+    ambiguous_data_packets = 0
+    outside_packets = 0
     nlsr_bytes = 0
     event_flood = {id(window): _empty_flood() for window in context.windows}
+    event_packets = {id(window): _empty_flood() for window in context.windows}
     event_nlsr = {id(window): 0 for window in context.windows}
     for packet in packets:
         in_common = metrics._in_interval(packet, context.origin_abs, common_end, True)
@@ -894,28 +918,38 @@ def measure_run(
             continue
         if hit.detail == "interest":
             network_interest += hit.length
+            network_interest_packets += 1
         elif hit.detail == "guard-data":
             network_guard += hit.length
+            network_guard_packets += 1
         elif hit.detail == "content-data":
             network_content += hit.length
+            network_content_packets += 1
         elif hit.detail == "other-data":
             network_other += hit.length
+            network_other_packets += 1
         elif hit.detail == "unassigned-interest":
             unassigned_interest += hit.length
+            unassigned_interest_packets += 1
         elif hit.detail == "unassigned-data":
             unassigned_data += hit.length
+            unassigned_data_packets += 1
         elif hit.detail == "ambiguous" and hit.family == "interest":
             ambiguous_interest += hit.length
+            ambiguous_interest_packets += 1
         elif hit.detail == "ambiguous":
             ambiguous_data += hit.length
+            ambiguous_data_packets += 1
         if len(hit.prefixes) == 1:
             matched_windows = [
                 window for window in by_prefix.get(hit.prefixes[0], []) if _window_contains(packet, window)
             ]
             if not matched_windows:
                 outside += hit.length
+                outside_packets += 1
             for window in matched_windows:
                 event_flood[id(window)][hit.detail] += hit.length
+                event_packets[id(window)][hit.detail] += 1
     events = []
     prefix_rows = []
     timing = []
@@ -962,7 +996,9 @@ def measure_run(
             censor_abs = ""
             censor_boundary = ""
         floods = event_flood[id(window)]
+        counted = event_packets[id(window)]
         prefix_total = floods["interest"] + floods["guard-data"] + floods["content-data"] + floods["other-data"]
+        prefix_count = counted["interest"] + counted["guard-data"] + counted["content-data"] + counted["other-data"]
         identity = {
             "configuration": context.configuration,
             "population": context.population,
@@ -1018,6 +1054,11 @@ def measure_run(
             "prefix_rfv_bytes": str(prefix_total),
             "event_window_nlsr_bytes_diagnostic": str(event_nlsr[id(window)]),
             "nlsr_diagnostic_is_network_total": "false",
+            "flood_interest_packets": str(counted["interest"]),
+            "flood_guard_data_packets": str(counted["guard-data"]),
+            "flood_content_data_packets": str(counted["content-data"]),
+            "flood_other_data_packets": str(counted["other-data"]),
+            "prefix_rfv_packets": str(prefix_count),
         })
         timing.append({
             **identity,
@@ -1036,6 +1077,16 @@ def measure_run(
     flood_interest = network_interest + unassigned_interest + ambiguous_interest
     flood_data = network_guard + network_content + network_other + unassigned_data + ambiguous_data
     network_rfv = flood_interest + flood_data
+    unassigned_packets = unassigned_interest_packets + unassigned_data_packets
+    ambiguous_packets = ambiguous_interest_packets + ambiguous_data_packets
+    flood_interest_packets = (
+        network_interest_packets + unassigned_interest_packets + ambiguous_interest_packets
+    )
+    flood_data_packets = (
+        network_guard_packets + network_content_packets + network_other_packets
+        + unassigned_data_packets + ambiguous_data_packets
+    )
+    network_rfv_packets = flood_interest_packets + flood_data_packets
     rate = "" if context.common_end_s <= 0 else _number(nlsr_bytes / context.common_end_s)
     network = {
         "configuration": context.configuration,
@@ -1059,6 +1110,15 @@ def measure_run(
         "nlsr_control_rate_bytes_per_s": rate,
         "network_accounting": NETWORK_ACCOUNTING,
         "population_multiplier_applied": "false",
+        "flood_interest_packets": str(flood_interest_packets),
+        "flood_data_packets": str(flood_data_packets),
+        "flood_guard_data_packets": str(network_guard_packets),
+        "flood_content_data_packets": str(network_content_packets),
+        "flood_other_data_packets": str(network_other_packets),
+        "unassigned_flood_packets": str(unassigned_packets),
+        "ambiguous_flood_packets": str(ambiguous_packets),
+        "assigned_flood_outside_event_windows_packets": str(outside_packets),
+        "network_rfv_packets": str(network_rfv_packets),
     }
     summary = [_summary_row(context, "run", "all", "all", "all", events, prefix_rows)]
     for pair in config.pairs_for(context.population_count):
@@ -1123,6 +1183,8 @@ def _audit(
         "Interest floods require an OptoFlood HopLimit; Data floods require LP",
         "MobilityFlag or LP OptoHopLimit. MetaInfo FloodId alone is not a flood.",
         "Ordinary PIT-return Data is not recovery flooding.",
+        "Each accepted sender-egress frame contributes one packet count and its frame length.",
+        "Packet counts use the same classification and windows as the byte totals.",
         "Network RFV and network NLSR bytes are independent passes over the common",
         "interval. They are not sums of overlapping producer windows and they are",
         "not multiplied by the producer population.",

@@ -92,7 +92,7 @@ check-exp3-static:
 	python3 -m mypy --config-file mypy.ini experiment/tool/exp3_config.py experiment/tool/exp3_processes.py experiment/tool/exp3_driver.py experiment/tool/check_exp3_evidence.py experiment/tool/test_exp3.py experiment/tool/exp3_metrics.py experiment/tool/run_exp3_analysis.py experiment/tool/plot_exp3.py experiment/tool/test_exp3_metrics.py
 
 # Host-side measurement only. These targets have no VM, box, or experiment prerequisite.
-.PHONY: analyze-exp3-run analyze-exp3-p4-pilot analyze-exp3-campaign plot-exp3 plot-exp3-pilot test-exp3-metrics
+.PHONY: analyze-exp3-run analyze-exp3-p4-pilot analyze-exp3-campaign plot-exp3 plot-exp3-pilot plot-exp3-extended test-exp3-metrics
 
 analyze-exp3-run:
 	python3 experiment/tool/run_exp3_analysis.py $(EXP3_POPULATION) $(EXP3_RUN_ID)
@@ -108,6 +108,11 @@ plot-exp3:
 
 plot-exp3-pilot:
 	python3 experiment/tool/plot_exp3.py --pilot
+
+# Supplementary SRT and attachment figures. Reads the validated extended CSVs
+# and writes only under validation-packet-counts/figures.
+plot-exp3-extended:
+	python3 experiment/tool/plot_exp3.py --extended --analysis-root results/extended/exp3/validation-packet-counts --figure-dir results/extended/exp3/validation-packet-counts/figures
 
 test-exp3-metrics:
 	python3 -m unittest experiment.tool.test_exp3_metrics
