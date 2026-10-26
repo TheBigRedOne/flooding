@@ -1,0 +1,30 @@
+# Exp3 experiment VM. Uses the pinned solution box and its own machine identity.
+
+Vagrant.configure("2") do |config|
+  solution_box_path = ENV['ACTUAL_SOLUTION_BOX_PATH'] || "box/solution/solution.box"
+  config.vm.box = solution_box_path
+
+  config.vm.network "private_network", type: "dhcp"
+
+  common_cpus   = 8
+  common_memory = 16384
+
+  config.vm.provider :virtualbox do |vb|
+    vb.name = "exp-exp3-virtualbox"
+    vb.cpus = common_cpus
+    vb.memory = common_memory
+    vb.customize ["modifyvm", :id, "--vram", "256"]
+    vb.gui = false
+  end
+
+  config.vm.provider :libvirt do |lv|
+    lv.driver = "kvm"
+    require 'etc'
+    dirname = __dir__.split('/')[-2..-1].join('-')
+    lv.default_prefix = "#{Etc.getpwuid.uid}-#{dirname}-"
+    lv.cpus   = common_cpus
+    lv.memory = common_memory
+    lv.cpu_mode = "host-passthrough"
+  end
+
+end

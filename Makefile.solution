@@ -1,4 +1,11 @@
 # Rules to run the OptoFlood experiment.
+#
+# Five independent runs of the same 8-handoff round trip as the baseline.
+# MAIN_HANDOFF_* comes from Makefile.baseline. Intervals are sampled again
+# inside each run; they are not paired with a baseline run.
+# The five VM recipes are order-only chained, and the first waits for
+# test/.validate_ok and the last baseline run, so baseline -> test -> solution
+# stays intact under `make -j`.
 
 SOLUTION_INPUTS = box/solution/solution.$(PROVIDER).box \
                   experiment/app/producer.cpp \
@@ -9,11 +16,9 @@ SOLUTION_INPUTS = box/solution/solution.$(PROVIDER).box \
                   experiment/solution/Makefile \
                   experiment/tool/exp.py
 
-# Same K=16 handoff sequence as baseline for an apples-to-apples comparison.
-SOLUTION_HANDOFF_SEQUENCE = acc2,acc3,acc4,acc5,acc6,acc5,acc4,acc3,acc2,acc3,acc4,acc5,acc6,acc5,acc4,acc3,acc2
-SOLUTION_HANDOFF_ENV = NLSR_HANDOFF_COUNT='16' NLSR_HANDOFF_INTERVAL_BASE='90' NLSR_HANDOFF_INTERVAL_JITTER='60' NLSR_HANDOFF_SEQUENCE='$(SOLUTION_HANDOFF_SEQUENCE)'
+SOLUTION_HANDOFF_ENV = $(MAIN_HANDOFF_ENV)
 
-# NLSR experiment-policy switches, shared by the solution run and the Exp 1 sweep.
+# NLSR experiment-policy switches for the solution runs.
 # Override on the command line for ablation cells, e.g.
 # SOLUTION_NLSR_RESULT_DRIVEN=off, SOLUTION_NLSR_CORRIDOR_PRIORITISED_ROUTING=off,
 # or SOLUTION_NLSR_EVENT_DRIVEN_VERIFICATION_TIMEOUT_MS=0.
@@ -35,68 +40,44 @@ export SOLUTION_NLSR_EVENT_DRIVEN_VERIFICATION_TIMEOUT_MS
 # previously left NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION unset in the VM.
 SOLUTION_NLSR_ENV = NLSR_RESULT_DRIVEN_ADJ_LSA_BUILD='$(SOLUTION_NLSR_RESULT_DRIVEN)' NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION='$(SOLUTION_NLSR_EVENT_DRIVEN_VERIFICATION)' NLSR_CORRIDOR_PRIORITISED_ROUTING='$(SOLUTION_NLSR_CORRIDOR_PRIORITISED_ROUTING)' NLSR_CORRIDOR_ADJ_LSA_SYNC_PUBLISH_DELAY='$(SOLUTION_NLSR_CORRIDOR_ADJ_LSA_SYNC_PUBLISH_DELAY)' NLSR_EVENT_DRIVEN_VERIFICATION_TIMEOUT_MS='$(SOLUTION_NLSR_EVENT_DRIVEN_VERIFICATION_TIMEOUT_MS)'
 
-SOLUTION_RESULTS = results/solution/consumer_capture.pcap \
-                   results/solution/pcap_nodes/core.pcap \
-                   results/solution/pcap_nodes/agg1.pcap \
-                   results/solution/pcap_nodes/agg2.pcap \
-                   results/solution/pcap_nodes/acc1.pcap \
-                   results/solution/pcap_nodes/acc2.pcap \
-                   results/solution/pcap_nodes/acc3.pcap \
-                   results/solution/pcap_nodes/acc4.pcap \
-                   results/solution/pcap_nodes/acc5.pcap \
-                   results/solution/pcap_nodes/acc6.pcap \
-                   results/solution/pcap_nodes/producer.pcap \
-                   results/solution/pcap_nodes/consumer.pcap \
-                   results/solution/handoffs.txt
+solution_run_outputs = $(addprefix results/solution/$(1)/,$(EXPERIMENT_RUN_FILES))
+SOLUTION_VM_ORDER := $(addprefix solution/,$(EXPERIMENT_RUN_IDS))
+SOLUTION_RESULTS := $(foreach run,$(EXPERIMENT_RUN_IDS),$(call solution_run_outputs,$(run)))
 
-# Order-only prerequisites: the solution VM runs after the last baseline group
-# and after the test validation passes.
-$(SOLUTION_RESULTS) &: scripts/run-in-vm.sh $(SOLUTION_INPUTS) | test/.validate_ok $(subst XXX,g4-h36-a6-r9-s36,$(BASELINE_EXPERIMENT_OUTPUTS))
-	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="$(SOLUTION_HANDOFF_ENV) $(SOLUTION_NLSR_ENV) make all" sh $^ $@
+# $(1) run id, $(2) order-only prerequisites (never empty).
+define emit_solution_run
+$(call solution_run_outputs,$(1)) &: scripts/run-in-vm.sh $$(SOLUTION_INPUTS) | $(2)
+	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="$$(SOLUTION_HANDOFF_ENV) $$(SOLUTION_NLSR_ENV) make all" sh $$^ $$@
+endef
 
+SOLUTION_CHAIN_PREV := test/.validate_ok $(BASELINE_LAST_RUN_OUTPUTS)
 
-# Rules to process outputs from the OptoFlood experiment.
+define queue_solution_run
+$(eval $(call emit_solution_run,$(1),$(SOLUTION_CHAIN_PREV)))
+$(eval SOLUTION_CHAIN_PREV := $(call solution_run_outputs,$(1)))
+endef
 
-results/solution/consumer_capture.csv: results/solution/consumer_capture.pcap experiment/tool/ndn.lua
-	tshark -X lua_script:experiment/tool/ndn.lua -r "$<" -T fields -e frame.time_epoch -e frame.len -e ndn.type -e ndn.name -E separator=, -E header=y -E quote=d > "$@"
+$(foreach run,$(EXPERIMENT_RUN_IDS),$(call queue_solution_run,$(run)))
 
-results/solution/network_overhead.csv: experiment/tool/extract_overhead_csv.py \
-                                       results/solution/pcap_nodes/core.pcap \
-                                       results/solution/pcap_nodes/agg1.pcap \
-                                       results/solution/pcap_nodes/agg2.pcap \
-                                       results/solution/pcap_nodes/acc1.pcap \
-                                       results/solution/pcap_nodes/acc2.pcap \
-                                       results/solution/pcap_nodes/acc3.pcap \
-                                       results/solution/pcap_nodes/acc4.pcap \
-                                       results/solution/pcap_nodes/acc5.pcap \
-                                       results/solution/pcap_nodes/acc6.pcap \
-                                       results/solution/pcap_nodes/producer.pcap \
-                                       results/solution/pcap_nodes/consumer.pcap
-	python3 $^ $@
+# Host-side mobility-event analysis. Raw captures are not Make prerequisites.
 
-results/solution/disruption_times.pdf: experiment/tool/plot_latency.py results/solution/disruption_metrics.txt
-	python3 $^ $@
+SOLUTION_COMPARE_OUTPUTS := results/solution/mobility_events.csv \
+                            results/solution/mobility_event_audit.txt \
+                            results/solution_service_recovery_time.pdf \
+                            results/solution_content_loss_fraction.pdf \
+                            results/solution_nlsr_control_rate.pdf \
+                            results/solution_recovery_flooding_volume.pdf
 
-results/solution/disruption_metrics.txt: experiment/tool/compute_latency_metrics.py results/solution/consumer_capture.csv results/solution/handoffs.txt
-	python3 $^ $@
+# Legacy manuscript compatibility. Kept off the grouped rule so a missing FCR
+# PDF does not invalidate the active solution figures, including RFV.
+SOLUTION_LEGACY_FCR := results/solution_forwarding_cost_ratio.pdf
 
-results/solution/loss_comparison.pdf: experiment/tool/plot_loss.py results/solution/loss_ratio.txt
-	python3 $^ $@
+$(SOLUTION_COMPARE_OUTPUTS) &: experiment/tool/run_mobility_event_analysis.py \
+                              experiment/tool/mobility_event_metrics.py \
+                              experiment/tool/plot_mobility_event_metrics.py
+	python3 experiment/tool/run_mobility_event_analysis.py analyze-solution
 
-results/solution/loss_ratio.txt: experiment/tool/compute_loss_metrics.py results/solution/consumer_capture.csv results/solution/handoffs.txt
-	python3 $^ $@
-
-results/solution/throughput_timeseries.pdf: experiment/tool/plot_throughput.py results/solution/consumer_capture.csv results/solution/handoffs.txt
-	python3 $^ $@
-
-results/solution/throughput_metrics.txt: experiment/tool/compute_throughput_metrics.py results/solution/consumer_capture.csv
-	python3 $^ $@
-
-results/solution/overhead_timeseries.pdf: experiment/tool/plot_overhead.py results/solution/network_overhead.csv results/solution/handoffs.txt results/main_overhead_limits.txt
-	python3 $^ $@
-
-results/solution/overhead_summary.pdf: experiment/tool/plot_overhead.py results/solution/network_overhead.csv results/solution/handoffs.txt results/main_overhead_limits.txt
-	python3 $^ $@
-
-results/solution/overhead_total.txt: experiment/tool/compute_overhead_metrics.py results/solution/network_overhead.csv results/solution/handoffs.txt | experiment/tool/plot_overhead.py
-	python3 $^ $@
+$(SOLUTION_LEGACY_FCR): experiment/tool/run_mobility_event_analysis.py \
+                        experiment/tool/mobility_event_metrics.py \
+                        experiment/tool/plot_mobility_event_metrics.py
+	python3 experiment/tool/run_mobility_event_analysis.py analyze-solution

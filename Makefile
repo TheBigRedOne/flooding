@@ -23,52 +23,81 @@ BOXES = box/initial/initial.$(PROVIDER).box \
 # Experiment rules and result variables.
 include Makefile.baseline
 include Makefile.solution
-include Makefile.exp1
+include Makefile.sensitivity
+include Makefile.exp2
+include Makefile.exp3
 
-# Baseline NLSR tuning profile dirs (directory prerequisites only; rules live in Makefile.baseline).
-BASELINE_PROFILE_DIRS = results/baseline/g0-h60-a10-r15-s60 \
-                        results/baseline/g1-h54-a9-r14-s54 \
-                        results/baseline/g2-h48-a8-r12-s48 \
-                        results/baseline/g3-h42-a7-r10-s42 \
-                        results/baseline/g4-h36-a6-r9-s36
+# Baseline profile directories (parents of r1..r5; rules live in Makefile.baseline).
+BASELINE_PROFILE_DIRS := $(addprefix results/baseline/,$(BASELINE_PROFILE_LIST))
 
-MAIN_RESULT_OUTPUTS := $(BASELINE_DEFAULT_DIR)/disruption_times.pdf \
-                       $(BASELINE_DEFAULT_DIR)/disruption_metrics.txt \
-                       $(BASELINE_DEFAULT_DIR)/loss_comparison.pdf \
-                       $(BASELINE_DEFAULT_DIR)/loss_ratio.txt \
-                       $(BASELINE_DEFAULT_DIR)/throughput_timeseries.pdf \
-                       $(BASELINE_DEFAULT_DIR)/throughput_metrics.txt \
-                       $(BASELINE_DEFAULT_DIR)/overhead_timeseries.pdf \
-                       $(BASELINE_DEFAULT_DIR)/overhead_summary.pdf \
-                       $(BASELINE_DEFAULT_DIR)/overhead_total.txt \
-                       results/solution/disruption_times.pdf \
-                       results/solution/disruption_metrics.txt \
-                       results/solution/loss_comparison.pdf \
-                       results/solution/loss_ratio.txt \
-                       results/solution/throughput_timeseries.pdf \
-                       results/solution/throughput_metrics.txt \
-                       results/solution/overhead_timeseries.pdf \
-                       results/solution/overhead_summary.pdf \
-                       results/solution/overhead_total.txt
+# Active paper figures. Baseline tuning is G0..G4: SRT, content loss fraction,
+# and NLSR control rate. The OptoFlood comparison adds recovery flooding volume.
+# Routing convergence figures are produced by routing-analysis. Legacy
+# forwarding-cost-ratio PDFs stay on the lower-level analysis targets only.
+GENERATED_FIGURES := results/baseline_service_recovery_time.pdf \
+                     results/baseline_content_loss_fraction.pdf \
+                     results/baseline_nlsr_control_rate.pdf \
+                     results/solution_service_recovery_time.pdf \
+                     results/solution_content_loss_fraction.pdf \
+                     results/solution_recovery_flooding_volume.pdf \
+                     results/solution_nlsr_control_rate.pdf \
+                     results/routing_topology_update_latency.pdf \
+                     results/routing_service_path_fib_convergence.pdf \
+                     results/routing_network_fib_convergence.pdf
 
-UNMET_INTEREST_COMPARISON_INPUTS := $(filter $(BASELINE_DEFAULT_DIR)/loss_ratio.txt results/solution/loss_ratio.txt,$(MAIN_RESULT_OUTPUTS))
+# Paper-facing figures produced by the Exp1 parameter-sensitivity analysis.
+EXP1_PAPER_FIGURES := results/extended/exp1/exp1_sync_delay_sensitivity.pdf \
+                      results/extended/exp1/exp1_verification_timeout_sensitivity.pdf
 
-# PDF inputs for the paper (subset of MAIN_RESULT_OUTPUTS plus comparison plots and NLSR tuning figures).
-GENERATED_FIGURES := results/throughput_comparison.pdf \
-                     results/service_disruption_comparison.pdf \
-                     results/unmet_interest_comparison.pdf \
-                     $(filter $(BASELINE_DEFAULT_DIR)/overhead_timeseries.pdf $(BASELINE_DEFAULT_DIR)/overhead_summary.pdf results/solution/overhead_timeseries.pdf results/solution/overhead_summary.pdf,$(MAIN_RESULT_OUTPUTS)) \
-                     results/baseline_disruption_comparison.pdf \
-                     results/baseline_forwarding_cost_ratio.pdf \
-                     results/baseline_nlsr_control_traffic.pdf
+# Shared-versus-Distinct comparison figures. The recipe reads existing
+# analysis CSVs and does not start a VM.
+EXP2_PAPER_FIGURES := results/extended/exp2/comparison/rfv_shared_vs_distinct.pdf \
+                      results/extended/exp2/comparison/srt_shared_vs_distinct.pdf \
+                      results/extended/exp2/comparison/clf_shared_vs_distinct.pdf
+EXP2_COMPARISON_INPUTS := results/extended/exp2/analysis/network_handoffs.csv \
+                          results/extended/exp2/analysis/consumer_handoffs.csv \
+                          results/extended/exp2/analysis/analysis_audit.txt \
+                          results/extended/exp2/distinct/analysis/network_handoffs.csv \
+                          results/extended/exp2/distinct/analysis/consumer_handoffs.csv \
+                          results/extended/exp2/distinct/analysis/stream_recovery_diagnostics.csv \
+                          results/extended/exp2/distinct/analysis/analysis_audit.txt
+
+# Exp3 manuscript figures. Formal population plots stay under analysis/figures.
+# The two supplementary plots use paper-figures/ so they do not enter the
+# protected analysis tree. Recipes are host-side Python only.
+EXP3_CAMPAIGN_DIR := results/extended/exp3/analysis/campaign
+EXP3_FORMAL_PAPER_FIGURES := results/extended/exp3/analysis/figures/clf_by_population.pdf \
+                             results/extended/exp3/analysis/figures/network_rfv_by_population.pdf \
+                             results/extended/exp3/analysis/figures/nlsr_control_rate_by_population.pdf
+EXP3_SUPPLEMENTARY_FIGURES := results/extended/exp3/paper-figures/srt_by_producer.pdf \
+                              results/extended/exp3/paper-figures/prefix_rfv_by_attachment.pdf
 
 ALL_FIGURES := paper/figures/NDN_Packets_Processing_Flow.pdf \
                paper/figures/NDN_Producer_Mobility_Problem.pdf \
                paper/figures/NDN_Producer_Mobility_Problem_Solution.pdf \
                paper/figures/Topology.pdf \
                $(GENERATED_FIGURES) \
-               $(EXT1_SENSITIVITY_OUTPUTS) \
-               $(EXT1_TIMELINE_OUTPUT)
+               $(EXP1_PAPER_FIGURES) \
+               $(EXP2_PAPER_FIGURES) \
+               $(EXP3_FORMAL_PAPER_FIGURES) \
+               $(EXP3_SUPPLEMENTARY_FIGURES)
+
+$(EXP2_PAPER_FIGURES) &: experiment/tool/plot_exp2_comparison.py $(EXP2_COMPARISON_INPUTS)
+	python3 experiment/tool/plot_exp2_comparison.py
+
+$(EXP3_FORMAL_PAPER_FIGURES) &: experiment/tool/plot_exp3.py \
+                                $(EXP3_CAMPAIGN_DIR)/campaign_status.txt \
+                                $(EXP3_CAMPAIGN_DIR)/events.csv \
+                                $(EXP3_CAMPAIGN_DIR)/population_comparison.csv
+	python3 experiment/tool/plot_exp3.py
+
+$(EXP3_SUPPLEMENTARY_FIGURES) &: experiment/tool/plot_exp3.py \
+                                 $(EXP3_CAMPAIGN_DIR)/campaign_status.txt \
+                                 $(EXP3_CAMPAIGN_DIR)/events.csv \
+                                 $(EXP3_CAMPAIGN_DIR)/prefix_rfv.csv
+	python3 experiment/tool/plot_exp3.py --extended \
+		--analysis-root results/extended/exp3/analysis \
+		--figure-dir results/extended/exp3/paper-figures
 
 # Sources checked by phony target `mypy`.
 PLOT_TOOL_SRCS := experiment/tool/plot_latency.py \
@@ -86,37 +115,83 @@ PLOT_TOOL_SRCS := experiment/tool/plot_latency.py \
                   experiment/tool/summarise_nlsr_sensitivity.py \
                   experiment/tool/plot_nlsr_disruption_comparison.py \
                   experiment/tool/plot_nlsr_network_cost_comparison.py \
-                  experiment/tool/plot_exp1_sensitivity.py \
-                  experiment/tool/plot_delivery_timeline.py
+                  experiment/tool/mobility_event_metrics.py \
+                  experiment/tool/plot_mobility_event_metrics.py \
+                  experiment/tool/run_mobility_event_analysis.py \
+                  experiment/tool/test_mobility_event_metrics.py \
+                  experiment/tool/audit_decoder_parity.py \
+                  experiment/tool/handoff_schedule.py \
+                  experiment/tool/exp2_shared_config.py \
+                  experiment/tool/exp2_shared_metrics.py \
+                  experiment/tool/run_exp2_shared_analysis.py \
+                  experiment/tool/test_exp2_shared.py \
+                  experiment/tool/test_exp2_distinct.py \
+                  experiment/tool/exp2_distinct_metrics.py \
+                  experiment/tool/run_exp2_distinct_analysis.py \
+                  experiment/tool/test_exp2_distinct_metrics.py \
+                  experiment/tool/check_exp2_shared_evidence.py \
+                  experiment/tool/exp3_config.py \
+                  experiment/tool/exp3_driver.py \
+                  experiment/tool/exp3_processes.py \
+                  experiment/tool/check_exp3_evidence.py \
+                  experiment/tool/test_exp3.py \
+                  experiment/tool/exp3_metrics.py \
+                  experiment/tool/run_exp3_analysis.py \
+                  experiment/tool/plot_exp3.py \
+                  experiment/tool/test_exp3_metrics.py \
+                  experiment/tool/exp2_scale_metrics.py \
+                  experiment/tool/run_exp2_scale_analysis.py \
+                  experiment/tool/plot_exp2_scale.py \
+                  experiment/tool/test_exp2_scale.py \
+                  experiment/tool/test_plot_exp2_scale.py \
+                  experiment/tool/plot_exp2_comparison.py \
+                  experiment/tool/test_plot_exp2_comparison.py \
+                  experiment/tool/run_sensitivity_analysis.py \
+                  experiment/tool/test_handoff_schedule.py \
+                  experiment/tool/routing_convergence_metrics.py \
+                  experiment/tool/run_routing_convergence_analysis.py \
+                  experiment/tool/test_routing_convergence_metrics.py
 
-# Main target. The test validation is mandatory and gates the solution experiments.
-all: $(BOXES) experiment test/.validate_ok result paper
+# Full workflow. One recipe runs each stage to completion before the next, so
+# `make -j` cannot overlap these stages or start analysis before experiments.
+all:
+	$(MAKE) experiment-baseline
+	$(MAKE) test
+	$(MAKE) experiment-solution
+	$(MAKE) experiment-exp1
+	$(MAKE) experiment-exp2
+	$(MAKE) experiment-exp3
+	$(MAKE) mobility-analysis
+	$(MAKE) analyze-exp2
+	$(MAKE) analyze-exp3
+	$(MAKE) paper
 
 # High-level orchestration targets (set the provider via `PROVIDER=...` when needed)
-.PHONY: boxes experiment experiment-baseline experiment-solution experiment-exp1 plot-exp1 exp1 experiment-nlsr-tuning \
-        result plot plot-baseline plot-main plot-nlsr-tuning paper test mypy vm-clean
+.PHONY: boxes experiment experiment-baseline experiment-solution experiment-exp1 plot-exp1 exp1 \
+        result plot plot-baseline plot-main paper test mypy vm-clean
 
 
-# Experiments (run inside VMs and pull back CSVs)
+# Experiments run inside VMs and pull the captures back.
+# Baseline, solution, and Exp1 run one after another.
 experiment-baseline: $(BASELINE_RAW_OUTPUTS)
 
 experiment-solution: $(SOLUTION_RESULTS)
 
-# Extended evaluation, Exp 1 (request-interval sweep, solution only).
-experiment-exp1: $(EXT1_RAW_OUTPUTS)
+experiment-exp1:
+	$(MAKE) experiment-exp1-sync-delay
+	$(MAKE) experiment-exp1-verification-timeout
 
-plot-exp1: $(EXT1_SENSITIVITY_OUTPUTS) $(EXT1_TIMELINE_OUTPUT)
+exp1:
+	$(MAKE) experiment-exp1
+	$(MAKE) plot-exp1
 
-exp1: experiment-exp1 plot-exp1
+experiment:
+	$(MAKE) experiment-baseline
+	$(MAKE) experiment-solution
+	$(MAKE) experiment-exp1
 
-# Backward-compatible alias for the baseline parameter-set experiment pipeline.
-experiment-nlsr-tuning: $(BASELINE_RAW_OUTPUTS) $(BASELINE_PROFILE_COMPARE_OUTPUTS)
-
-# Run the baseline, solution, and Exp 1 experiments
-experiment: experiment-baseline experiment-solution experiment-exp1
-
-# Assemble result figures and baseline profile comparisons.
-result: $(GENERATED_FIGURES) $(MAIN_RESULT_OUTPUTS) $(BASELINE_PROFILE_COMPARE_OUTPUTS) $(EXT1_SENSITIVITY_OUTPUTS) $(EXT1_TIMELINE_OUTPUT)
+# Baseline and solution comparison outputs, plus the Exp1 sensitivity figures.
+result: $(BASELINE_PROFILE_COMPARE_OUTPUTS) $(SOLUTION_COMPARE_OUTPUTS) $(EXP1_PAPER_FIGURES)
 
 # Run the test experiment
 test: test/.validate_ok
@@ -129,15 +204,65 @@ test/.validate_ok: test/Makefile test/Vagrantfile test/exp_test.py test/validate
              | $(BASELINE_RAW_OUTPUTS)
 	$(MAKE) -C test PROVIDER=$(PROVIDER) SOLUTION_NLSR_RESULT_DRIVEN=$(SOLUTION_NLSR_RESULT_DRIVEN) SOLUTION_NLSR_EVENT_DRIVEN_VERIFICATION=$(SOLUTION_NLSR_EVENT_DRIVEN_VERIFICATION) test-all
 
-# Plot only (reuse existing CSVs; no VM run)
+# Plot only (reuse existing captures; no VM run).
+# plot-main is the G0-versus-OptoFlood box plots.
 plot: plot-baseline plot-main
 
-plot-baseline: $(BASELINE_PROFILE_COMPARE_OUTPUTS)
+# Analysis-only targets. Their file rules do not depend on experiment outputs,
+# so Make cannot rebuild a stale PCAP by entering a VM recipe.
 
-plot-main: $(MAIN_RESULT_OUTPUTS)
+.PHONY: mobility-analysis test-mobility-analysis routing-analysis plot-routing test-routing-analysis
 
-# Backward-compatible alias for the baseline parameter-set plot pipeline.
-plot-nlsr-tuning: plot-baseline
+mobility-analysis:
+	$(MAKE) plot-baseline
+	$(MAKE) plot-main
+	$(MAKE) routing-analysis
+	$(MAKE) plot-exp1
+
+# One command, used by the explicit routing-analysis target and by the paper
+# PDF rule. The PDF rule must not call $(MAKE): a dry-run would execute that
+# recipe, and a failed grouped-target update can delete the sibling PDF.
+ROUTING_ANALYSIS_CMD = python3 experiment/tool/run_routing_convergence_analysis.py
+
+routing-analysis:
+	$(ROUTING_ANALYSIS_CMD)
+
+# Paper depends on the topology-update PDF and the two FIB subfigure PDFs.
+# The stacked routing_fib_convergence.pdf remains a diagnostic side effect of
+# the analysis command and is not a paper input. Missing a paper PDF reruns
+# analysis of existing logs and captures, and does not start a VM.
+ROUTING_PAPER_FIGURES := results/routing_topology_update_latency.pdf \
+                         results/routing_service_path_fib_convergence.pdf \
+                         results/routing_network_fib_convergence.pdf
+
+$(ROUTING_PAPER_FIGURES) &: experiment/tool/run_routing_convergence_analysis.py \
+                            experiment/tool/routing_convergence_metrics.py
+	$(ROUTING_ANALYSIS_CMD)
+
+plot-routing: routing-analysis
+
+test-routing-analysis:
+	python3 -m unittest experiment.tool.test_routing_convergence_metrics
+
+test-mobility-analysis:
+	python3 -m unittest experiment.tool.test_mobility_event_metrics
+
+plot-exp1: $(EXP1_PAPER_FIGURES)
+
+# Generate the Exp1 sensitivity figures from existing captures.
+# The recipe lists the analysis programs and invokes the commands directly.
+$(EXP1_PAPER_FIGURES) &: experiment/tool/run_sensitivity_analysis.py \
+                         experiment/tool/mobility_event_metrics.py \
+                         experiment/tool/routing_convergence_metrics.py \
+                         experiment/tool/run_mobility_event_analysis.py \
+                         experiment/tool/plot_mobility_event_metrics.py
+	python3 experiment/tool/run_sensitivity_analysis.py sync-delay
+	python3 experiment/tool/run_sensitivity_analysis.py verification-timeout
+	python3 experiment/tool/run_sensitivity_analysis.py cross-check
+
+plot-baseline: $(BASELINE_PROFILE_COMPARE_OUTPUTS) $(BASELINE_LEGACY_FCR)
+
+plot-main: $(SOLUTION_COMPARE_OUTPUTS) $(SOLUTION_LEGACY_FCR)
 
 # Build the paper PDF (follow dependencies; do not hand-check and exit)
 paper: paper/OptoFlood.pdf
@@ -153,9 +278,6 @@ results/solution: | results
 	mkdir $@
 
 $(BASELINE_PROFILE_DIRS): | results/baseline
-	mkdir -p "$@"
-
-$(addsuffix /pcap_nodes,$(BASELINE_PROFILE_DIRS)) results/solution/pcap_nodes:
 	mkdir -p "$@"
 
 paper/figures:
@@ -195,31 +317,6 @@ box/solution/solution.$(PROVIDER).box: box/solution/Vagrantfile box/initial/init
 
 # =============================================================================
 
-# Shared overhead y-axis limits for baseline(default) and solution main-result plots.
-results/main_overhead_limits.txt: experiment/tool/compute_overhead_ymax.py \
-                                  $(BASELINE_DEFAULT_DIR)/network_overhead.csv \
-                                  $(BASELINE_DEFAULT_DIR)/handoffs.txt \
-                                  results/solution/network_overhead.csv \
-                                  results/solution/handoffs.txt \
-                                  | experiment/tool/plot_overhead.py results
-	python3 $< --inputs $(filter %.csv,$^) --handoff-files $(filter %/handoffs.txt,$^) --output $@
-
-$(BASELINE_DEFAULT_DIR)/overhead_timeseries.pdf: experiment/tool/plot_overhead.py $(BASELINE_DEFAULT_DIR)/network_overhead.csv $(BASELINE_DEFAULT_DIR)/handoffs.txt results/main_overhead_limits.txt
-	python3 $^ $@
-
-$(BASELINE_DEFAULT_DIR)/overhead_summary.pdf: experiment/tool/plot_overhead.py $(BASELINE_DEFAULT_DIR)/network_overhead.csv $(BASELINE_DEFAULT_DIR)/handoffs.txt results/main_overhead_limits.txt
-	python3 $^ $@
-
-# Comparison plots written to repository results/ for inclusion in the paper.
-results/throughput_comparison.pdf: experiment/tool/plot_throughput_comparison.py $(BASELINE_DEFAULT_DIR)/consumer_capture.csv results/solution/consumer_capture.csv $(BASELINE_DEFAULT_DIR)/handoffs.txt results/solution/handoffs.txt | results
-	python3 $< $(filter %.csv,$^) $@ --baseline-handoff-file $(BASELINE_DEFAULT_DIR)/handoffs.txt --solution-handoff-file results/solution/handoffs.txt
-
-results/service_disruption_comparison.pdf: experiment/tool/plot_disruption_comparison.py $(BASELINE_DEFAULT_DIR)/disruption_metrics.txt results/solution/disruption_metrics.txt | results
-	python3 $^ $@
-
-results/unmet_interest_comparison.pdf: experiment/tool/plot_unmet_interest_comparison.py $(UNMET_INTEREST_COMPARISON_INPUTS) | results
-	python3 $^ $@ --log-scale
-
 # Generate the paper
 paper/OptoFlood.pdf: paper/OptoFlood.tex $(ALL_FIGURES) | paper/bin
 	@echo "Compiling LaTeX with latexmk..."
@@ -246,7 +343,7 @@ vm-clean:
 	PROVIDER=$(PROVIDER) LATEXMK=latexmk sh scripts/cleanup.sh vm-clean
 
 
-.PHONY: all build-boxes boxes clean deep-clean clean-ssh-config box box-initial box-baseline box-solution experiment experiment-baseline experiment-solution experiment-exp1 plot-exp1 exp1 experiment-nlsr-tuning result plot plot-baseline plot-main plot-nlsr-tuning paper test mypy vm-clean
+.PHONY: all build-boxes boxes clean deep-clean clean-ssh-config box box-initial box-baseline box-solution experiment experiment-baseline experiment-solution experiment-exp1 plot-exp1 exp1 result plot plot-baseline plot-main paper test mypy vm-clean mobility-analysis test-mobility-analysis routing-analysis plot-routing test-routing-analysis
 
 .DELETE_ON_ERROR:
 

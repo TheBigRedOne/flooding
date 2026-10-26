@@ -20,7 +20,8 @@
 //
 // Configuration (environment variables):
 //   OPTOFLOOD_ROLE          "consumer" | "producer" (overridden by argv[1])
-//   GUARD_PREFIX            producer advertised/movable prefix (default /LiveStream)
+//   OPTOFLOOD_PRODUCER_INDEX  optional 1..4. Unset keeps the historical
+//                             per-process Guard FloodId counter.
 //   EXP_GUARD_INTERVAL_MS   consumer re-express period P in ms (default 1000)
 //   EXP_GUARD_LIFETIME_MS   guard InterestLifetime in ms; unset leaves the ndn-cxx
 //                           default (4 s). Provided to measure how the rate at which
@@ -30,6 +31,8 @@
 // (/localhost/optoflood), which must be provisioned before start-up, so that its
 // command Interests do not share NFD's per-signing-key replay state with the baseline
 // producer application.
+
+#include "guard_flood_id.hpp"
 
 #include <ndn-cxx/face.hpp>
 #include <ndn-cxx/interest.hpp>
@@ -50,6 +53,7 @@
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -271,11 +275,12 @@ class GuardProducer : noncopyable
 {
 public:
   explicit
-  GuardProducer(const Name& advertisedPrefix)
+  GuardProducer(const Name& advertisedPrefix, std::optional<uint32_t> producerIndex)
     : m_face(m_io)
     , m_scheduler(m_io)
     , m_advertisedPrefix(advertisedPrefix)
     , m_guardName(Name(advertisedPrefix).append(GUARD_MARKER))
+    , m_producerIndex(producerIndex)
   {
     const char* verifyNow = std::getenv("OPTOFLOOD_NLSR_VERIFY_NOW");
     m_sendNlsrVerifyNow = verifyNow && verifyNow[0] != '\0' &&
@@ -441,7 +446,13 @@ private:
     data->setFreshnessPeriod(0_ms); // ephemeral: never satisfies MustBeFresh from CS
 
     MetaInfo metaInfo = data->getMetaInfo();
-    uint64_t floodId = ++m_floodIdSeq;
+    const uint64_t nextSequence = m_floodIdSeq + 1;
+    uint64_t floodId = 0;
+    std::string floodError;
+    if (!guardFloodId(m_producerIndex, nextSequence, floodId, floodError)) {
+      throw std::runtime_error(floodError);
+    }
+    m_floodIdSeq = nextSequence;
     metaInfo.addAppMetaInfo(optoflood::makeFloodIdBlock(floodId));
     metaInfo.addAppMetaInfo(optoflood::makeNewFaceSeqBlock(m_epoch));
     data->setMetaInfo(metaInfo);
@@ -473,6 +484,7 @@ private:
   std::optional<HeldGuard> m_heldGuard;
   uint32_t m_epoch = 0;
   uint64_t m_floodIdSeq = 0;
+  std::optional<uint32_t> m_producerIndex;
   bool m_sendNlsrVerifyNow = false;
 };
 
@@ -502,6 +514,17 @@ main(int argc, char** argv)
 
   const char* rawPrefix = std::getenv("GUARD_PREFIX");
   Name advertisedPrefix(rawPrefix && rawPrefix[0] != '\0' ? rawPrefix : "/LiveStream");
+  std::optional<uint32_t> producerIndex;
+  const char* rawIndex = std::getenv("OPTOFLOOD_PRODUCER_INDEX");
+  if (rawIndex != nullptr && rawIndex[0] != '\0') {
+    char* end = nullptr;
+    const unsigned long parsed = std::strtoul(rawIndex, &end, 10);
+    if (end == rawIndex || *end != '\0' || parsed < 1 || parsed > 4) {
+      std::cerr << "OPTOFLOOD_PRODUCER_INDEX must be an integer from 1 to 4" << std::endl;
+      return 2;
+    }
+    producerIndex = static_cast<uint32_t>(parsed);
+  }
 
   const char* rawInterval = std::getenv("EXP_GUARD_INTERVAL_MS");
   int intervalMs = rawInterval ? std::atoi(rawInterval) : 1000;
@@ -516,8 +539,14 @@ main(int argc, char** argv)
     lifetimeMs = 0;
   }
 
+  // Unset index keeps the historical startup line. A configured index is added
+  // before the process id.
   std::cout << "[" << optoflood_daemon::nowNs() << "] STARTUP: OptoFlood daemon role='" << role
-            << "' prefix=" << advertisedPrefix << " pid=" << getpid() << std::endl;
+            << "' prefix=" << advertisedPrefix;
+  if (producerIndex) {
+    std::cout << " producer_index=" << *producerIndex;
+  }
+  std::cout << " pid=" << getpid() << std::endl;
 
   try {
     if (role == "consumer") {
@@ -526,7 +555,7 @@ main(int argc, char** argv)
       consumer.run();
     }
     else if (role == "producer") {
-      optoflood_daemon::GuardProducer producer(advertisedPrefix);
+      optoflood_daemon::GuardProducer producer(advertisedPrefix, producerIndex);
       producer.run();
     }
     else {

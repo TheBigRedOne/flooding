@@ -1,0 +1,155 @@
+# Exp3 independent mobility. These targets do not depend on baseline, solution,
+# Exp1, or Exp2 runs. One Exp3 VM is locked, so smoke targets stay serial.
+
+EXP3_ROOT := results/extended/exp3
+EXP3_P1_NODES := core agg1 agg2 acc1 acc2 acc3 acc4 acc5 acc6 producer1 consumer1
+EXP3_P2_NODES := $(EXP3_P1_NODES) producer2 consumer2
+EXP3_P4_NODES := $(EXP3_P2_NODES) producer3 consumer3 producer4 consumer4
+EXP3_FULL_RUNS := r1 r2 r3 r4 r5
+
+EXP3_VM_PREREQS := scripts/run-in-vm.sh \
+	box/solution/solution.$(PROVIDER).box \
+	experiment/app/producer.cpp \
+	experiment/app/consumer.cpp \
+	experiment/app/optoflood-daemon.cpp \
+	experiment/app/guard_flood_id.hpp \
+	experiment/app/trust-schema.conf \
+	experiment/extended/exp3/Vagrantfile \
+	experiment/extended/exp3/Makefile \
+	experiment/tool/exp.py \
+	experiment/tool/exp3_driver.py \
+	experiment/tool/exp3_config.py \
+	experiment/tool/exp3_processes.py \
+	experiment/tool/check_exp3_evidence.py
+
+define exp3_outputs
+$(1)/campaign.txt \
+$(1)/params.txt \
+$(1)/handoffs.txt \
+$(1)/topology.txt \
+$(1)/schedules.txt \
+$(1)/observation_ends.txt \
+$(1)/process-health.txt \
+$(1)/capture-health.txt \
+$(1)/timing-summary.txt \
+$(1)/trust-schema.conf \
+$(foreach pair,$(2),$(1)/producer$(pair).log $(1)/consumer$(pair).log $(1)/optoflood_producer$(pair).log $(1)/optoflood_consumer$(pair).log $(1)/certs/producer$(pair).cert) \
+$(foreach node,$(3),$(1)/pcap_nodes/$(node).pcap $(1)/tcpdump_$(node).log $(1)/minindn-logs/$(node)/nfd.log $(1)/minindn-logs/$(node)/nlsr.log)
+endef
+
+define exp3_smoke_rule
+EXP3_$(1)_SMOKE_OUTPUTS := $$(call exp3_outputs,$(EXP3_ROOT)/$(2)/smoke,$(3),$(4))
+
+$$(EXP3_$(1)_SMOKE_OUTPUTS) &: $$(EXP3_VM_PREREQS)
+	RUN_IN_VM_PROFILE=exp3 MOBILITY_LOG_NODES="$(4)" RUN_IN_VM_REMOTE_MAKE="$(SOLUTION_NLSR_ENV) EXP3_POPULATION='$(2)' EXP3_SCHEDULE='smoke' EXP3_RUN_ID='smoke' EXP_REQUEST_INTERVAL_MS='20' make exp3" sh $$(EXP3_VM_PREREQS) $$@
+
+.PHONY: experiment-exp3-$(2)-smoke check-exp3-$(2)-smoke
+
+experiment-exp3-$(2)-smoke: $$(EXP3_$(1)_SMOKE_OUTPUTS)
+
+check-exp3-$(2)-smoke:
+	python3 experiment/tool/check_exp3_evidence.py $(EXP3_ROOT)/$(2)/smoke
+endef
+
+$(eval $(call exp3_smoke_rule,P1,p1,1,$(EXP3_P1_NODES)))
+$(eval $(call exp3_smoke_rule,P2,p2,1 2,$(EXP3_P2_NODES)))
+$(eval $(call exp3_smoke_rule,P4,p4,1 2 3 4,$(EXP3_P4_NODES)))
+
+define exp3_full_rule
+EXP3_$(1)_$(2)_OUTPUTS := $$(call exp3_outputs,$(EXP3_ROOT)/$(3)/$(2),$(4),$(5))
+
+$$(EXP3_$(1)_$(2)_OUTPUTS) &: $$(EXP3_VM_PREREQS)
+	RUN_IN_VM_PROFILE=exp3 MOBILITY_LOG_NODES="$(5)" RUN_IN_VM_REMOTE_MAKE="$(SOLUTION_NLSR_ENV) EXP3_POPULATION='$(3)' EXP3_SCHEDULE='full' EXP3_RUN_ID='$(2)' EXP_REQUEST_INTERVAL_MS='20' make exp3" sh $$(EXP3_VM_PREREQS) $$@
+
+.PHONY: experiment-exp3-$(3)-$(2) check-exp3-$(3)-$(2)
+
+experiment-exp3-$(3)-$(2): $$(EXP3_$(1)_$(2)_OUTPUTS)
+
+check-exp3-$(3)-$(2):
+	python3 experiment/tool/check_exp3_evidence.py $(EXP3_ROOT)/$(3)/$(2)
+endef
+
+$(foreach run,$(EXP3_FULL_RUNS),$(eval $(call exp3_full_rule,P1,$(run),p1,1,$(EXP3_P1_NODES))))
+$(foreach run,$(EXP3_FULL_RUNS),$(eval $(call exp3_full_rule,P2,$(run),p2,1 2,$(EXP3_P2_NODES))))
+$(foreach run,$(EXP3_FULL_RUNS),$(eval $(call exp3_full_rule,P4,$(run),p4,1 2 3 4,$(EXP3_P4_NODES))))
+
+# Formal VM runs only. One population finishes before the next; smoke and pilot stay out.
+.PHONY: experiment-exp3-p1-full experiment-exp3-p2-full experiment-exp3-p4-full experiment-exp3
+
+experiment-exp3-p1-full:
+	$(MAKE) experiment-exp3-p1-r1
+	$(MAKE) experiment-exp3-p1-r2
+	$(MAKE) experiment-exp3-p1-r3
+	$(MAKE) experiment-exp3-p1-r4
+	$(MAKE) experiment-exp3-p1-r5
+
+experiment-exp3-p2-full:
+	$(MAKE) experiment-exp3-p2-r1
+	$(MAKE) experiment-exp3-p2-r2
+	$(MAKE) experiment-exp3-p2-r3
+	$(MAKE) experiment-exp3-p2-r4
+	$(MAKE) experiment-exp3-p2-r5
+
+experiment-exp3-p4-full:
+	$(MAKE) experiment-exp3-p4-r1
+	$(MAKE) experiment-exp3-p4-r2
+	$(MAKE) experiment-exp3-p4-r3
+	$(MAKE) experiment-exp3-p4-r4
+	$(MAKE) experiment-exp3-p4-r5
+
+experiment-exp3:
+	$(MAKE) experiment-exp3-p1-full
+	$(MAKE) experiment-exp3-p2-full
+	$(MAKE) experiment-exp3-p4-full
+
+# One P=4 full sequence in a non-formal directory. Seed 1 matches formal p4/r1.
+EXP3_P4_PILOT_DIR := $(EXP3_ROOT)/p4/pilot
+EXP3_P4_PILOT_OUTPUTS := $(call exp3_outputs,$(EXP3_P4_PILOT_DIR),1 2 3 4,$(EXP3_P4_NODES))
+
+$(EXP3_P4_PILOT_OUTPUTS) &: $(EXP3_VM_PREREQS)
+	RUN_IN_VM_PROFILE=exp3 MOBILITY_LOG_NODES="$(EXP3_P4_NODES)" RUN_IN_VM_REMOTE_MAKE="$(SOLUTION_NLSR_ENV) EXP3_POPULATION='p4' EXP3_SCHEDULE='full' EXP3_RUN_ID='pilot' EXP3_RUN_SEED='1' EXP_REQUEST_INTERVAL_MS='20' make exp3" sh $(EXP3_VM_PREREQS) $@
+
+.PHONY: experiment-exp3-p4-pilot check-exp3-p4-pilot check-exp3-static
+
+experiment-exp3-p4-pilot: $(EXP3_P4_PILOT_OUTPUTS)
+
+check-exp3-p4-pilot:
+	python3 experiment/tool/check_exp3_evidence.py $(EXP3_P4_PILOT_DIR)
+
+check-exp3-static:
+	python3 -m unittest experiment.tool.test_exp3 experiment.tool.test_exp3_metrics
+	python3 -m mypy --config-file mypy.ini experiment/tool/exp3_config.py experiment/tool/exp3_processes.py experiment/tool/exp3_driver.py experiment/tool/check_exp3_evidence.py experiment/tool/test_exp3.py experiment/tool/exp3_metrics.py experiment/tool/run_exp3_analysis.py experiment/tool/plot_exp3.py experiment/tool/test_exp3_metrics.py
+
+# Host-side measurement only. These targets have no VM, box, or experiment prerequisite.
+.PHONY: analyze-exp3-run analyze-exp3-p4-pilot analyze-exp3-campaign plot-exp3 plot-exp3-pilot plot-exp3-extended test-exp3-metrics
+
+analyze-exp3-run:
+	python3 experiment/tool/run_exp3_analysis.py $(EXP3_POPULATION) $(EXP3_RUN_ID)
+
+analyze-exp3-p4-pilot:
+	python3 experiment/tool/run_exp3_analysis.py p4 pilot
+
+analyze-exp3-campaign:
+	python3 experiment/tool/run_exp3_analysis.py --campaign
+
+plot-exp3:
+	python3 experiment/tool/plot_exp3.py
+
+plot-exp3-pilot:
+	python3 experiment/tool/plot_exp3.py --pilot
+
+# Supplementary SRT and attachment figures. Reads the formal analysis tree and
+# writes outside it, so the analysis-directory guard stays in force.
+plot-exp3-extended:
+	python3 experiment/tool/plot_exp3.py --extended --analysis-root $(EXP3_ROOT)/analysis --figure-dir $(EXP3_ROOT)/paper-figures
+
+# Host-side campaign measurement and paper figures. Does not start a VM.
+.PHONY: analyze-exp3
+
+analyze-exp3:
+	$(MAKE) analyze-exp3-campaign
+	$(MAKE) plot-exp3
+	$(MAKE) plot-exp3-extended
+
+test-exp3-metrics:
+	python3 -m unittest experiment.tool.test_exp3_metrics

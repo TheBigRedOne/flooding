@@ -82,6 +82,15 @@ public:
       m_framePeriodMs = 20;
     }
 
+    // Exp2 associates each validation result with the Data Name. Unset leaves
+    // the historical log lines unchanged.
+    const char* rawValidationLog = std::getenv("EXP_LOG_VALIDATION_NAME");
+    m_logValidationName = rawValidationLog && std::string(rawValidationLog) == "1";
+    const char* rawConsumerId = std::getenv("EXP_CONSUMER_ID");
+    if (rawConsumerId && rawConsumerId[0] != '\0') {
+      m_consumerId = rawConsumerId;
+    }
+
     // Per-frame timeout = effective lookahead (frames * framePeriod) plus a
     // reclaim margin. It is the Interest lifetime and the slot-reclaim deadline,
     // not a playout/QoE deadline: it is kept well above any playout deadline
@@ -95,7 +104,13 @@ public:
   run()
   {
     try {
-      m_validator.load("/home/vagrant/flooding/experiment/app/trust-schema.conf");
+      const char* schema = std::getenv("EXP_TRUST_SCHEMA");
+      const std::string schemaPath =
+        (schema != nullptr && schema[0] != '\0')
+          ? schema
+          : "/home/vagrant/flooding/experiment/app/trust-schema.conf";
+      m_validator.load(schemaPath);
+      std::cout << "[" << nowNs() << "] TRUST_SCHEMA: " << schemaPath << std::endl;
     }
     catch (const std::exception& e) {
       std::cerr << "ERROR: Failed to load trust schema: " << e.what() << std::endl;
@@ -318,13 +333,36 @@ private:
 
     // Validate the signature against the trust schema. Reception accounting does
     // not gate on validation; the result is logged for trust verification.
-    m_validator.validate(data,
-      [recvTimestamp] (const Data&) {
-        std::cout << "[" << recvTimestamp << "] VALIDATE: Data signature verified" << std::endl;
-      },
-      [recvTimestamp] (const Data&, const security::ValidationError& error) {
-        std::cerr << "[" << recvTimestamp << "] ERROR: Data validation failed: " << error << std::endl;
-      });
+    if (m_logValidationName) {
+      Name loggedName = name;
+      std::string loggedId = m_consumerId;
+      m_validator.validate(data,
+        [recvTimestamp, loggedName, loggedId] (const Data&) {
+          std::cout << "[" << recvTimestamp << "] VALIDATE: Data signature verified"
+                    << " name=" << loggedName;
+          if (!loggedId.empty()) {
+            std::cout << " id=" << loggedId;
+          }
+          std::cout << std::endl;
+        },
+        [recvTimestamp, loggedName, loggedId] (const Data&, const security::ValidationError& error) {
+          std::cerr << "[" << recvTimestamp << "] ERROR: Data validation failed: " << error
+                    << " name=" << loggedName;
+          if (!loggedId.empty()) {
+            std::cerr << " id=" << loggedId;
+          }
+          std::cerr << std::endl;
+        });
+    }
+    else {
+      m_validator.validate(data,
+        [recvTimestamp] (const Data&) {
+          std::cout << "[" << recvTimestamp << "] VALIDATE: Data signature verified" << std::endl;
+        },
+        [recvTimestamp] (const Data&, const security::ValidationError& error) {
+          std::cerr << "[" << recvTimestamp << "] ERROR: Data validation failed: " << error << std::endl;
+        });
+    }
 
     auto it = m_frames.find(frame);
     if (it == m_frames.end()) {
@@ -425,6 +463,8 @@ private:
   static constexpr int kMaxWindowFrames = 64;       // upper bound on effective window
 
   Name m_streamPrefix;
+  bool m_logValidationName = false;
+  std::string m_consumerId;
   int m_windowFrames = 4;          // configured initial lookahead (fallback)
   int m_targetParked = 4;          // desired Interests parked ahead of the live edge
   int m_framePeriodMs = 20;        // frame period; RTT -> frames conversion

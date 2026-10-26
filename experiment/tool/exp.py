@@ -4,7 +4,7 @@ Mini-NDN experiment driver for the baseline / solution mobility study.
 Topology: six access points (acc1..acc6) connected via two aggregation switches
 (agg1/agg2) to a core; consumer is fixed on acc1 and producer owns pre-built
 producer-acc{2..6} links so that handoffs can be emulated by toggling link
-status. acc2 is the initial active producer attachment; acc3..acc6 start down.
+status. producer--acc3..acc6 are pre-built for later hand-offs.
 
 Behaviour is parameterised through environment variables (see _load_handoff_config
 and _load_nlsr_interval_overrides) so the same driver supports the legacy
@@ -18,12 +18,15 @@ import random
 from shlex import quote
 from typing import Any, Dict, List, Optional, Tuple
 
+import handoff_schedule
+
 from mininet.log import setLogLevel, info
 from minindn.minindn import Minindn
 from minindn.util import MiniNDNCLI  # noqa: F401 (kept for interactive use)
 from minindn.apps.app_manager import AppManager
 from minindn.apps.nfd import Nfd
 from minindn.apps.nlsr import Nlsr
+from minindn.helpers.nfdc import Nfdc
 from mininet.topo import Topo
 
 
@@ -82,10 +85,6 @@ ADVERTISED_PREFIX = '/LiveStream'
 # application's key; it is provisioned by the driver because creating an identity
 # writes to the PIB shared with the concurrently starting applications.
 OPTOFLOOD_MGMT_IDENTITY = '/localhost/optoflood'
-
-# Access points that must start down so the experiment begins with the producer
-# attached only via acc2.
-NON_INITIAL_ACCESS_POINTS: Tuple[str, ...] = ('acc3', 'acc4', 'acc5', 'acc6')
 
 # Per-node packet capture nodes used for downstream overhead analysis.
 OVERHEAD_NODES: Tuple[str, ...] = (
@@ -270,6 +269,7 @@ def _write_nlsr_params_file(
     window_frames: int,
     segments_per_frame: int,
     guard_interval_ms: int,
+    explicit_intervals: Optional[List[float]] = None,
 ) -> None:
     """Persist NLSR tuning parameters and handoff configuration to params.txt."""
     output_path = os.path.join(results_dir, 'params.txt')
@@ -278,6 +278,9 @@ def _write_nlsr_params_file(
     combined['handoff_interval_base_s'] = f'{handoff_base:.3f}'
     combined['handoff_interval_jitter_s'] = f'{handoff_jitter:.3f}'
     combined['handoff_sequence'] = ','.join(handoff_sequence)
+    if explicit_intervals is not None:
+        combined['handoff_interval_mode'] = 'explicit'
+        combined['handoff_intervals_s'] = handoff_schedule.format_intervals(explicit_intervals)
     combined['request_interval_ms'] = str(request_interval_ms)
     combined['window_frames'] = str(window_frames)
     combined['segments_per_frame'] = str(segments_per_frame)
@@ -310,11 +313,51 @@ def _append_handoff_row(
         )
 
 
+# Producer mobility attachments. Faces for all of them are created while the
+# links are up; acc3..acc6 are then taken down before NLSR starts.
+PRODUCER_MOBILITY_ATTACHMENTS: Tuple[str, ...] = ('acc2', 'acc3', 'acc4', 'acc5', 'acc6')
+
+
 def _sample_interval(base_seconds: float, jitter_seconds: float, rng: random.SystemRandom) -> float:
     """Draw a single handoff interval from base + Uniform(0, jitter)."""
     if jitter_seconds <= 0:
         return base_seconds
     return base_seconds + rng.uniform(0.0, jitter_seconds)
+
+
+def _require_permanent_udp_face(node, remote_ip: str, label: str) -> None:
+    """Create one permanent UDP face. Nfdc.createFace returns -1 on failure."""
+    face_id = Nfdc.createFace(
+        node,
+        remote_ip,
+        Nfdc.PROTOCOL_UDP,
+        isPermanent=True,
+        allowExisting=True,
+    )
+    if face_id == -1:
+        raise RuntimeError(f'mobility face preparation failed: {label} udp://{remote_ip}')
+
+
+def _prepare_producer_mobility_faces(ndn) -> None:
+    """Prepare producer<->acc2..acc6 UDP faces before those links are taken down.
+
+    NLSR is not running. Addresses come from the Mininet interfaces on each link.
+    """
+    producer = ndn.net['producer']
+    for access_name in PRODUCER_MOBILITY_ATTACHMENTS:
+        access = ndn.net[access_name]
+        connections = producer.connectionsTo(access)
+        if len(connections) != 1:
+            raise RuntimeError(
+                f'producer--{access_name}: expected one link, found {len(connections)}'
+            )
+        producer_intf, access_intf = connections[0]
+        producer_ip = producer_intf.IP()
+        access_ip = access_intf.IP()
+        if not producer_ip or not access_ip:
+            raise RuntimeError(f'producer--{access_name}: missing interface address')
+        _require_permanent_udp_face(producer, access_ip, f'producer->{access_name}')
+        _require_permanent_udp_face(access, producer_ip, f'{access_name}->producer')
 
 
 class TunableNlsr(Nlsr):
@@ -323,12 +366,38 @@ class TunableNlsr(Nlsr):
 
     The baseline tuning study targets the installed 2024-08 Mini-NDN release,
     where NLSR is created first and then adjusted through infoedit against the
-    generated nlsr.conf before the process starts.
+    generated nlsr.conf before the process starts. Neighbor face creation uses
+    Mini-NDN's allowExisting=True behaviour and aborts if a face cannot be created.
     """
 
     def __init__(self, node, infoeditChanges=None, **kwargs):
         super().__init__(node, **kwargs)
         self._apply_manual_infoedit_changes(infoeditChanges)
+
+    def createFaces(self):
+        for location in self.neighborLocations:
+            if self.faceType == Nfdc.PROTOCOL_ETHER:
+                local_intf = self.interfaceForNeighbor[location]
+                face_id = Nfdc.createFace(
+                    self.node,
+                    location,
+                    self.faceType,
+                    localInterface=local_intf,
+                    isPermanent=True,
+                    allowExisting=True,
+                )
+            else:
+                face_id = Nfdc.createFace(
+                    self.node,
+                    location,
+                    self.faceType,
+                    isPermanent=True,
+                    allowExisting=True,
+                )
+            if face_id == -1:
+                raise RuntimeError(
+                    f'[{self.node.name}] NLSR neighbor face creation failed for {location}'
+                )
 
     def _apply_manual_infoedit_changes(self, infoedit_changes):
         if not infoedit_changes:
@@ -359,8 +428,7 @@ class CustomTopo(Topo):
 
     consumer is fixed on acc1. The producer owns pre-built producer-acc{2..6}
     links so that mobility events are emulated by toggling link status at
-    runtime. acc2 is the initial active attachment; acc3..acc6 are taken down
-    before the application traffic starts.
+    runtime. producer--acc3..acc6 are pre-built for later hand-offs.
     """
 
     def build(self):
@@ -391,8 +459,7 @@ class CustomTopo(Topo):
         self.addLink(agg2, acc6, bw=500, delay='5ms')
 
         self.addLink(consumer, acc1, bw=100, delay='5ms')
-        self.addLink(producer, acc2, bw=100, delay='5ms')  # initial active link
-        # Pre-built alternative producer attachments (initially down) for handoffs.
+        self.addLink(producer, acc2, bw=100, delay='5ms')
         self.addLink(producer, acc3, bw=100, delay='5ms')
         self.addLink(producer, acc4, bw=100, delay='5ms')
         self.addLink(producer, acc5, bw=100, delay='5ms')
@@ -426,6 +493,9 @@ if __name__ == '__main__':
 
     try:
         handoff_count, handoff_base, handoff_jitter, handoff_sequence = _load_handoff_config()
+        explicit_intervals = handoff_schedule.intervals_from_env(
+            os.getenv('NLSR_HANDOFF_INTERVALS'), handoff_count,
+        )
     except ValueError as error:
         print(f"Error: {error}")
         exit(1)
@@ -450,6 +520,7 @@ if __name__ == '__main__':
         window_frames,
         segments_per_frame,
         guard_interval_ms,
+        explicit_intervals,
     )
     _init_handoffs_file(handoffs_path)
 
@@ -461,6 +532,14 @@ if __name__ == '__main__':
 
     info('Starting NFD on nodes\n')
     nfds = AppManager(ndn, ndn.net.hosts, Nfd, logLevel='DEBUG')
+    _prepare_producer_mobility_faces(ndn)
+
+    # Leave only producer--acc2 active before NLSR start.
+    ndn.net.configLinkStatus('producer', 'acc3', 'down')
+    ndn.net.configLinkStatus('producer', 'acc4', 'down')
+    ndn.net.configLinkStatus('producer', 'acc5', 'down')
+    ndn.net.configLinkStatus('producer', 'acc6', 'down')
+
     info('Starting NLSR on nodes\n')
     nlsr_kwargs: Dict[str, Any] = {'logLevel': 'DEBUG'}
     if nlsr_infoedit_changes:
@@ -468,10 +547,6 @@ if __name__ == '__main__':
         info(f"Applying NLSR overrides: {nlsr_applied_params}\n")
     nlsrs = AppManager(ndn, ndn.net.hosts, TunableNlsr, **nlsr_kwargs)
     sleep(30)  # allow NLSR initial convergence
-
-    # Leave only producer-acc2 active before the experiment starts.
-    for ap in NON_INITIAL_ACCESS_POINTS:
-        ndn.net.configLinkStatus('producer', ap, 'down')
 
     producer = ndn.net['producer']
     consumer = ndn.net['consumer']
@@ -536,13 +611,16 @@ if __name__ == '__main__':
         producer.cmd(f"{producer_daemon_env} {daemon_exec} producer &> {producer_daemon_log} &")
         consumer.cmd(f"{daemon_env} {daemon_exec} consumer &> {consumer_daemon_log} &")
 
-    # The handoff loop runs K randomly-spaced toggles along handoff_sequence.
-    # The first interval doubles as application warm-up before handoff #1.
-    rng = random.SystemRandom()
+    # The first interval is warm-up before handoff #1. An explicit list has K+1
+    # entries and replaces sampling; otherwise each wait is base + Uniform(0, jitter).
+    interval_rng = None if explicit_intervals is not None else random.SystemRandom()
     sequence_start_time = wall_time()
     current_node = handoff_sequence[0]
     for index in range(1, handoff_count + 1):
-        interval_s = _sample_interval(handoff_base, handoff_jitter, rng)
+        if explicit_intervals is None:
+            interval_s = _sample_interval(handoff_base, handoff_jitter, interval_rng)
+        else:
+            interval_s = explicit_intervals[index - 1]
         sleep(interval_s)
         next_node = handoff_sequence[index]
         info(f"Handoff #{index}: producer detaches from {current_node}, attaches to {next_node}\n")
@@ -561,9 +639,11 @@ if __name__ == '__main__':
         )
         current_node = next_node
 
-    # Tail interval drawn from the same distribution to leave the last handoff
-    # a full recovery window before tcpdump termination.
-    sleep(_sample_interval(handoff_base, handoff_jitter, rng))
+    # Tail interval after the last handoff, before tcpdump stops.
+    if explicit_intervals is None:
+        sleep(_sample_interval(handoff_base, handoff_jitter, interval_rng))
+    else:
+        sleep(explicit_intervals[handoff_count])
 
     consumer.cmd(f"pkill -f '{consumer_pcap}' || true")
     for node_name in OVERHEAD_NODES:
