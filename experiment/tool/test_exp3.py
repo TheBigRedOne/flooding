@@ -589,5 +589,59 @@ def _full_run(root: Path) -> Path:
     return run_dir
 
 
+class Exp3WorkflowMakefileTest(unittest.TestCase):
+    def test_full_workflow_orders_solution_analysis_before_exp2_scale(self) -> None:
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        recipe = makefile.split("\nall:\n", 1)[1].split("\n# ", 1)[0]
+        steps = [line.strip() for line in recipe.splitlines() if line.strip().startswith("$(MAKE)")]
+        self.assertEqual(steps, [
+            "$(MAKE) experiment-baseline",
+            "$(MAKE) test",
+            "$(MAKE) experiment-solution",
+            "$(MAKE) experiment-exp1",
+            "$(MAKE) experiment-exp2",
+            "$(MAKE) experiment-exp3",
+            "$(MAKE) mobility-analysis",
+            "$(MAKE) analyze-exp2",
+            "$(MAKE) analyze-exp3",
+            "$(MAKE) paper",
+        ])
+        paper = makefile.split("paper/OptoFlood.pdf:", 1)[1].split("paper/bin:", 1)[0]
+        self.assertNotIn("run-in-vm.sh", paper)
+        self.assertNotIn("vagrant", paper.lower())
+        exp2 = (ROOT / "Makefile.exp2").read_text(encoding="utf-8")
+        exp2_runs = exp2.split("experiment-exp2:\n", 1)[1].split("\nanalyze-exp2:\n", 1)[0]
+        self.assertIn("experiment-exp2-shared-n2-full", exp2_runs)
+        self.assertIn("experiment-exp2-shared-n4-full", exp2_runs)
+        self.assertIn("experiment-exp2-distinct-n2-full", exp2_runs)
+        self.assertIn("experiment-exp2-distinct-n4-full", exp2_runs)
+        self.assertNotIn("smoke", exp2_runs)
+        analyze = exp2.split("\nanalyze-exp2:\n", 1)[1]
+        self.assertLess(analyze.index("analyze-exp2-scale"), analyze.index("analyze-exp2-distinct"))
+        exp3 = (ROOT / "Makefile.exp3").read_text(encoding="utf-8")
+        campaign = exp3.split("experiment-exp3:\n", 1)[1].split("\n# One P=4", 1)[0]
+        self.assertIn("experiment-exp3-p1-full", campaign)
+        self.assertLess(campaign.index("p1-full"), campaign.index("p2-full"))
+        self.assertLess(campaign.index("p2-full"), campaign.index("p4-full"))
+        self.assertNotIn("smoke", campaign)
+        self.assertNotIn("pilot", campaign)
+        extended = exp3.split("plot-exp3-extended:\n", 1)[1].split("\n# Host-side", 1)[0]
+        self.assertIn("$(EXP3_ROOT)/analysis", extended)
+        self.assertIn("$(EXP3_ROOT)/paper-figures", extended)
+        self.assertNotIn("validation-packet-counts", extended)
+        tex = (ROOT / "paper" / "OptoFlood.tex").read_text(encoding="utf-8")
+        for name in (
+            "results/extended/exp3/paper-figures/srt_by_producer.pdf",
+            "results/extended/exp3/analysis/figures/clf_by_population.pdf",
+            "results/extended/exp3/paper-figures/prefix_rfv_by_attachment.pdf",
+            "results/extended/exp3/analysis/figures/network_rfv_by_population.pdf",
+            "results/extended/exp3/analysis/figures/nlsr_control_rate_by_population.pdf",
+        ):
+            self.assertIn(name, tex)
+        self.assertNotIn("EXT 3", tex)
+        self.assertNotIn("synchronised-movement", tex.lower())
+        self.assertIn("sec:evaluation:extended:producers", tex)
+
+
 if __name__ == "__main__":
     raise SystemExit(unittest.main())

@@ -196,7 +196,7 @@ def draw_formal(analysis_root: Path, figure_dir: Path) -> List[Path]:
             [float(row["content_loss_fraction"]) for row in subset if row["consumer"] == name]
             for name in consumers
         ]
-        axis.boxplot(values, showfliers=False)
+        axis.boxplot(values, showfliers=True)
         axis.set_xticks(range(1, len(consumers) + 1))
         axis.set_xticklabels(consumers)
         axis.set_title(population)

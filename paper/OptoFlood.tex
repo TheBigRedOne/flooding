@@ -469,17 +469,41 @@ Median NLSR control rates are 1,176.52~B/s at \(N=1\), 1,417.95~B/s and 1,352.09
 \subsubsection{Multiple Producers}
 \label{sec:evaluation:extended:producers}
 
-OptoFlood incurs its recovery cost once per mobility event, so its aggregate cost grows with the number of independent producers moving. We attach several producers, each paired with one consumer, and scale their number. Each producer advertises a distinct sub-prefix and moves on an independent schedule. A synchronised-movement variant provides the worst case for instantaneous load.
+Exp3 attaches one, two, or four producer--consumer pairs. Each producer advertises a distinct prefix and moves on an independent schedule. Each population consists of five formal runs. Figures~\ref{fig:ext_producers_srt}--\ref{fig:ext_producers_overhead} show the measured recovery time, content delivery, per-handoff recovery flooding, and run-level network overhead. Interpretation of these measurements is deferred.
 
-Figure~\ref{fig:ext_producers} reports on the scale of recovery quality and cost. Panel~(a) shows that the aggregate overhead grows approximately linearly with the number of producers. Each added producer contributes one independent stream of mobility events, and OptoFlood's per-producer increment stays bounded by its hop limit and rate control. We compare the curve against the linear extrapolation of the single-producer cost from the main evaluation. The two remain close, so the overhead grows in proportion to the number of producers. Panel~(b) shows that the per-flow disruption distribution remains flat as producers are added. Recoveries keyed on distinct producer prefixes remain independent, so each flow retains its single-producer continuity.
-
-\begin{figure}
+\begin{figure*}[t]
     \centering
-    \subfloat[Aggregate network overhead versus number of producers.\label{fig:ext_producers_overhead}]{\includegraphics[width=\columnwidth]{paper/figures/EXT 3(a)： Aggregation overhead vs N.png}}\\
-    \subfloat[Per-flow service-disruption distribution versus number of producers.\label{fig:ext_producers_disruption}]{\includegraphics[width=\columnwidth]{paper/figures/EXT 3(b)： per-flow disruption distribution vs N.png}}
-    \caption{OptoFlood scaling with the number of producers.}
-    \label{fig:ext_producers}
-\end{figure}
+    \includegraphics[width=0.95\textwidth]{results/extended/exp3/paper-figures/srt_by_producer.pdf}
+    \caption{Service recovery time by producer, conditional on observed recovery. Points are handoffs within five runs, not independent replicates.}
+    \label{fig:ext_producers_srt}
+\end{figure*}
+
+\begin{figure*}[t]
+    \centering
+    \includegraphics[width=0.95\textwidth]{results/extended/exp3/analysis/figures/clf_by_population.pdf}
+    \caption{Content loss fraction by paired consumer. The fraction is one minus the distinct delivered content frames divided by the nominal frame opportunities in the handoff window.}
+    \label{fig:ext_producers_clf}
+\end{figure*}
+
+\begin{figure*}[t]
+    \centering
+    \includegraphics[width=0.95\textwidth]{results/extended/exp3/paper-figures/prefix_rfv_by_attachment.pdf}
+    \caption{Per-handoff prefix recovery-flood bytes and sender-egress transmissions, grouped by the producer's new attachment relative to its paired consumer. The two panels describe the same handoffs.}
+    \label{fig:ext_producers_rfv}
+\end{figure*}
+
+\begin{figure*}[t]
+    \centering
+    \subfloat[Network-wide recovery-flood bytes per run.\label{fig:ext_producers_network_rfv}]{%
+        \includegraphics[width=0.48\textwidth]{results/extended/exp3/analysis/figures/network_rfv_by_population.pdf}%
+    }
+    \hfill
+    \subfloat[Network-wide NLSR control rate per run.\label{fig:ext_producers_nlsr}]{%
+        \includegraphics[width=0.48\textwidth]{results/extended/exp3/analysis/figures/nlsr_control_rate_by_population.pdf}%
+    }
+    \caption{Run-level network overhead. Each point is one formal run. The totals are not multiplied by the producer population.}
+    \label{fig:ext_producers_overhead}
+\end{figure*}
 
 % ==============================================================================
 

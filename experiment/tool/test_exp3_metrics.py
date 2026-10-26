@@ -1138,14 +1138,62 @@ class Exp3PlotTest(unittest.TestCase):
         self.assertEqual(len(groups), 7)
         with tempfile.TemporaryDirectory() as temporary:
             seen = self._capture_srt_figure(handoffs, Path(temporary))
-        self.assertEqual(sum(seen["points"]), 280)
-        self.assertEqual(len({tuple(limit) for limit in seen["ylims"]}), 1)
-        ymin, ymax = seen["ylims"][0]
-        self.assertLess(ymin, min(values))
-        self.assertGreater(ymax, max(values))
-        self.assertGreater(min(values) - ymin, 1.0)
-        self.assertGreater(ymax - max(values), 1.0)
+            self.assertEqual(sum(seen["points"]), 280)
+            self.assertEqual(len({tuple(limit) for limit in seen["ylims"]}), 1)
+            ymin, ymax = seen["ylims"][0]
+            self.assertLess(ymin, min(values))
+            self.assertGreater(ymax, max(values))
+            self.assertGreater(min(values) - ymin, 1.0)
+            self.assertGreater(ymax - max(values), 1.0)
         self.assertEqual((root / "campaign" / "events.csv").read_bytes(), before)
+
+    def test_clf_display_includes_extreme_and_negative_values(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self._formal_tree(root, "0")
+            campaign = root / "campaign" / "events.csv"
+            with campaign.open(encoding="utf-8", newline="") as handle:
+                rows = list(csv.DictReader(handle))
+                fields = list(rows[0].keys())
+            extra = dict(rows[0])
+            extra["content_loss_fraction"] = "5"
+            low = dict(rows[0])
+            low["content_loss_fraction"] = "-0.001"
+            rows.extend((extra, low))
+            with campaign.open("w", encoding="utf-8", newline="\n") as handle:
+                writer = csv.DictWriter(handle, fieldnames=fields, lineterminator="\n")
+                writer.writeheader()
+                writer.writerows(rows)
+            seen = {}
+            original = plot_exp3._save
+
+            def spy(figure, path, **kwargs):
+                title = " ".join(text.get_text() for text in figure.texts)
+                if "content loss fraction" in title:
+                    values = []
+                    for axis in figure.axes:
+                        for line in axis.lines:
+                            values.extend(float(item) for item in line.get_ydata())
+                        for collection in axis.collections:
+                            offsets = collection.get_offsets()
+                            if len(offsets):
+                                values.extend(float(item) for item in offsets[:, 1])
+                    seen["values"] = values
+                original(figure, path, **kwargs)
+
+            plot_exp3._save = spy
+            try:
+                plot_exp3.draw_formal(root, root / "figures")
+            finally:
+                plot_exp3._save = original
+            self.assertIn(5.0, seen["values"])
+            self.assertIn(-0.001, seen["values"])
+
+    def test_paper_figure_directory_is_outside_the_analysis_guard(self) -> None:
+        paper_figures = plot_exp3.ROOT / "results" / "extended" / "exp3" / "paper-figures"
+        plot_exp3._refuse_extended_output(paper_figures)
+        with self.assertRaises(plot_exp3.PlotDataError):
+            plot_exp3._refuse_extended_output(plot_exp3.ANALYSIS_ROOT / "figures")
 
 
 if __name__ == "__main__":

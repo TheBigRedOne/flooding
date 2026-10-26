@@ -73,6 +73,35 @@ $(foreach run,$(EXP3_FULL_RUNS),$(eval $(call exp3_full_rule,P1,$(run),p1,1,$(EX
 $(foreach run,$(EXP3_FULL_RUNS),$(eval $(call exp3_full_rule,P2,$(run),p2,1 2,$(EXP3_P2_NODES))))
 $(foreach run,$(EXP3_FULL_RUNS),$(eval $(call exp3_full_rule,P4,$(run),p4,1 2 3 4,$(EXP3_P4_NODES))))
 
+# Formal VM runs only. One population finishes before the next; smoke and pilot stay out.
+.PHONY: experiment-exp3-p1-full experiment-exp3-p2-full experiment-exp3-p4-full experiment-exp3
+
+experiment-exp3-p1-full:
+	$(MAKE) experiment-exp3-p1-r1
+	$(MAKE) experiment-exp3-p1-r2
+	$(MAKE) experiment-exp3-p1-r3
+	$(MAKE) experiment-exp3-p1-r4
+	$(MAKE) experiment-exp3-p1-r5
+
+experiment-exp3-p2-full:
+	$(MAKE) experiment-exp3-p2-r1
+	$(MAKE) experiment-exp3-p2-r2
+	$(MAKE) experiment-exp3-p2-r3
+	$(MAKE) experiment-exp3-p2-r4
+	$(MAKE) experiment-exp3-p2-r5
+
+experiment-exp3-p4-full:
+	$(MAKE) experiment-exp3-p4-r1
+	$(MAKE) experiment-exp3-p4-r2
+	$(MAKE) experiment-exp3-p4-r3
+	$(MAKE) experiment-exp3-p4-r4
+	$(MAKE) experiment-exp3-p4-r5
+
+experiment-exp3:
+	$(MAKE) experiment-exp3-p1-full
+	$(MAKE) experiment-exp3-p2-full
+	$(MAKE) experiment-exp3-p4-full
+
 # One P=4 full sequence in a non-formal directory. Seed 1 matches formal p4/r1.
 EXP3_P4_PILOT_DIR := $(EXP3_ROOT)/p4/pilot
 EXP3_P4_PILOT_OUTPUTS := $(call exp3_outputs,$(EXP3_P4_PILOT_DIR),1 2 3 4,$(EXP3_P4_NODES))
@@ -109,10 +138,18 @@ plot-exp3:
 plot-exp3-pilot:
 	python3 experiment/tool/plot_exp3.py --pilot
 
-# Supplementary SRT and attachment figures. Reads the validated extended CSVs
-# and writes only under validation-packet-counts/figures.
+# Supplementary SRT and attachment figures. Reads the formal analysis tree and
+# writes outside it, so the analysis-directory guard stays in force.
 plot-exp3-extended:
-	python3 experiment/tool/plot_exp3.py --extended --analysis-root results/extended/exp3/validation-packet-counts --figure-dir results/extended/exp3/validation-packet-counts/figures
+	python3 experiment/tool/plot_exp3.py --extended --analysis-root $(EXP3_ROOT)/analysis --figure-dir $(EXP3_ROOT)/paper-figures
+
+# Host-side campaign measurement and paper figures. Does not start a VM.
+.PHONY: analyze-exp3
+
+analyze-exp3:
+	$(MAKE) analyze-exp3-campaign
+	$(MAKE) plot-exp3
+	$(MAKE) plot-exp3-extended
 
 test-exp3-metrics:
 	python3 -m unittest experiment.tool.test_exp3_metrics

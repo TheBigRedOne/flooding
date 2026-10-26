@@ -171,3 +171,16 @@ analyze-exp2-distinct-n4-r1:
 
 analyze-exp2-distinct:
 	python3 experiment/tool/run_exp2_distinct_analysis.py --all
+
+# Formal Exp2 VM runs only. Analysis waits until Solution mobility tables exist.
+.PHONY: experiment-exp2 analyze-exp2
+
+experiment-exp2:
+	$(MAKE) experiment-exp2-shared-n2-full
+	$(MAKE) experiment-exp2-shared-n4-full
+	$(MAKE) experiment-exp2-distinct-n2-full
+	$(MAKE) experiment-exp2-distinct-n4-full
+
+analyze-exp2:
+	$(MAKE) analyze-exp2-scale
+	$(MAKE) analyze-exp2-distinct

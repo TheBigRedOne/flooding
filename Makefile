@@ -62,16 +62,42 @@ EXP2_COMPARISON_INPUTS := results/extended/exp2/analysis/network_handoffs.csv \
                           results/extended/exp2/distinct/analysis/stream_recovery_diagnostics.csv \
                           results/extended/exp2/distinct/analysis/analysis_audit.txt
 
+# Exp3 manuscript figures. Formal population plots stay under analysis/figures.
+# The two supplementary plots use paper-figures/ so they do not enter the
+# protected analysis tree. Recipes are host-side Python only.
+EXP3_CAMPAIGN_DIR := results/extended/exp3/analysis/campaign
+EXP3_FORMAL_PAPER_FIGURES := results/extended/exp3/analysis/figures/clf_by_population.pdf \
+                             results/extended/exp3/analysis/figures/network_rfv_by_population.pdf \
+                             results/extended/exp3/analysis/figures/nlsr_control_rate_by_population.pdf
+EXP3_SUPPLEMENTARY_FIGURES := results/extended/exp3/paper-figures/srt_by_producer.pdf \
+                              results/extended/exp3/paper-figures/prefix_rfv_by_attachment.pdf
+
 ALL_FIGURES := paper/figures/NDN_Packets_Processing_Flow.pdf \
                paper/figures/NDN_Producer_Mobility_Problem.pdf \
                paper/figures/NDN_Producer_Mobility_Problem_Solution.pdf \
                paper/figures/Topology.pdf \
                $(GENERATED_FIGURES) \
                $(EXP1_PAPER_FIGURES) \
-               $(EXP2_PAPER_FIGURES)
+               $(EXP2_PAPER_FIGURES) \
+               $(EXP3_FORMAL_PAPER_FIGURES) \
+               $(EXP3_SUPPLEMENTARY_FIGURES)
 
 $(EXP2_PAPER_FIGURES) &: experiment/tool/plot_exp2_comparison.py $(EXP2_COMPARISON_INPUTS)
 	python3 experiment/tool/plot_exp2_comparison.py
+
+$(EXP3_FORMAL_PAPER_FIGURES) &: experiment/tool/plot_exp3.py \
+                                $(EXP3_CAMPAIGN_DIR)/campaign_status.txt \
+                                $(EXP3_CAMPAIGN_DIR)/events.csv \
+                                $(EXP3_CAMPAIGN_DIR)/population_comparison.csv
+	python3 experiment/tool/plot_exp3.py
+
+$(EXP3_SUPPLEMENTARY_FIGURES) &: experiment/tool/plot_exp3.py \
+                                 $(EXP3_CAMPAIGN_DIR)/campaign_status.txt \
+                                 $(EXP3_CAMPAIGN_DIR)/events.csv \
+                                 $(EXP3_CAMPAIGN_DIR)/prefix_rfv.csv
+	python3 experiment/tool/plot_exp3.py --extended \
+		--analysis-root results/extended/exp3/analysis \
+		--figure-dir results/extended/exp3/paper-figures
 
 # Sources checked by phony target `mypy`.
 PLOT_TOOL_SRCS := experiment/tool/plot_latency.py \
@@ -133,7 +159,11 @@ all:
 	$(MAKE) test
 	$(MAKE) experiment-solution
 	$(MAKE) experiment-exp1
+	$(MAKE) experiment-exp2
+	$(MAKE) experiment-exp3
 	$(MAKE) mobility-analysis
+	$(MAKE) analyze-exp2
+	$(MAKE) analyze-exp3
 	$(MAKE) paper
 
 # High-level orchestration targets (set the provider via `PROVIDER=...` when needed)
