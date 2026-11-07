@@ -173,19 +173,25 @@ def evaluate(text: str) -> Tuple[str, List[str]]:
     if not resumed:
         reasons.append("no Content delivery after STREAMING re-entry")
 
-    early = [
-        item for item in events
-        if item.kind == "frame" and second.ns < item.ns <= second.ns + 100_000_000
-    ]
-    if len(early) > 3:
+    # Frames before this STREAMING line are the L-sized rediscovery refill.
+    # Frames after it are the absolute pace. About five of those fit in 100 ms.
+    paced = sorted(
+        (item for item in events if item.kind == "frame" and item.ns > second.ns),
+        key=lambda item: (item.ns, int(item.value)),
+    )
+    simultaneous = 1
+    longest = 1 if paced else 0
+    for earlier, later in zip(paced, paced[1:]):
+        if _ms(later.ns, earlier.ns) <= PACE_GAP_MS:
+            simultaneous += 1
+            longest = max(longest, simultaneous)
+        else:
+            simultaneous = 1
+    if longest > 3:
         reasons.append(
-            f"{len(early)} FRAME starts in the 100 ms after STREAMING; "
-            "this exceeds one resumed pace tick"
+            f"{longest} FRAME starts within {PACE_GAP_MS:.0f} ms after STREAMING; "
+            "uncontrolled catch-up"
         )
-    paced = [
-        item for item in events
-        if item.kind == "frame" and item.ns > second.ns + 100_000_000
-    ]
     intervals: List[float] = []
     previous: Optional[Event] = None
     for item in paced:
@@ -223,9 +229,13 @@ def _self_check() -> int:
     ]
     for frame in range(41, 48):
         rows.append(line(start + 6_200_000_000, f"FRAME: start frame={frame}"))
-    rows.append(line(start + 6_201_000_000, "MODE: STREAMING edge=40 requestedUpTo=47 L=7"))
-    for index in range(20):
-        ns = start + 6_301_000_000 + index * 20_000_000
+    streaming_ns = start + 6_201_000_000
+    rows.append(line(streaming_ns, "MODE: STREAMING edge=40 requestedUpTo=47 L=7"))
+    # Five requests in the first 100 ms are one pace each, matching frames 325–329.
+    for index, offset_ns in enumerate((20_081_000, 40_079_000, 60_060_000, 80_058_000, 100_059_000)):
+        rows.append(line(streaming_ns + offset_ns, f"FRAME: start frame={48 + index}"))
+    for index in range(5, 25):
+        ns = streaming_ns + 100_059_000 + (index - 4) * 20_000_000
         rows.append(line(ns, f"FRAME: start frame={48 + index}"))
         rows.append(line(ns + 5_000_000, f"DATA: frame={48 + index} seg=0 Size: 100 bytes"))
     status, reasons = evaluate("\n".join(rows))
@@ -237,6 +247,15 @@ def _self_check() -> int:
     bad, bad_reasons = evaluate(line(start, "MODE: STREAMING edge=10 requestedUpTo=17 L=7"))
     if bad != "FAIL" or not any("PROBING" in reason for reason in bad_reasons):
         print("SELF-CHECK FAIL: missing PROBING was not rejected")
+        return 1
+    burst = list(rows)
+    for frame in range(80, 95):
+        burst.append(line(streaming_ns + 1_000_000, f"FRAME: start frame={frame}"))
+    burst_status, burst_reasons = evaluate("\n".join(burst))
+    if burst_status != "FAIL" or not any("catch-up" in reason for reason in burst_reasons):
+        print("SELF-CHECK FAIL: simultaneous catch-up was not rejected")
+        for reason in burst_reasons:
+            print(f"  {reason}")
         return 1
     print("SELF-CHECK PASS")
     return 0
@@ -491,6 +510,21 @@ def run(experiment_dir: Path) -> int:
     return 0 if status == "PASS" else 1
 
 
+def validate_existing(directory: Path) -> int:
+    """Read consumer1.log and print the lifecycle result. Do not write or signal."""
+    log_path = directory / "consumer1.log"
+    if not log_path.is_file():
+        print("status=UNKNOWN")
+        print(f"missing {log_path}")
+        return 2
+    status, reasons = evaluate(log_path.read_text(encoding="utf-8", errors="replace"))
+    print(f"status={status}")
+    print(f"log={log_path}")
+    for reason in reasons:
+        print(reason)
+    return 0 if status == "PASS" else 1
+
+
 def main(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser(description="Run the Consumer PROBING lifecycle smoke")
     parser.add_argument(
@@ -499,9 +533,16 @@ def main(argv: Sequence[str]) -> int:
         default=Path("/home/vagrant/flooding/experiment/extended/exp3"),
     )
     parser.add_argument("--self-check", action="store_true")
+    parser.add_argument(
+        "--validate-existing",
+        type=Path,
+        help="read consumer1.log from this directory and do not run an experiment",
+    )
     args = parser.parse_args(argv)
     if args.self_check:
         return _self_check()
+    if args.validate_existing is not None:
+        return validate_existing(args.validate_existing)
     try:
         return run(args.experiment_dir)
     except Exception as error:
