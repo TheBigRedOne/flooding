@@ -277,6 +277,9 @@ private:
     // _meta is a new session anchor, not a Content-Data correction.
     m_requestedUpTo = edge;
     primeLookahead();
+    // The pace timeline starts after the initial burst, so priming does not consume a slot.
+    m_paceEpoch = time::steady_clock::now();
+    m_paceSlot = 1;
     armPace();
     armStall();
     std::cout << "[" << nowNs() << "] MODE: STREAMING edge=" << m_edge
@@ -295,10 +298,30 @@ private:
     }
   }
 
+  // Next callback is epoch + m_paceSlot periods. A late callback shortens the
+  // following wait. Slots already in the past are skipped and do not send Interests.
   void
   armPace()
   {
-    m_paceEvent = m_scheduler.schedule(time::milliseconds(m_framePeriodMs), [this] {
+    if (m_mode != Mode::STREAMING) {
+      return;
+    }
+    const auto period = time::milliseconds(m_framePeriodMs);
+    auto now = time::steady_clock::now();
+    auto deadline = m_paceEpoch + period * m_paceSlot;
+    while (deadline <= now) {
+      ++m_paceSlot;
+      deadline = m_paceEpoch + period * m_paceSlot;
+    }
+    auto delay = time::duration_cast<time::nanoseconds>(deadline - now);
+    if (delay <= time::nanoseconds::zero()) {
+      delay = time::nanoseconds(1);
+    }
+    const uint64_t session = m_session;
+    m_paceEvent = m_scheduler.schedule(delay, [this, session] {
+      if (session != m_session || m_mode != Mode::STREAMING) {
+        return;
+      }
       onPaceTick();
     });
   }
@@ -307,10 +330,8 @@ private:
   void
   onPaceTick()
   {
-    if (m_mode != Mode::STREAMING) {
-      return;
-    }
     startFrame(++m_requestedUpTo);
+    ++m_paceSlot;
     armPace();
   }
 
@@ -604,6 +625,8 @@ private:
   scheduler::ScopedEventId m_discoveryRetry;
   scheduler::ScopedEventId m_paceEvent;
   scheduler::ScopedEventId m_stallEvent;
+  time::steady_clock::time_point m_paceEpoch;
+  uint64_t m_paceSlot = 1;
 
   uint64_t m_edge = 0;
   uint64_t m_requestedUpTo = 0;
