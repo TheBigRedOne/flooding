@@ -161,11 +161,16 @@ long as `python3 -m mypy` is functional once activated.
 
 ## Cleaning Up
 
-- To remove all experiment results, generated figures, and the paper PDF:
+- To remove experiment results, smoke results, the current provider's smoke stamps, generated figures, and the paper PDF:
   ```bash
   make clean
   ```
-- To perform a deep clean, which includes all of the above plus destroying all Vagrant VMs and removing the cached `.box` files:
+- To destroy the repository VMs without removing boxes:
+  ```bash
+  make vm-clean
+  ```
+- To perform a deep clean, which includes `clean`, destroys the repository VMs, and removes this repository's generated box files and box registrations for the selected provider:
   ```bash
   make deep-clean
   ```
+  The shared `bento/ubuntu-22.04` base image is not removed.

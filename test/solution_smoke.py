@@ -42,6 +42,7 @@ def main() -> None:
     experiment_dir = os.environ["EXPERIMENT_DIR"]
     output_dir = results_dir(experiment_dir)
     ndn = None
+    nfd_nodes = None
     try:
         for name in os.listdir(output_dir):
             path = os.path.join(output_dir, name)
@@ -61,6 +62,7 @@ def main() -> None:
         producer = ndn.net["producer"]
         consumer = ndn.net["consumer"]
         routers = [ndn.net[name] for name in ("r1", "r2", "r3", "r4", "r5")]
+        nfd_nodes = [producer, consumer, *routers]
         prepare_identity(producer)
         binary_dir = os.path.dirname(experiment_dir)
         launch_apps(producer, consumer, binary_dir, output_dir)
@@ -92,7 +94,17 @@ def main() -> None:
             READY_TIMEOUT_S,
             "post-handoff fresh content",
         )
-        collect_nfd([producer, consumer, *routers], output_dir)
+        collect_nfd(nfd_nodes, output_dir)
+    except Exception:
+        if nfd_nodes is not None:
+            try:
+                collect_nfd(nfd_nodes, output_dir)
+            except Exception as collect_error:
+                print(
+                    f"solution smoke could not collect NFD logs: {collect_error}",
+                    file=sys.stderr,
+                )
+        raise
     finally:
         if ndn is not None:
             ndn.stop()

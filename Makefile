@@ -347,11 +347,12 @@ clean:
 deep-clean: clean
 	PROVIDER=$(PROVIDER) LATEXMK=latexmk sh scripts/cleanup.sh deep-clean
 
-# Clean SSH config file
+# SSH configs for the formal experiments and the two smoke VMs.
 clean-ssh-config:
-	rm -f .ssh_config_baseline .ssh_config_solution
+	rm -f .ssh_config_baseline .ssh_config_solution .ssh_config_exp2 .ssh_config_exp3 \
+	  test/.ssh_config_baseline test/.ssh_config_solution
 
-# Destroy all VMs (keep boxes)
+# Destroy repository VMs and keep generated boxes.
 vm-clean:
 	PROVIDER=$(PROVIDER) LATEXMK=latexmk sh scripts/cleanup.sh vm-clean
 

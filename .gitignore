@@ -86,11 +86,29 @@ README_OptoFlood.md
 # Python bytecode caches
 __pycache__/
 
-# Host-side plotting/mypy virtualenv (see experiment/tool/setup_venv.sh)
+# Host-side plotting/mypy virtualenv (see experiment/tool/resources/setup_venv.sh)
 experiment/tool/.venv/
 
+# Vagrant state, generated boxes, and interrupted box builds
+.vagrant/
+*.box
+*.box.lock
+
+# SSH configs and one-VM locks
+.ssh_config_*
+.exp*-vm.lock/
+
+# Provider-specific smoke PASS stamps
+.baseline_pass.*
+.solution_pass.*
+
+# Smoke binaries compiled or copied into test/
+/test/producer
+/test/consumer
+/test/optoflood-daemon
+/test/trust-schema.conf
+
 # Experiment artifacts synced back from VMs
-test/results/
 test/minindn/
 results
 results0
