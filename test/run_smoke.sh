@@ -37,9 +37,13 @@ fi
 cd "$vagrant_dir"
 VAGRANT_DEFAULT_PROVIDER=$provider vagrant up --provision
 VAGRANT_DEFAULT_PROVIDER=$provider vagrant ssh-config --host "$host_alias" > "$root/test/.ssh_config_$role"
-rsync -avH -e "ssh -F $root/test/.ssh_config_$role" \
+rsync -aH --stats --human-readable -e "ssh -F $root/test/.ssh_config_$role" \
   --exclude .git --exclude .vagrant --exclude results --exclude paper/bin \
   --exclude box --exclude '*.box' \
+  --exclude experiment/tool/.venv/ \
+  --exclude __pycache__/ \
+  --exclude '*.pyc' \
+  --exclude '.ssh_config_*' \
   "$root/" "$host_alias:/home/vagrant/flooding/"
 
 set +e
@@ -48,7 +52,7 @@ ssh -F "$root/test/.ssh_config_$role" "$host_alias" \
 status=$?
 set -e
 mkdir -p "$vagrant_dir/results"
-rsync -avH -e "ssh -F $root/test/.ssh_config_$role" \
+rsync -aH --stats --human-readable -e "ssh -F $root/test/.ssh_config_$role" \
   "$host_alias:/home/vagrant/flooding/test/$role/results/" "$vagrant_dir/results/" || true
 VAGRANT_DEFAULT_PROVIDER=$provider vagrant halt -f || true
 exit "$status"

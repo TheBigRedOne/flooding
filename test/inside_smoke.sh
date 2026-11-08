@@ -19,5 +19,18 @@ fi
 cp -f "$repo/experiment/app/trust-schema.conf" "$work/trust-schema.conf"
 
 cd "$work"
-EXPERIMENT_DIR=$role_dir python3 "$work/${role}_smoke.py"
-EXPERIMENT_DIR=$role_dir python3 "$work/validate_${role}.py" "$results"
+# Mini-NDN requires root. Compilation above stays unprivileged.
+# A driver failure returns that status after the logs are made readable.
+set +e
+sudo -E env EXPERIMENT_DIR="$role_dir" python3 "$work/${role}_smoke.py"
+status=$?
+sudo chmod -R a+rX "$results"
+chmod_status=$?
+set -e
+if [ "$status" -ne 0 ]; then
+  exit "$status"
+fi
+if [ "$chmod_status" -ne 0 ]; then
+  exit "$chmod_status"
+fi
+EXPERIMENT_DIR="$role_dir" python3 "$work/validate_${role}.py" "$results"
