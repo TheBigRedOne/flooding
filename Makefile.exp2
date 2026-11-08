@@ -14,6 +14,7 @@ EXP2_VM_PREREQS := scripts/run-in-vm.sh \
 	experiment/app/producer.cpp \
 	experiment/app/consumer.cpp \
 	experiment/app/optoflood-daemon.cpp \
+	experiment/app/guard_flood_id.hpp \
 	experiment/app/trust-schema.conf \
 	experiment/extended/exp2/Vagrantfile \
 	experiment/extended/exp2/Makefile \

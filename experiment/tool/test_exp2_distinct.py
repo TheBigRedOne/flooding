@@ -273,7 +273,7 @@ class Exp2DistinctConfigTest(unittest.TestCase):
         driver_lines = [line for line in guest.splitlines() if "exp2_shared_driver.py" in line]
         self.assertEqual(len(driver_lines), 1)
         self.assertIn("EXP2_DEMAND_PATTERN='$(EXP2_DEMAND_PATTERN)'", driver_lines[0])
-        self.assertIn("refusing to replace existing Exp2 results", script)
+        self.assertIn("refusing to replace Exp2 results outside one run directory", script)
         self.assertIn("exp2_lock=${RUN_IN_VM_LOCK:-.exp2-vm.lock}", script)
         self.assertNotIn("experiment-exp2-distinct-n2-full", top)
         self.assertNotIn("experiment-exp2-shared-n2-full", top)

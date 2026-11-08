@@ -406,7 +406,10 @@ exit 0
             'make clean && $remote_make; mkdir -p results/minindn-logs',
             source,
         )
-        self.assertLess(source.index("refusing to replace existing Exp3 results"), source.index("guest_status=0"))
+        self.assertLess(
+            source.index("refusing to replace Exp3 results outside one run directory"),
+            source.index("guest_status=0"),
+        )
         syntax = subprocess.run(
             [shell, "-n", str(ROOT / "scripts" / "run-in-vm.sh")],
             capture_output=True, text=True, check=False,

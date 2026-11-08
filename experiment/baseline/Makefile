@@ -24,8 +24,9 @@ all: $(EXPERIMENT_RESULTS)
 # The experiment script generates the complete raw result set in one run.
 $(EXPERIMENT_RESULTS) &: ../tool/exp.py producer consumer
 	mkdir -p results
-	# Run the experiment script using sudo, preserving EXPERIMENT_DIR environment.
-	sudo -E env EXPERIMENT_DIR=$(shell pwd) python3 ../tool/exp.py
+	# Pass the profile and handoff settings explicitly so they survive sudo env_reset.
+	# An empty value leaves that setting unset.
+	sudo -E env EXPERIMENT_DIR=$(shell pwd) NLSR_HELLO_INTERVAL='$(NLSR_HELLO_INTERVAL)' NLSR_ADJ_LSA_BUILD_INTERVAL='$(NLSR_ADJ_LSA_BUILD_INTERVAL)' NLSR_ROUTING_CALC_INTERVAL='$(NLSR_ROUTING_CALC_INTERVAL)' NLSR_SYNC_INTEREST_LIFETIME_MS='$(NLSR_SYNC_INTEREST_LIFETIME_MS)' NLSR_TUNING_PROFILE='$(NLSR_TUNING_PROFILE)' NLSR_HANDOFF_COUNT='$(NLSR_HANDOFF_COUNT)' NLSR_HANDOFF_SEQUENCE='$(NLSR_HANDOFF_SEQUENCE)' NLSR_HANDOFF_INTERVALS='$(NLSR_HANDOFF_INTERVALS)' NLSR_HANDOFF_INTERVAL_BASE='$(NLSR_HANDOFF_INTERVAL_BASE)' NLSR_HANDOFF_INTERVAL_JITTER='$(NLSR_HANDOFF_INTERVAL_JITTER)' python3 ../tool/exp.py
 
 # Recipe to compile the producer.
 producer: ../app/producer.cpp

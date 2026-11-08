@@ -198,7 +198,7 @@ test: test/.validate_ok
 
 test/.validate_ok: test/Makefile test/Vagrantfile test/exp_test.py test/validate.py \
              experiment/app/producer.cpp experiment/app/consumer.cpp \
-             experiment/app/optoflood-daemon.cpp \
+             experiment/app/optoflood-daemon.cpp experiment/app/guard_flood_id.hpp \
              experiment/app/trust-schema.conf experiment/tool/ndn.lua \
              box/solution/solution.$(PROVIDER).box \
              | $(BASELINE_RAW_OUTPUTS)
@@ -206,10 +206,11 @@ test/.validate_ok: test/Makefile test/Vagrantfile test/exp_test.py test/validate
 
 # Plot only (reuse existing captures; no VM run).
 # plot-main is the G0-versus-OptoFlood box plots.
+# plot-baseline and plot-main refresh the host-side comparison figures.
 plot: plot-baseline plot-main
 
-# Analysis-only targets. Their file rules do not depend on experiment outputs,
-# so Make cannot rebuild a stale PCAP by entering a VM recipe.
+# Host-side analysis. `make all` runs these targets after the experiments,
+# so the PDF figures come from the captures just written.
 
 .PHONY: mobility-analysis test-mobility-analysis routing-analysis plot-routing test-routing-analysis
 
@@ -247,22 +248,29 @@ test-routing-analysis:
 test-mobility-analysis:
 	python3 -m unittest experiment.tool.test_mobility_event_metrics
 
-plot-exp1: $(EXP1_PAPER_FIGURES)
+define EXP1_ANALYSIS_CMD
+python3 experiment/tool/run_sensitivity_analysis.py sync-delay
+python3 experiment/tool/run_sensitivity_analysis.py verification-timeout
+python3 experiment/tool/run_sensitivity_analysis.py cross-check
+endef
 
-# Generate the Exp1 sensitivity figures from existing captures.
-# The recipe lists the analysis programs and invokes the commands directly.
+plot-exp1:
+	$(EXP1_ANALYSIS_CMD)
+
+# Host-side Exp1 figures. plot-exp1 runs this analysis after the experiment stage.
+# Paper builds these outputs directly.
 $(EXP1_PAPER_FIGURES) &: experiment/tool/run_sensitivity_analysis.py \
                          experiment/tool/mobility_event_metrics.py \
                          experiment/tool/routing_convergence_metrics.py \
                          experiment/tool/run_mobility_event_analysis.py \
                          experiment/tool/plot_mobility_event_metrics.py
-	python3 experiment/tool/run_sensitivity_analysis.py sync-delay
-	python3 experiment/tool/run_sensitivity_analysis.py verification-timeout
-	python3 experiment/tool/run_sensitivity_analysis.py cross-check
+	$(EXP1_ANALYSIS_CMD)
 
-plot-baseline: $(BASELINE_PROFILE_COMPARE_OUTPUTS) $(BASELINE_LEGACY_FCR)
+plot-baseline:
+	$(BASELINE_ANALYSIS_CMD)
 
-plot-main: $(SOLUTION_COMPARE_OUTPUTS) $(SOLUTION_LEGACY_FCR)
+plot-main:
+	$(SOLUTION_ANALYSIS_CMD)
 
 # Build the paper PDF (follow dependencies; do not hand-check and exit)
 paper: paper/OptoFlood.pdf
@@ -318,7 +326,7 @@ box/solution/solution.$(PROVIDER).box: box/solution/Vagrantfile box/initial/init
 # =============================================================================
 
 # Generate the paper
-paper/OptoFlood.pdf: paper/OptoFlood.tex $(ALL_FIGURES) | paper/bin
+paper/OptoFlood.pdf: paper/OptoFlood.tex paper/OptoFlood.bib $(ALL_FIGURES) | paper/bin
 	@echo "Compiling LaTeX with latexmk..."
 	latexmk -pdf -interaction=nonstopmode -output-directory=paper/bin paper/OptoFlood.tex
 	cp paper/bin/OptoFlood.pdf paper/OptoFlood.pdf

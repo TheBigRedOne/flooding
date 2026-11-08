@@ -1,6 +1,67 @@
 #!/bin/sh
 set -eu
 
+# Resolve a grouped output path to its run directory.
+# pcap_nodes/ and certs/ sit one level below the run; minindn-logs/<node>/ sits two.
+resolve_run_root() {
+  dir=$(dirname "$1")
+  while :; do
+    base=$(basename "$dir")
+    parent=$(dirname "$dir")
+    parent_base=$(basename "$parent")
+    if [ "$base" = "pcap_nodes" ] || [ "$base" = "certs" ]; then
+      dir=$parent
+      continue
+    fi
+    if [ "$parent_base" = "minindn-logs" ]; then
+      dir=$(dirname "$parent")
+      continue
+    fi
+    break
+  done
+  printf '%s\n' "$dir"
+}
+
+# A replaceable Exp2/Exp3 directory is one run: r1–r5, smoke, or pilot.
+single_run_root() {
+  root=$1
+  output=$2
+  case "$root" in
+    ""|.|..|/|./) return 1 ;;
+  esac
+  case "$output" in
+    "$root"/*) ;;
+    *) return 1 ;;
+  esac
+  case "$(basename "$root")" in
+    r1|r2|r3|r4|r5|smoke|pilot) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+if [ "${1:-}" = "--print-run-root" ]; then
+  if [ "$#" -ne 2 ]; then
+    echo "usage: sh scripts/run-in-vm.sh --print-run-root <output-path>" >&2
+    exit 2
+  fi
+  resolve_run_root "$2"
+  exit 0
+fi
+
+if [ "${1:-}" = "--run-root-status" ]; then
+  if [ "$#" -ne 2 ]; then
+    echo "usage: sh scripts/run-in-vm.sh --run-root-status <output-path>" >&2
+    exit 2
+  fi
+  root=$(resolve_run_root "$2")
+  if single_run_root "$root" "$2"; then
+    printf 'safe %s\n' "$root"
+    exit 0
+  fi
+  printf 'unsafe %s\n' "$root" >&2
+  exit 1
+fi
+
 if [ "$#" -lt 2 ]; then
   echo "usage: sh scripts/run-in-vm.sh <box> [make-dependencies...] <target>" >&2
   exit 2
@@ -14,10 +75,7 @@ for arg in "$@"; do
   target_output=$arg
 done
 
-result_dir=$(dirname "$target_output")
-if [ "$(basename "$result_dir")" = "pcap_nodes" ]; then
-  result_dir=$(dirname "$result_dir")
-fi
+result_dir=$(resolve_run_root "$target_output")
 
 provider=${PROVIDER:-virtualbox}
 remote_dir=${REMOTE_DIR:-/home/vagrant/flooding}
@@ -69,14 +127,9 @@ fi
 ssh_config=${RUN_IN_VM_SSH_CONFIG:-.ssh_config_${experiment}}
 
 if [ "$experiment" = "exp2" ]; then
-  if [ -d "$result_dir" ]; then
-    for entry in "$result_dir"/*; do
-      if [ -e "$entry" ] || [ -L "$entry" ]; then
-        echo "refusing to replace existing Exp2 results: $result_dir" >&2
-        echo "choose a new run directory or remove this one explicitly" >&2
-        exit 1
-      fi
-    done
+  if ! single_run_root "$result_dir" "$target_output"; then
+    echo "refusing to replace Exp2 results outside one run directory: $result_dir" >&2
+    exit 1
   fi
   exp2_lock=${RUN_IN_VM_LOCK:-.exp2-vm.lock}
   if ! mkdir "$exp2_lock" 2>/dev/null; then
@@ -85,14 +138,9 @@ if [ "$experiment" = "exp2" ]; then
   fi
   trap 'rc=$?; VAGRANT_DEFAULT_PROVIDER="$provider" VAGRANT_CWD="$vagrant_dir" vagrant halt -f >/dev/null 2>&1 || true; rmdir "$exp2_lock" 2>/dev/null || true; exit "$rc"' EXIT
 elif [ "$experiment" = "exp3" ]; then
-  if [ -d "$result_dir" ]; then
-    for entry in "$result_dir"/*; do
-      if [ -e "$entry" ] || [ -L "$entry" ]; then
-        echo "refusing to replace existing Exp3 results: $result_dir" >&2
-        echo "choose a new run directory or remove this one explicitly" >&2
-        exit 1
-      fi
-    done
+  if ! single_run_root "$result_dir" "$target_output"; then
+    echo "refusing to replace Exp3 results outside one run directory: $result_dir" >&2
+    exit 1
   fi
   exp3_lock=${RUN_IN_VM_LOCK:-.exp3-vm.lock}
   if ! mkdir "$exp3_lock" 2>/dev/null; then
@@ -114,7 +162,10 @@ else
 fi
 
 mkdir -p "$result_dir"
-if [ "$experiment" != "exp2" ] && [ "$experiment" != "exp3" ] && [ "${RUN_IN_VM_CLEAR_LOCAL:-}" = "1" ]; then
+if [ "$experiment" = "exp2" ] || [ "$experiment" = "exp3" ]; then
+  # Clear this out-of-date run before the new guest results are copied back.
+  rm -rf "$result_dir"/*
+elif [ "${RUN_IN_VM_CLEAR_LOCAL:-}" = "1" ]; then
   rm -rf "$result_dir"/*
 fi
 

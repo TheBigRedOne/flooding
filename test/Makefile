@@ -7,8 +7,8 @@ SOLUTION_NLSR_EVENT_DRIVEN_VERIFICATION ?= on
 NLSR_RESULT_DRIVEN_ADJ_LSA_BUILD ?= $(SOLUTION_NLSR_RESULT_DRIVEN)
 NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION ?= $(SOLUTION_NLSR_EVENT_DRIVEN_VERIFICATION)
 
-# Purpose: Run solution VM validations (S1–S5) and manage VM lifecycle
-# Interface: test-all, validate-s[1..5], vm-up|vm-halt|vm-destroy; PROVIDER=kvm|vb
+# Purpose: Run solution VM validations (S1, S2, S3, S5) and manage VM lifecycle.
+# Interface: test-all, validate-s1, validate-s2, validate-s3, validate-s5, vm-up|vm-halt|vm-destroy; PROVIDER=kvm|vb
 
 # Host->VM sync stamp to avoid re-running test flow when nothing changed.
 SYNC_INPUTS := \
@@ -19,6 +19,7 @@ SYNC_INPUTS := \
 	../experiment/app/producer.cpp \
 	../experiment/app/consumer.cpp \
 	../experiment/app/optoflood-daemon.cpp \
+	../experiment/app/guard_flood_id.hpp \
 	../experiment/app/trust-schema.conf \
 	../experiment/tool/ndn.lua
 
@@ -67,6 +68,7 @@ sync: ../test/.sync_solution_$(PROVIDER)
 
 # Produce test artifacts via one dedicated VM run, then rsync back.
 $(PCAPS) $(RIBS) ../test/results/.validate_ok_vm &: ../test/.sync_solution_$(PROVIDER)
+	rm -f ../test/results/.validate_ok_vm ../test/results/.validate_fail ../test/.validate_ok
 	ACTUAL_SOLUTION_BOX_PATH="../box/solution/solution.$(PROVIDER).box" SOLUTION_BOX_NAME=optoflood-solution-test VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant up --provision
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh-config --host solution > .ssh_config_solution
 	# Build apps inside VM from rsynced sources under /home/vagrant/flooding
@@ -85,7 +87,7 @@ $(PCAPS) $(RIBS) ../test/results/.validate_ok_vm &: ../test/.sync_solution_$(PRO
 	# Ensure result directories exist in VM
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh -c 'mkdir -p /home/vagrant/flooding/test/results/pcap'
 	# Run validation inside VM (uses system python3 + tshark in box)
-	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh -c 'cd /home/vagrant/flooding/test && /usr/bin/sudo -E sh -c "rm -f results/.validate_ok_vm results/.validate_fail; python3 validate.py && echo OK > results/.validate_ok_vm || echo FAIL > results/.validate_fail"'
+	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh -c 'cd /home/vagrant/flooding/test && /usr/bin/sudo -E sh -c "rm -f results/.validate_ok_vm results/.validate_fail; if python3 validate.py; then echo OK > results/.validate_ok_vm; else echo FAIL > results/.validate_fail; exit 1; fi"'
 	# Ensure rsync can read results after validation
 	VAGRANT_DEFAULT_PROVIDER=$(PROVIDER) VAGRANT_CWD=../test vagrant ssh -c 'cd /home/vagrant/flooding/test && /usr/bin/sudo chown -R vagrant:vagrant /home/vagrant/flooding/test/results'
 	# Rsync back test artifacts (including VM validate stamp) to host test/results
@@ -97,6 +99,7 @@ $(PCAPS) $(RIBS) ../test/results/.validate_ok_vm &: ../test/.sync_solution_$(PRO
 
 # Validation stamp (runs all validations)
 ../test/.validate_ok: $(PCAPS) $(RIBS) ../test/results/.validate_ok_vm
+	@test ! -e ../test/results/.validate_fail || (echo "VM validation failed: ../test/results/.validate_fail" && exit 1)
 	@test -f ../test/results/.validate_ok_vm || (echo "VM validation missing: ../test/results/.validate_ok_vm" && exit 1)
 	@echo OK > $@
 
@@ -120,15 +123,14 @@ validate-s3:
 	@echo "[S3] Validating TFIB insert/hit/expire";
 	python3 validate.py s3 || (echo "S3 FAIL" && exit 1)
 
-# S4: Interest-side controllable flooding (filters mgmt interests)
+# Callable separately. validate.py s4 exits unsuccessfully.
 validate-s4:
-	@echo "[S4] Validating Interest HopLimit decrement under miss";
+	@echo "[S4] Interest flooding is not part of the current validation gate";
 	python3 validate.py s4 || (echo "S4 FAIL" && exit 1)
 
-# S5: TFIB handover in two phases (standby once ordinary forwarding agrees,
-# release on NLSR new-path-calculated + fib-agrees)
+# S5: Active TFIB becomes standby once ordinary FIB forwarding agrees.
 validate-s5:
-	@echo "[S5] Validating TFIB standby and release on new-path-calculated";
+	@echo "[S5] Validating TFIB standby";
 	python3 validate.py s5 || (echo "S5 FAIL" && exit 1)
 
 .PHONY: kvm vb

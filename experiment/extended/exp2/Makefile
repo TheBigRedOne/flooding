@@ -30,7 +30,7 @@ producer: ../../app/producer.cpp
 consumer: ../../app/consumer.cpp
 	g++ -std=c++17 -g -O2 -o $@ $< $$(pkg-config --cflags --libs libndn-cxx)
 
-optoflood-daemon: ../../app/optoflood-daemon.cpp
+optoflood-daemon: ../../app/optoflood-daemon.cpp ../../app/guard_flood_id.hpp
 	g++ -std=c++17 -g -O2 -o $@ $< $$(pkg-config --cflags --libs libndn-cxx)
 
 clean:

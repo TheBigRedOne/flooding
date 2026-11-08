@@ -174,7 +174,8 @@ class Exp2ConfigTest(unittest.TestCase):
         repo = Path(__file__).resolve().parents[2]
         script = (repo / "scripts" / "run-in-vm.sh").read_text(encoding="utf-8")
         self.assertIn('if [ "$experiment" = "exp2" ]; then', script)
-        self.assertIn("refusing to replace existing Exp2 results", script)
+        self.assertIn("refusing to replace Exp2 results outside one run directory", script)
+        self.assertIn('rm -rf "$result_dir"/*', script)
         self.assertIn("remote_subdir=experiment/extended/exp2", script)
         self.assertIn("--exclude box --exclude '*.box'", script)
         makefile = (repo / "Makefile.exp2").read_text(encoding="utf-8")
