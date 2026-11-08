@@ -385,7 +385,7 @@ private:
     // Arm the local NFD so the producer's pending business Data (the stranded set
     // at this instant) is LP-marked and flooded too (rescue in-flight interests).
     armNfd();
-    // Optional Commit2 hint: schedule NLSR Hello verification earlier. Enabled only
+    // Optional local hint: schedule NLSR Hello verification earlier. Enabled only
     // when the experiment sets OPTOFLOOD_NLSR_VERIFY_NOW=1 (paired with NLSR
     // event-driven-adjacency-verification=on). Does not change adjacency truth.
     if (m_sendNlsrVerifyNow) {
@@ -418,7 +418,7 @@ private:
     std::cout << "[" << nowNs() << "] MOBILITY: armed NFD " << armName << std::endl;
   }
 
-  // Fire-and-forget local scheduling hint for NLSR Commit2 verification sweep.
+  // Fire-and-forget local scheduling hint for the NLSR verification sweep.
   void
   sendNlsrVerifyNow()
   {

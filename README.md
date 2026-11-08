@@ -20,31 +20,19 @@ make all
 make PROVIDER=libvirt all
 ```
 
-### Parallel execution
+### Execution order
 
-The post-experiment host-side pipeline (pcap-to-CSV decoding, metric
-computation, plotting) is CPU-bound on `tshark` and dominates wall-clock time
-once the VMs have produced the raw artifacts. Add `-j N` to use `N` host cores
-for those steps:
-
-```bash
-# Use 8 cores for host-side analysis.
-make -j 8 PROVIDER=libvirt all
-
-# Use all available cores.
-make -j $(nproc) PROVIDER=libvirt all
-```
-
-The Makefile chains every VM-launching rule through order-only prerequisites
-so that all VM stages remain strictly serial under `make -j N`, regardless of
-how many cores are available:
+`make all` runs its stages one after another. `make -j` does not reorder them, and the VM runs inside each stage stay in their order-only chain:
 
 ```
-box/initial -> box/baseline -> g0/r1 -> ... -> g0/r5 -> g1/r1 -> ... -> g4/r5
-            -> box/solution -> test -> solution/r1 -> ... -> solution/r5
-            -> exp1 sync-delay d0 -> d1 -> d2 -> d4
-            -> exp1 verification-timeout t10 -> t25 -> t50 -> t100 -> t250
+baseline smoke -> g0/r1 -> ... -> g0/r5 -> g1/r1 -> ... -> g4/r5
+-> solution smoke -> solution/r1 -> ... -> solution/r5
+-> exp1 sync-delay d0 -> d1 -> d2 -> d4
+-> exp1 verification-timeout t10 -> t25 -> t50 -> t100 -> t250
+-> exp2 -> exp3 -> host analysis -> paper/OptoFlood.pdf
 ```
+
+The baseline and solution boxes are built when those stages need them. `make paper` compiles the PDF on the host and does not start a VM.
 
 Baseline tuning is 5 profiles × 5 runs. The OptoFlood comparison is 5 runs.
 Each of those runs is one round trip of 8 hand-offs. Exp1 is the OptoFlood
@@ -76,14 +64,27 @@ This command automates the entire process. It will:
   Runs both plotting pipelines without re-running experiments.
 - `make plot-exp1`
   Regenerates the two Exp1 parameter-sensitivity figures from existing captures.
+- `make PROVIDER=libvirt test`
+  Runs the Baseline smoke and then the Solution smoke. It writes `test/.baseline_pass.$(PROVIDER)` and `test/.solution_pass.$(PROVIDER)` and does not run the formal campaign.
 - `make mobility-analysis`
   Regenerates baseline and solution mobility-event tables and figures, then the routing-convergence tables and figures, then the Exp1 sensitivity figures, from existing captures. Those steps run one after another, including under `make -j`.
-- `make test-mobility-analysis`
-  Runs the mobility-event unit tests. This is separate from the protocol `test` target.
 - `make routing-analysis`
   Regenerates routing-convergence tables and the two routing figures from existing NLSR logs, NFD logs, handoff records, and mobility packet tables. It does not rerun experiments.
 - `make plot-routing`
   Same host-side routing analysis as `make routing-analysis`.
+
+## Source layout
+
+Active experiment code lives under `experiment/tool/`:
+
+- `common/` runs the Baseline and Solution Mini-NDN experiments.
+- `exp1/`, `exp2/`, and `exp3/` hold each experiment's driver, configuration, metrics, and figures.
+- `analysis/` decodes captures and calculates the shared mobility and routing measurements. `resources/ndn.lua` is the packet dissector.
+- `resources/` also holds the host analysis requirements and `setup_venv.sh`.
+
+Host recipes run `python3 -m experiment.tool...` from the repository root. Guest recipes pass `PYTHONPATH` to the repository root on the `sudo -E env` line and use the same module names. The two integration smokes stay in `test/`.
+
+Formal Baseline outputs depend on the Baseline smoke stamp only as an order-only prerequisite. Formal Solution, Exp2, and Exp3 outputs depend on the Solution smoke stamp the same way. A change that affects only the Solution smoke does not rebuild Baseline captures.
 
 ## Mobility-event analysis
 
@@ -104,7 +105,7 @@ Exp1 figures:
 - `results/extended/exp1/exp1_sync_delay_sensitivity.pdf`
 - `results/extended/exp1/exp1_verification_timeout_sensitivity.pdf`
 
-Legacy manuscript compatibility, not active evaluation metrics:
+Recorded by the analysis command, and not used as paper figure inputs:
 
 - `results/baseline_forwarding_cost_ratio.pdf`
 - `results/solution_forwarding_cost_ratio.pdf`
@@ -146,15 +147,10 @@ is the G0 directory compared with OptoFlood.
 
 ## Static Typing (optional)
 
-`make mypy` runs static typing against the host-side plotting and validation
-scripts. The Makefile invokes whichever `python3` is on `PATH`; install mypy
-and the runtime dependencies into the environment of your choice before running
-the target.
-
-A convenience helper is provided for a venv-based setup:
+`make mypy` type-checks the active experiment modules. The Makefile invokes whichever `python3` is on `PATH`; install mypy and the runtime dependencies into that environment before running the target.
 
 ```bash
-sh experiment/tool/setup_venv.sh
+sh experiment/tool/resources/setup_venv.sh
 . experiment/tool/.venv/bin/activate                   # Linux/macOS
 # .\experiment\tool\.venv\Scripts\Activate.ps1         # Windows PowerShell
 make mypy

@@ -18,11 +18,11 @@ EXP2_VM_PREREQS := scripts/run-in-vm.sh \
 	experiment/app/trust-schema.conf \
 	experiment/extended/exp2/Vagrantfile \
 	experiment/extended/exp2/Makefile \
-	experiment/tool/exp.py \
-	experiment/tool/exp2_shared_driver.py \
-	experiment/tool/exp2_shared_config.py \
-	experiment/tool/handoff_schedule.py \
-	experiment/tool/check_exp2_shared_evidence.py
+	experiment/tool/common/exp.py \
+	experiment/tool/exp2/exp2_shared_driver.py \
+	experiment/tool/exp2/exp2_shared_config.py \
+	experiment/tool/common/handoff_schedule.py \
+	experiment/tool/exp2/check_exp2_shared_evidence.py
 
 define exp2_shared_outputs
 $(1)/campaign.txt \
@@ -42,16 +42,16 @@ comma := ,
 EXP2_N2_SMOKE_OUTPUTS := $(call exp2_shared_outputs,$(EXP2_SHARED_ROOT)/n2/smoke,consumer1 consumer2,$(EXP2_N2_NODES))
 EXP2_N4_SMOKE_OUTPUTS := $(call exp2_shared_outputs,$(EXP2_SHARED_ROOT)/n4/smoke,consumer1 consumer2 consumer3 consumer4,$(EXP2_N4_NODES))
 
-$(EXP2_N2_SMOKE_OUTPUTS) &: $(EXP2_VM_PREREQS)
+$(EXP2_N2_SMOKE_OUTPUTS) &: $(EXP2_VM_PREREQS) | test/.solution_pass.$(PROVIDER)
 	RUN_IN_VM_PROFILE=exp2 MOBILITY_LOG_NODES="$(EXP2_N2_NODES)" RUN_IN_VM_REMOTE_MAKE="$(SOLUTION_NLSR_ENV) NLSR_HANDOFF_COUNT='1' NLSR_HANDOFF_SEQUENCE='acc2,acc3' NLSR_HANDOFF_INTERVALS='$(EXP2_WARMUP_S),$(EXP2_TAIL_S)' NLSR_HANDOFF_INTERVAL_BASE='90' NLSR_HANDOFF_INTERVAL_JITTER='60' EXP2_ACTIVE_CONSUMERS='consumer1,consumer2' EXP2_SCHEDULE='smoke' EXP2_RUN_ID='smoke' EXP2_WARMUP_S='$(EXP2_WARMUP_S)' EXP2_TAIL_S='$(EXP2_TAIL_S)' EXP_REQUEST_INTERVAL_MS='20' make exp2-shared" sh $(EXP2_VM_PREREQS) $@
 
-$(EXP2_N4_SMOKE_OUTPUTS) &: $(EXP2_VM_PREREQS)
+$(EXP2_N4_SMOKE_OUTPUTS) &: $(EXP2_VM_PREREQS) | test/.solution_pass.$(PROVIDER)
 	RUN_IN_VM_PROFILE=exp2 MOBILITY_LOG_NODES="$(EXP2_N4_NODES)" RUN_IN_VM_REMOTE_MAKE="$(SOLUTION_NLSR_ENV) NLSR_HANDOFF_COUNT='1' NLSR_HANDOFF_SEQUENCE='acc2,acc3' NLSR_HANDOFF_INTERVALS='$(EXP2_WARMUP_S),$(EXP2_TAIL_S)' NLSR_HANDOFF_INTERVAL_BASE='90' NLSR_HANDOFF_INTERVAL_JITTER='60' EXP2_ACTIVE_CONSUMERS='consumer1,consumer2,consumer3,consumer4' EXP2_SCHEDULE='smoke' EXP2_RUN_ID='smoke' EXP2_WARMUP_S='$(EXP2_WARMUP_S)' EXP2_TAIL_S='$(EXP2_TAIL_S)' EXP_REQUEST_INTERVAL_MS='20' make exp2-shared" sh $(EXP2_VM_PREREQS) $@
 
 define exp2_full_rule
 EXP2_$(1)_$(2)_OUTPUTS := $$(call exp2_shared_outputs,$(EXP2_SHARED_ROOT)/$(3)/$(2),$(4),$(6))
 
-$$(EXP2_$(1)_$(2)_OUTPUTS) &: $$(EXP2_VM_PREREQS)
+$$(EXP2_$(1)_$(2)_OUTPUTS) &: $$(EXP2_VM_PREREQS) | test/.solution_pass.$$(PROVIDER)
 	RUN_IN_VM_PROFILE=exp2 MOBILITY_LOG_NODES="$(6)" RUN_IN_VM_REMOTE_MAKE="$(SOLUTION_NLSR_ENV) NLSR_HANDOFF_COUNT='8' NLSR_HANDOFF_SEQUENCE='$(EXP2_FULL_SEQUENCE)' NLSR_HANDOFF_INTERVALS='' NLSR_HANDOFF_INTERVAL_BASE='90' NLSR_HANDOFF_INTERVAL_JITTER='60' EXP2_ACTIVE_CONSUMERS='$(subst +,$(comma),$(5))' EXP2_SCHEDULE='full' EXP2_RUN_ID='$(2)' EXP_REQUEST_INTERVAL_MS='20' make exp2-shared" sh $$(EXP2_VM_PREREQS) $$@
 
 .PHONY: experiment-exp2-shared-$(3)-$(2) analyze-exp2-shared-$(3)-$(2) check-exp2-shared-$(3)-$(2)
@@ -59,10 +59,10 @@ $$(EXP2_$(1)_$(2)_OUTPUTS) &: $$(EXP2_VM_PREREQS)
 experiment-exp2-shared-$(3)-$(2): $$(EXP2_$(1)_$(2)_OUTPUTS)
 
 analyze-exp2-shared-$(3)-$(2):
-	python3 experiment/tool/run_exp2_shared_analysis.py $(EXP2_SHARED_ROOT)/$(3)/$(2)
+	python3 -m experiment.tool.exp2.run_exp2_shared_analysis $(EXP2_SHARED_ROOT)/$(3)/$(2)
 
 check-exp2-shared-$(3)-$(2):
-	python3 experiment/tool/check_exp2_shared_evidence.py $(EXP2_SHARED_ROOT)/$(3)/$(2)
+	python3 -m experiment.tool.exp2.check_exp2_shared_evidence $(EXP2_SHARED_ROOT)/$(3)/$(2)
 endef
 
 $(foreach run,$(EXP2_FULL_RUNS),$(eval $(call exp2_full_rule,N2,$(run),n2,consumer1 consumer2,consumer1+consumer2,$(EXP2_N2_NODES))))
@@ -78,16 +78,16 @@ experiment-exp2-shared-n2-smoke: $(EXP2_N2_SMOKE_OUTPUTS)
 experiment-exp2-shared-n4-smoke: $(EXP2_N4_SMOKE_OUTPUTS)
 
 check-exp2-shared-n2-smoke:
-	python3 experiment/tool/check_exp2_shared_evidence.py $(EXP2_SHARED_ROOT)/n2/smoke
+	python3 -m experiment.tool.exp2.check_exp2_shared_evidence $(EXP2_SHARED_ROOT)/n2/smoke
 
 check-exp2-shared-n4-smoke:
-	python3 experiment/tool/check_exp2_shared_evidence.py $(EXP2_SHARED_ROOT)/n4/smoke
+	python3 -m experiment.tool.exp2.check_exp2_shared_evidence $(EXP2_SHARED_ROOT)/n4/smoke
 
 analyze-exp2-shared-n2-smoke:
-	python3 experiment/tool/run_exp2_shared_analysis.py $(EXP2_SHARED_ROOT)/n2/smoke
+	python3 -m experiment.tool.exp2.run_exp2_shared_analysis $(EXP2_SHARED_ROOT)/n2/smoke
 
 analyze-exp2-shared-n4-smoke:
-	python3 experiment/tool/run_exp2_shared_analysis.py $(EXP2_SHARED_ROOT)/n4/smoke
+	python3 -m experiment.tool.exp2.run_exp2_shared_analysis $(EXP2_SHARED_ROOT)/n4/smoke
 
 experiment-exp2-shared-n2-full:
 	$(MAKE) experiment-exp2-shared-n2-r1
@@ -108,16 +108,16 @@ EXP2_DISTINCT_ROOT := results/extended/exp2/distinct
 EXP2_N2_DISTINCT_SMOKE_OUTPUTS := $(call exp2_shared_outputs,$(EXP2_DISTINCT_ROOT)/n2/smoke,consumer1 consumer2,$(EXP2_N2_NODES))
 EXP2_N4_DISTINCT_SMOKE_OUTPUTS := $(call exp2_shared_outputs,$(EXP2_DISTINCT_ROOT)/n4/smoke,consumer1 consumer2 consumer3 consumer4,$(EXP2_N4_NODES))
 
-$(EXP2_N2_DISTINCT_SMOKE_OUTPUTS) &: $(EXP2_VM_PREREQS)
+$(EXP2_N2_DISTINCT_SMOKE_OUTPUTS) &: $(EXP2_VM_PREREQS) | test/.solution_pass.$(PROVIDER)
 	RUN_IN_VM_PROFILE=exp2 MOBILITY_LOG_NODES="$(EXP2_N2_NODES)" RUN_IN_VM_REMOTE_MAKE="$(SOLUTION_NLSR_ENV) NLSR_HANDOFF_COUNT='1' NLSR_HANDOFF_SEQUENCE='acc2,acc3' NLSR_HANDOFF_INTERVALS='$(EXP2_WARMUP_S),$(EXP2_TAIL_S)' NLSR_HANDOFF_INTERVAL_BASE='90' NLSR_HANDOFF_INTERVAL_JITTER='60' EXP2_ACTIVE_CONSUMERS='consumer1,consumer2' EXP2_SCHEDULE='smoke' EXP2_RUN_ID='smoke' EXP2_WARMUP_S='$(EXP2_WARMUP_S)' EXP2_TAIL_S='$(EXP2_TAIL_S)' EXP2_DEMAND_PATTERN='distinct' EXP_REQUEST_INTERVAL_MS='20' make exp2-shared" sh $(EXP2_VM_PREREQS) $@
 
-$(EXP2_N4_DISTINCT_SMOKE_OUTPUTS) &: $(EXP2_VM_PREREQS)
+$(EXP2_N4_DISTINCT_SMOKE_OUTPUTS) &: $(EXP2_VM_PREREQS) | test/.solution_pass.$(PROVIDER)
 	RUN_IN_VM_PROFILE=exp2 MOBILITY_LOG_NODES="$(EXP2_N4_NODES)" RUN_IN_VM_REMOTE_MAKE="$(SOLUTION_NLSR_ENV) NLSR_HANDOFF_COUNT='1' NLSR_HANDOFF_SEQUENCE='acc2,acc3' NLSR_HANDOFF_INTERVALS='$(EXP2_WARMUP_S),$(EXP2_TAIL_S)' NLSR_HANDOFF_INTERVAL_BASE='90' NLSR_HANDOFF_INTERVAL_JITTER='60' EXP2_ACTIVE_CONSUMERS='consumer1,consumer2,consumer3,consumer4' EXP2_SCHEDULE='smoke' EXP2_RUN_ID='smoke' EXP2_WARMUP_S='$(EXP2_WARMUP_S)' EXP2_TAIL_S='$(EXP2_TAIL_S)' EXP2_DEMAND_PATTERN='distinct' EXP_REQUEST_INTERVAL_MS='20' make exp2-shared" sh $(EXP2_VM_PREREQS) $@
 
 define exp2_distinct_full_rule
 EXP2_DISTINCT_$(1)_$(2)_OUTPUTS := $$(call exp2_shared_outputs,$(EXP2_DISTINCT_ROOT)/$(3)/$(2),$(4),$(6))
 
-$$(EXP2_DISTINCT_$(1)_$(2)_OUTPUTS) &: $$(EXP2_VM_PREREQS)
+$$(EXP2_DISTINCT_$(1)_$(2)_OUTPUTS) &: $$(EXP2_VM_PREREQS) | test/.solution_pass.$$(PROVIDER)
 	RUN_IN_VM_PROFILE=exp2 MOBILITY_LOG_NODES="$(6)" RUN_IN_VM_REMOTE_MAKE="$(SOLUTION_NLSR_ENV) NLSR_HANDOFF_COUNT='8' NLSR_HANDOFF_SEQUENCE='$(EXP2_FULL_SEQUENCE)' NLSR_HANDOFF_INTERVALS='' NLSR_HANDOFF_INTERVAL_BASE='90' NLSR_HANDOFF_INTERVAL_JITTER='60' EXP2_ACTIVE_CONSUMERS='$(subst +,$(comma),$(5))' EXP2_SCHEDULE='full' EXP2_RUN_ID='$(2)' EXP2_DEMAND_PATTERN='distinct' EXP_REQUEST_INTERVAL_MS='20' make exp2-shared" sh $$(EXP2_VM_PREREQS) $$@
 
 .PHONY: experiment-exp2-distinct-$(3)-$(2) check-exp2-distinct-$(3)-$(2)
@@ -125,7 +125,7 @@ $$(EXP2_DISTINCT_$(1)_$(2)_OUTPUTS) &: $$(EXP2_VM_PREREQS)
 experiment-exp2-distinct-$(3)-$(2): $$(EXP2_DISTINCT_$(1)_$(2)_OUTPUTS)
 
 check-exp2-distinct-$(3)-$(2):
-	python3 experiment/tool/check_exp2_shared_evidence.py --pattern distinct $(EXP2_DISTINCT_ROOT)/$(3)/$(2)
+	python3 -m experiment.tool.exp2.check_exp2_shared_evidence --pattern distinct $(EXP2_DISTINCT_ROOT)/$(3)/$(2)
 endef
 
 $(foreach run,$(EXP2_FULL_RUNS),$(eval $(call exp2_distinct_full_rule,N2,$(run),n2,consumer1 consumer2,consumer1+consumer2,$(EXP2_N2_NODES))))
@@ -140,10 +140,10 @@ experiment-exp2-distinct-n2-smoke: $(EXP2_N2_DISTINCT_SMOKE_OUTPUTS)
 experiment-exp2-distinct-n4-smoke: $(EXP2_N4_DISTINCT_SMOKE_OUTPUTS)
 
 check-exp2-distinct-n2-smoke:
-	python3 experiment/tool/check_exp2_shared_evidence.py --pattern distinct $(EXP2_DISTINCT_ROOT)/n2/smoke
+	python3 -m experiment.tool.exp2.check_exp2_shared_evidence --pattern distinct $(EXP2_DISTINCT_ROOT)/n2/smoke
 
 check-exp2-distinct-n4-smoke:
-	python3 experiment/tool/check_exp2_shared_evidence.py --pattern distinct $(EXP2_DISTINCT_ROOT)/n4/smoke
+	python3 -m experiment.tool.exp2.check_exp2_shared_evidence --pattern distinct $(EXP2_DISTINCT_ROOT)/n4/smoke
 
 experiment-exp2-distinct-n2-full:
 	$(MAKE) experiment-exp2-distinct-n2-r1
@@ -162,16 +162,16 @@ experiment-exp2-distinct-n4-full:
 .PHONY: analyze-exp2-scale analyze-exp2-distinct-n2-r1 analyze-exp2-distinct-n4-r1 analyze-exp2-distinct
 
 analyze-exp2-scale:
-	python3 experiment/tool/run_exp2_scale_analysis.py
+	python3 -m experiment.tool.exp2.run_exp2_scale_analysis
 
 analyze-exp2-distinct-n2-r1:
-	python3 experiment/tool/run_exp2_distinct_analysis.py n2 r1
+	python3 -m experiment.tool.exp2.run_exp2_distinct_analysis n2 r1
 
 analyze-exp2-distinct-n4-r1:
-	python3 experiment/tool/run_exp2_distinct_analysis.py n4 r1
+	python3 -m experiment.tool.exp2.run_exp2_distinct_analysis n4 r1
 
 analyze-exp2-distinct:
-	python3 experiment/tool/run_exp2_distinct_analysis.py --all
+	python3 -m experiment.tool.exp2.run_exp2_distinct_analysis --all
 
 # Formal Exp2 VM runs only. Analysis waits until Solution mobility tables exist.
 .PHONY: experiment-exp2 analyze-exp2

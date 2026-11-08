@@ -1,7 +1,7 @@
 # Makefile for the SOLUTION experiment, to be run inside the VM.
 
 # Full-solution experiment defaults: result-driven on, event-driven on,
-# Corridor on, Commit-C publication delay 1 s, and event-driven verification
+# Corridor on, Corridor Adj-LSA publication delay 1 s, and event-driven verification
 # timeout 50 ms. NLSR's own nlsr.conf remains conservative (Corridor off,
 # timeout 0/inherit); these env vars are the experiment override.
 # Host ablation examples: SOLUTION_NLSR_CORRIDOR_PRIORITISED_ROUTING=off or
@@ -34,10 +34,10 @@ EXPERIMENT_RESULTS = results/consumer_capture.pcap \
 all: $(EXPERIMENT_RESULTS)
 
 # The experiment script generates the complete raw result set in one run.
-$(EXPERIMENT_RESULTS) &: ../tool/exp.py producer consumer optoflood-daemon
+$(EXPERIMENT_RESULTS) &: ../tool/common/exp.py ../tool/common/handoff_schedule.py producer consumer optoflood-daemon
 	mkdir -p results
 	# Pass NLSR switches and the handoff schedule on the env line so they survive sudo env_reset.
-	sudo -E env EXPERIMENT_DIR=$(shell pwd) NLSR_RESULT_DRIVEN_ADJ_LSA_BUILD=$(NLSR_RESULT_DRIVEN_ADJ_LSA_BUILD) NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION=$(NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION) NLSR_CORRIDOR_PRIORITISED_ROUTING=$(NLSR_CORRIDOR_PRIORITISED_ROUTING) NLSR_CORRIDOR_ADJ_LSA_SYNC_PUBLISH_DELAY=$(NLSR_CORRIDOR_ADJ_LSA_SYNC_PUBLISH_DELAY) NLSR_EVENT_DRIVEN_VERIFICATION_TIMEOUT_MS=$(NLSR_EVENT_DRIVEN_VERIFICATION_TIMEOUT_MS) NLSR_HANDOFF_COUNT='$(NLSR_HANDOFF_COUNT)' NLSR_HANDOFF_SEQUENCE='$(NLSR_HANDOFF_SEQUENCE)' NLSR_HANDOFF_INTERVALS='$(NLSR_HANDOFF_INTERVALS)' NLSR_HANDOFF_INTERVAL_BASE='$(NLSR_HANDOFF_INTERVAL_BASE)' NLSR_HANDOFF_INTERVAL_JITTER='$(NLSR_HANDOFF_INTERVAL_JITTER)' python3 ../tool/exp.py
+	sudo -E env EXPERIMENT_DIR=$(shell pwd) NLSR_RESULT_DRIVEN_ADJ_LSA_BUILD=$(NLSR_RESULT_DRIVEN_ADJ_LSA_BUILD) NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION=$(NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION) NLSR_CORRIDOR_PRIORITISED_ROUTING=$(NLSR_CORRIDOR_PRIORITISED_ROUTING) NLSR_CORRIDOR_ADJ_LSA_SYNC_PUBLISH_DELAY=$(NLSR_CORRIDOR_ADJ_LSA_SYNC_PUBLISH_DELAY) NLSR_EVENT_DRIVEN_VERIFICATION_TIMEOUT_MS=$(NLSR_EVENT_DRIVEN_VERIFICATION_TIMEOUT_MS) NLSR_HANDOFF_COUNT='$(NLSR_HANDOFF_COUNT)' NLSR_HANDOFF_SEQUENCE='$(NLSR_HANDOFF_SEQUENCE)' NLSR_HANDOFF_INTERVALS='$(NLSR_HANDOFF_INTERVALS)' NLSR_HANDOFF_INTERVAL_BASE='$(NLSR_HANDOFF_INTERVAL_BASE)' NLSR_HANDOFF_INTERVAL_JITTER='$(NLSR_HANDOFF_INTERVAL_JITTER)' PYTHONPATH='$(abspath ../..)' python3 -m experiment.tool.common.exp
 
 # Recipe to compile the producer (plain baseline application).
 producer: ../app/producer.cpp

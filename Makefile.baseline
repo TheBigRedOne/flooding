@@ -49,7 +49,8 @@ BASELINE_EXPERIMENT_INPUTS = box/baseline/baseline.$(PROVIDER).box \
                              experiment/app/trust-schema.conf \
                              experiment/baseline/Vagrantfile \
                              experiment/baseline/Makefile \
-                             experiment/tool/exp.py
+                             experiment/tool/common/exp.py \
+                             experiment/tool/common/handoff_schedule.py
 
 BASELINE_PROFILE_ENV_g0-h60-a10-r15-s60 := NLSR_HELLO_INTERVAL='60' NLSR_ADJ_LSA_BUILD_INTERVAL='10' NLSR_ROUTING_CALC_INTERVAL='15' NLSR_SYNC_INTEREST_LIFETIME_MS='60000' NLSR_TUNING_PROFILE='g0-h60-a10-r15-s60'
 BASELINE_PROFILE_ENV_g1-h54-a9-r14-s54 := NLSR_HELLO_INTERVAL='54' NLSR_ADJ_LSA_BUILD_INTERVAL='9' NLSR_ROUTING_CALC_INTERVAL='14' NLSR_SYNC_INTEREST_LIFETIME_MS='54000' NLSR_TUNING_PROFILE='g1-h54-a9-r14-s54'
@@ -64,7 +65,9 @@ $(call baseline_run_outputs,$(1),$(2)) &: scripts/run-in-vm.sh $$(BASELINE_EXPER
 	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="$(BASELINE_PROFILE_ENV_$(1)) $$(MAIN_HANDOFF_ENV) make all" sh $$^ $$@
 endef
 
-BASELINE_CHAIN_PREV :=
+# The first run waits for the Baseline smoke. Later runs wait only for the
+# previous run, so one VM is used and a new stamp does not rebuild captures.
+BASELINE_CHAIN_PREV := test/.baseline_pass.$(PROVIDER)
 
 define queue_baseline_run
 $(eval $(call emit_baseline_run,$(1),$(2),$(BASELINE_CHAIN_PREV)))
@@ -84,20 +87,24 @@ BASELINE_PROFILE_COMPARE_OUTPUTS := results/baseline/mobility_events.csv \
                                    results/baseline_content_loss_fraction.pdf \
                                    results/baseline_nlsr_control_rate.pdf
 
-# Legacy manuscript compatibility. Not a paper dependency: sharing the grouped
-# rule above would rebuild the active figures whenever this PDF is absent.
-BASELINE_LEGACY_FCR := results/baseline_forwarding_cost_ratio.pdf
+# Recorded by the analysis command. Not a paper dependency: sharing the grouped
+# rule above would rebuild the paper figures whenever this PDF is absent.
+BASELINE_FCR_PDF := results/baseline_forwarding_cost_ratio.pdf
 
 # plot-baseline refreshes these figures after a campaign.
 # Paper builds use the host-side analysis outputs.
-BASELINE_ANALYSIS_CMD = python3 experiment/tool/run_mobility_event_analysis.py analyze-baseline
+BASELINE_ANALYSIS_CMD = python3 -m experiment.tool.analysis.run_mobility_event_analysis analyze-baseline
 
-$(BASELINE_PROFILE_COMPARE_OUTPUTS) &: experiment/tool/run_mobility_event_analysis.py \
-                                      experiment/tool/mobility_event_metrics.py \
-                                      experiment/tool/plot_mobility_event_metrics.py
+$(BASELINE_PROFILE_COMPARE_OUTPUTS) &: experiment/tool/analysis/run_mobility_event_analysis.py \
+                                      experiment/tool/analysis/mobility_event_metrics.py \
+                                      experiment/tool/analysis/plot_mobility_event_metrics.py \
+                                      experiment/tool/analysis/extract_overhead_csv.py \
+                                      experiment/tool/resources/ndn.lua
 	$(BASELINE_ANALYSIS_CMD)
 
-$(BASELINE_LEGACY_FCR): experiment/tool/run_mobility_event_analysis.py \
-                        experiment/tool/mobility_event_metrics.py \
-                        experiment/tool/plot_mobility_event_metrics.py
+$(BASELINE_FCR_PDF): experiment/tool/analysis/run_mobility_event_analysis.py \
+                        experiment/tool/analysis/mobility_event_metrics.py \
+                        experiment/tool/analysis/plot_mobility_event_metrics.py \
+                        experiment/tool/analysis/extract_overhead_csv.py \
+                        experiment/tool/resources/ndn.lua
 	$(BASELINE_ANALYSIS_CMD)

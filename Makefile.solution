@@ -3,9 +3,9 @@
 # Five independent runs of the same 8-handoff round trip as the baseline.
 # MAIN_HANDOFF_* comes from Makefile.baseline. Intervals are sampled again
 # inside each run; they are not paired with a baseline run.
-# The five VM recipes are order-only chained, and the first waits for
-# test/.validate_ok and the last baseline run, so baseline -> test -> solution
-# stays intact under `make -j`.
+# The five VM recipes are order-only chained. The first waits for the Solution
+# smoke stamp and the last Baseline run, so a new stamp does not rebuild the
+# captures and `make -j` still finishes Baseline before Solution.
 
 SOLUTION_INPUTS = box/solution/solution.$(PROVIDER).box \
                   experiment/app/producer.cpp \
@@ -15,16 +15,17 @@ SOLUTION_INPUTS = box/solution/solution.$(PROVIDER).box \
                   experiment/app/trust-schema.conf \
                   experiment/solution/Vagrantfile \
                   experiment/solution/Makefile \
-                  experiment/tool/exp.py
+                  experiment/tool/common/exp.py \
+                  experiment/tool/common/handoff_schedule.py
 
 SOLUTION_HANDOFF_ENV = $(MAIN_HANDOFF_ENV)
 
-# NLSR experiment-policy switches for the solution runs.
+# NLSR feature switches for the solution runs.
 # Override on the command line for ablation cells, e.g.
 # SOLUTION_NLSR_RESULT_DRIVEN=off, SOLUTION_NLSR_CORRIDOR_PRIORITISED_ROUTING=off,
 # or SOLUTION_NLSR_EVENT_DRIVEN_VERIFICATION_TIMEOUT_MS=0.
 # Full-solution defaults: result-driven on, event-driven on, Corridor on,
-# Commit-C publication delay 1 s, and event-driven verification timeout 50 ms.
+# Corridor Adj-LSA publication delay 1 s, and event-driven verification timeout 50 ms.
 # NLSR's own nlsr.conf remains conservative (Corridor off, timeout 0/inherit).
 # The baseline box runs upstream NLSR, which does not read these keys.
 SOLUTION_NLSR_RESULT_DRIVEN ?= on
@@ -51,7 +52,7 @@ $(call solution_run_outputs,$(1)) &: scripts/run-in-vm.sh $$(SOLUTION_INPUTS) | 
 	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="$$(SOLUTION_HANDOFF_ENV) $$(SOLUTION_NLSR_ENV) make all" sh $$^ $$@
 endef
 
-SOLUTION_CHAIN_PREV := test/.validate_ok $(BASELINE_LAST_RUN_OUTPUTS)
+SOLUTION_CHAIN_PREV := test/.solution_pass.$(PROVIDER) $(BASELINE_LAST_RUN_OUTPUTS)
 
 define queue_solution_run
 $(eval $(call emit_solution_run,$(1),$(SOLUTION_CHAIN_PREV)))
@@ -69,20 +70,24 @@ SOLUTION_COMPARE_OUTPUTS := results/solution/mobility_events.csv \
                             results/solution_nlsr_control_rate.pdf \
                             results/solution_recovery_flooding_volume.pdf
 
-# Legacy manuscript compatibility. Kept off the grouped rule so a missing FCR
-# PDF does not invalidate the active solution figures, including RFV.
-SOLUTION_LEGACY_FCR := results/solution_forwarding_cost_ratio.pdf
+# Recorded by the analysis command. Kept off the grouped rule so a missing
+# forwarding-cost PDF does not invalidate the solution figures, including RFV.
+SOLUTION_FCR_PDF := results/solution_forwarding_cost_ratio.pdf
 
 # plot-main refreshes these figures after a campaign.
 # Paper builds use the host-side analysis outputs.
-SOLUTION_ANALYSIS_CMD = python3 experiment/tool/run_mobility_event_analysis.py analyze-solution
+SOLUTION_ANALYSIS_CMD = python3 -m experiment.tool.analysis.run_mobility_event_analysis analyze-solution
 
-$(SOLUTION_COMPARE_OUTPUTS) &: experiment/tool/run_mobility_event_analysis.py \
-                              experiment/tool/mobility_event_metrics.py \
-                              experiment/tool/plot_mobility_event_metrics.py
+$(SOLUTION_COMPARE_OUTPUTS) &: experiment/tool/analysis/run_mobility_event_analysis.py \
+                              experiment/tool/analysis/mobility_event_metrics.py \
+                              experiment/tool/analysis/plot_mobility_event_metrics.py \
+                              experiment/tool/analysis/extract_overhead_csv.py \
+                              experiment/tool/resources/ndn.lua
 	$(SOLUTION_ANALYSIS_CMD)
 
-$(SOLUTION_LEGACY_FCR): experiment/tool/run_mobility_event_analysis.py \
-                        experiment/tool/mobility_event_metrics.py \
-                        experiment/tool/plot_mobility_event_metrics.py
+$(SOLUTION_FCR_PDF): experiment/tool/analysis/run_mobility_event_analysis.py \
+                        experiment/tool/analysis/mobility_event_metrics.py \
+                        experiment/tool/analysis/plot_mobility_event_metrics.py \
+                        experiment/tool/analysis/extract_overhead_csv.py \
+                        experiment/tool/resources/ndn.lua
 	$(SOLUTION_ANALYSIS_CMD)

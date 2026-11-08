@@ -316,8 +316,7 @@ main(int argc, char** argv)
   std::cout << "[" << startTime << "] STARTUP: Producer application starting" << std::endl;
   std::cout << "[" << startTime << "] STARTUP: Process ID: " << getpid() << std::endl;
 
-  // No application flags are required; any extra CLI arguments are ignored so
-  // callers that still pass legacy flags continue to work.
+  // No application flags are required. Extra CLI arguments are ignored.
   (void)argc;
   (void)argv;
 

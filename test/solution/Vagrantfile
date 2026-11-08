@@ -1,0 +1,25 @@
+# Solution smoke VM. The box is the pinned Solution image.
+
+Vagrant.configure("2") do |config|
+  box_path = ENV.fetch("ACTUAL_SOLUTION_BOX_PATH")
+  box_name = ENV.fetch("SOLUTION_BOX_NAME")
+  config.vm.box = box_name
+  config.vm.box_url = box_path
+  config.vm.network "private_network", type: "dhcp"
+  config.vm.synced_folder ".", "/vagrant", disabled: true
+
+  config.vm.provider :virtualbox do |vb|
+    vb.name = "solution-smoke-virtualbox"
+    vb.cpus = 4
+    vb.memory = 8192
+    vb.gui = false
+  end
+
+  config.vm.provider :libvirt do |lv|
+    lv.driver = "kvm"
+    require "etc"
+    lv.default_prefix = "#{Etc.getpwuid.uid}-solution-smoke-"
+    lv.cpus = 4
+    lv.memory = 8192
+  end
+end

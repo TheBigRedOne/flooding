@@ -23,7 +23,7 @@ BOXES = box/initial/initial.$(PROVIDER).box \
 # Experiment rules and result variables.
 include Makefile.baseline
 include Makefile.solution
-include Makefile.sensitivity
+include Makefile.exp1
 include Makefile.exp2
 include Makefile.exp3
 
@@ -82,81 +82,56 @@ ALL_FIGURES := paper/figures/NDN_Packets_Processing_Flow.pdf \
                $(EXP3_FORMAL_PAPER_FIGURES) \
                $(EXP3_SUPPLEMENTARY_FIGURES)
 
-$(EXP2_PAPER_FIGURES) &: experiment/tool/plot_exp2_comparison.py $(EXP2_COMPARISON_INPUTS)
-	python3 experiment/tool/plot_exp2_comparison.py
+$(EXP2_PAPER_FIGURES) &: experiment/tool/exp2/plot_exp2_comparison.py $(EXP2_COMPARISON_INPUTS)
+	python3 -m experiment.tool.exp2.plot_exp2_comparison
 
-$(EXP3_FORMAL_PAPER_FIGURES) &: experiment/tool/plot_exp3.py \
+$(EXP3_FORMAL_PAPER_FIGURES) &: experiment/tool/exp3/plot_exp3.py \
                                 $(EXP3_CAMPAIGN_DIR)/campaign_status.txt \
                                 $(EXP3_CAMPAIGN_DIR)/events.csv \
                                 $(EXP3_CAMPAIGN_DIR)/population_comparison.csv
-	python3 experiment/tool/plot_exp3.py
+	python3 -m experiment.tool.exp3.plot_exp3
 
-$(EXP3_SUPPLEMENTARY_FIGURES) &: experiment/tool/plot_exp3.py \
+$(EXP3_SUPPLEMENTARY_FIGURES) &: experiment/tool/exp3/plot_exp3.py \
                                  $(EXP3_CAMPAIGN_DIR)/campaign_status.txt \
                                  $(EXP3_CAMPAIGN_DIR)/events.csv \
                                  $(EXP3_CAMPAIGN_DIR)/prefix_rfv.csv
-	python3 experiment/tool/plot_exp3.py --extended \
+	python3 -m experiment.tool.exp3.plot_exp3 --extended \
 		--analysis-root results/extended/exp3/analysis \
 		--figure-dir results/extended/exp3/paper-figures
 
 # Sources checked by phony target `mypy`.
-PLOT_TOOL_SRCS := experiment/tool/plot_latency.py \
-                  experiment/tool/compute_latency_metrics.py \
-                  experiment/tool/plot_loss.py \
-                  experiment/tool/compute_loss_metrics.py \
-                  experiment/tool/plot_overhead.py \
-                  experiment/tool/compute_overhead_metrics.py \
-                  experiment/tool/compute_overhead_ymax.py \
-                  experiment/tool/plot_throughput.py \
-                  experiment/tool/compute_throughput_metrics.py \
-                  experiment/tool/plot_throughput_comparison.py \
-                  experiment/tool/plot_disruption_comparison.py \
-                  experiment/tool/plot_unmet_interest_comparison.py \
-                  experiment/tool/summarise_nlsr_sensitivity.py \
-                  experiment/tool/plot_nlsr_disruption_comparison.py \
-                  experiment/tool/plot_nlsr_network_cost_comparison.py \
-                  experiment/tool/mobility_event_metrics.py \
-                  experiment/tool/plot_mobility_event_metrics.py \
-                  experiment/tool/run_mobility_event_analysis.py \
-                  experiment/tool/test_mobility_event_metrics.py \
-                  experiment/tool/audit_decoder_parity.py \
-                  experiment/tool/handoff_schedule.py \
-                  experiment/tool/exp2_shared_config.py \
-                  experiment/tool/exp2_shared_metrics.py \
-                  experiment/tool/run_exp2_shared_analysis.py \
-                  experiment/tool/test_exp2_shared.py \
-                  experiment/tool/test_exp2_distinct.py \
-                  experiment/tool/exp2_distinct_metrics.py \
-                  experiment/tool/run_exp2_distinct_analysis.py \
-                  experiment/tool/test_exp2_distinct_metrics.py \
-                  experiment/tool/check_exp2_shared_evidence.py \
-                  experiment/tool/exp3_config.py \
-                  experiment/tool/exp3_driver.py \
-                  experiment/tool/exp3_processes.py \
-                  experiment/tool/check_exp3_evidence.py \
-                  experiment/tool/test_exp3.py \
-                  experiment/tool/exp3_metrics.py \
-                  experiment/tool/run_exp3_analysis.py \
-                  experiment/tool/plot_exp3.py \
-                  experiment/tool/test_exp3_metrics.py \
-                  experiment/tool/exp2_scale_metrics.py \
-                  experiment/tool/run_exp2_scale_analysis.py \
-                  experiment/tool/plot_exp2_scale.py \
-                  experiment/tool/test_exp2_scale.py \
-                  experiment/tool/test_plot_exp2_scale.py \
-                  experiment/tool/plot_exp2_comparison.py \
-                  experiment/tool/test_plot_exp2_comparison.py \
-                  experiment/tool/run_sensitivity_analysis.py \
-                  experiment/tool/test_handoff_schedule.py \
-                  experiment/tool/routing_convergence_metrics.py \
-                  experiment/tool/run_routing_convergence_analysis.py \
-                  experiment/tool/test_routing_convergence_metrics.py
+PLOT_TOOL_SRCS := experiment/tool/common/exp.py \
+                  experiment/tool/common/handoff_schedule.py \
+                  experiment/tool/exp1/run_sensitivity_analysis.py \
+                  experiment/tool/exp2/exp2_shared_driver.py \
+                  experiment/tool/exp2/exp2_shared_config.py \
+                  experiment/tool/exp2/exp2_shared_metrics.py \
+                  experiment/tool/exp2/exp2_distinct_metrics.py \
+                  experiment/tool/exp2/exp2_scale_metrics.py \
+                  experiment/tool/exp2/run_exp2_shared_analysis.py \
+                  experiment/tool/exp2/run_exp2_distinct_analysis.py \
+                  experiment/tool/exp2/run_exp2_scale_analysis.py \
+                  experiment/tool/exp2/plot_exp2_comparison.py \
+                  experiment/tool/exp2/plot_exp2_scale.py \
+                  experiment/tool/exp2/check_exp2_shared_evidence.py \
+                  experiment/tool/exp3/exp3_driver.py \
+                  experiment/tool/exp3/exp3_config.py \
+                  experiment/tool/exp3/exp3_processes.py \
+                  experiment/tool/exp3/exp3_metrics.py \
+                  experiment/tool/exp3/run_exp3_analysis.py \
+                  experiment/tool/exp3/plot_exp3.py \
+                  experiment/tool/exp3/check_exp3_evidence.py \
+                  experiment/tool/analysis/mobility_event_metrics.py \
+                  experiment/tool/analysis/routing_convergence_metrics.py \
+                  experiment/tool/analysis/plot_mobility_event_metrics.py \
+                  experiment/tool/analysis/extract_overhead_csv.py \
+                  experiment/tool/analysis/run_mobility_event_analysis.py \
+                  experiment/tool/analysis/run_routing_convergence_analysis.py
 
-# Full workflow. One recipe runs each stage to completion before the next, so
-# `make -j` cannot overlap these stages or start analysis before experiments.
+# Full workflow. Each recipe line finishes before the next, including under
+# `make -j`. Baseline and Solution experiments pull their smoke stamps.
 all:
 	$(MAKE) experiment-baseline
-	$(MAKE) test
 	$(MAKE) experiment-solution
 	$(MAKE) experiment-exp1
 	$(MAKE) experiment-exp2
@@ -193,16 +168,50 @@ experiment:
 # Baseline and solution comparison outputs, plus the Exp1 sensitivity figures.
 result: $(BASELINE_PROFILE_COMPARE_OUTPUTS) $(SOLUTION_COMPARE_OUTPUTS) $(EXP1_PAPER_FIGURES)
 
-# Run the test experiment
-test: test/.validate_ok
+# Integration smokes. A stamp exists only after that smoke's assertions pass.
+# The provider is part of the file name, so one hypervisor cannot satisfy the other.
+BASELINE_SMOKE_PASS := test/.baseline_pass.$(PROVIDER)
+SOLUTION_SMOKE_PASS := test/.solution_pass.$(PROVIDER)
 
-test/.validate_ok: test/Makefile test/Vagrantfile test/exp_test.py test/validate.py \
-             experiment/app/producer.cpp experiment/app/consumer.cpp \
-             experiment/app/optoflood-daemon.cpp experiment/app/guard_flood_id.hpp \
-             experiment/app/trust-schema.conf experiment/tool/ndn.lua \
-             box/solution/solution.$(PROVIDER).box \
-             | $(BASELINE_RAW_OUTPUTS)
-	$(MAKE) -C test PROVIDER=$(PROVIDER) SOLUTION_NLSR_RESULT_DRIVEN=$(SOLUTION_NLSR_RESULT_DRIVEN) SOLUTION_NLSR_EVENT_DRIVEN_VERIFICATION=$(SOLUTION_NLSR_EVENT_DRIVEN_VERIFICATION) test-all
+BASELINE_SMOKE_INPUTS := box/baseline/baseline.$(PROVIDER).box \
+	experiment/app/producer.cpp \
+	experiment/app/consumer.cpp \
+	experiment/app/trust-schema.conf \
+	test/run_smoke.sh \
+	test/inside_smoke.sh \
+	test/baseline_smoke.py \
+	test/validate_baseline.py \
+	test/smoke_runtime.py \
+	test/smoke_validate.py \
+	test/baseline/Vagrantfile
+
+SOLUTION_SMOKE_INPUTS := box/solution/solution.$(PROVIDER).box \
+	experiment/app/producer.cpp \
+	experiment/app/consumer.cpp \
+	experiment/app/optoflood-daemon.cpp \
+	experiment/app/guard_flood_id.hpp \
+	experiment/app/trust-schema.conf \
+	test/run_smoke.sh \
+	test/inside_smoke.sh \
+	test/solution_smoke.py \
+	test/validate_solution.py \
+	test/smoke_runtime.py \
+	test/smoke_validate.py \
+	test/solution/Vagrantfile
+
+$(BASELINE_SMOKE_PASS): $(BASELINE_SMOKE_INPUTS)
+	rm -f $@
+	PROVIDER=$(PROVIDER) sh test/run_smoke.sh baseline
+	echo $(PROVIDER) > $@
+
+$(SOLUTION_SMOKE_PASS): $(SOLUTION_SMOKE_INPUTS)
+	rm -f $@
+	PROVIDER=$(PROVIDER) sh test/run_smoke.sh solution
+	echo $(PROVIDER) > $@
+
+test:
+	$(MAKE) $(BASELINE_SMOKE_PASS)
+	$(MAKE) $(SOLUTION_SMOKE_PASS)
 
 # Plot only (reuse existing captures; no VM run).
 # plot-main is the G0-versus-OptoFlood box plots.
@@ -212,7 +221,7 @@ plot: plot-baseline plot-main
 # Host-side analysis. `make all` runs these targets after the experiments,
 # so the PDF figures come from the captures just written.
 
-.PHONY: mobility-analysis test-mobility-analysis routing-analysis plot-routing test-routing-analysis
+.PHONY: mobility-analysis routing-analysis plot-routing
 
 mobility-analysis:
 	$(MAKE) plot-baseline
@@ -223,7 +232,7 @@ mobility-analysis:
 # One command, used by the explicit routing-analysis target and by the paper
 # PDF rule. The PDF rule must not call $(MAKE): a dry-run would execute that
 # recipe, and a failed grouped-target update can delete the sibling PDF.
-ROUTING_ANALYSIS_CMD = python3 experiment/tool/run_routing_convergence_analysis.py
+ROUTING_ANALYSIS_CMD = python3 -m experiment.tool.analysis.run_routing_convergence_analysis
 
 routing-analysis:
 	$(ROUTING_ANALYSIS_CMD)
@@ -236,22 +245,16 @@ ROUTING_PAPER_FIGURES := results/routing_topology_update_latency.pdf \
                          results/routing_service_path_fib_convergence.pdf \
                          results/routing_network_fib_convergence.pdf
 
-$(ROUTING_PAPER_FIGURES) &: experiment/tool/run_routing_convergence_analysis.py \
-                            experiment/tool/routing_convergence_metrics.py
+$(ROUTING_PAPER_FIGURES) &: experiment/tool/analysis/run_routing_convergence_analysis.py \
+                            experiment/tool/analysis/routing_convergence_metrics.py
 	$(ROUTING_ANALYSIS_CMD)
 
 plot-routing: routing-analysis
 
-test-routing-analysis:
-	python3 -m unittest experiment.tool.test_routing_convergence_metrics
-
-test-mobility-analysis:
-	python3 -m unittest experiment.tool.test_mobility_event_metrics
-
 define EXP1_ANALYSIS_CMD
-python3 experiment/tool/run_sensitivity_analysis.py sync-delay
-python3 experiment/tool/run_sensitivity_analysis.py verification-timeout
-python3 experiment/tool/run_sensitivity_analysis.py cross-check
+python3 -m experiment.tool.exp1.run_sensitivity_analysis sync-delay
+python3 -m experiment.tool.exp1.run_sensitivity_analysis verification-timeout
+python3 -m experiment.tool.exp1.run_sensitivity_analysis cross-check
 endef
 
 plot-exp1:
@@ -259,11 +262,13 @@ plot-exp1:
 
 # Host-side Exp1 figures. plot-exp1 runs this analysis after the experiment stage.
 # Paper builds these outputs directly.
-$(EXP1_PAPER_FIGURES) &: experiment/tool/run_sensitivity_analysis.py \
-                         experiment/tool/mobility_event_metrics.py \
-                         experiment/tool/routing_convergence_metrics.py \
-                         experiment/tool/run_mobility_event_analysis.py \
-                         experiment/tool/plot_mobility_event_metrics.py
+$(EXP1_PAPER_FIGURES) &: experiment/tool/exp1/run_sensitivity_analysis.py \
+                         experiment/tool/analysis/mobility_event_metrics.py \
+                         experiment/tool/analysis/routing_convergence_metrics.py \
+                         experiment/tool/analysis/run_mobility_event_analysis.py \
+                         experiment/tool/analysis/plot_mobility_event_metrics.py \
+                         experiment/tool/analysis/extract_overhead_csv.py \
+                         experiment/tool/resources/ndn.lua
 	$(EXP1_ANALYSIS_CMD)
 
 plot-baseline:
@@ -295,7 +300,7 @@ paper/figures:
 # interpreter that has mypy and the host-side runtime dependencies installed;
 # see the "Static Typing" section in README.md for the supported workflow.
 mypy:
-	python3 -m mypy --config-file mypy.ini test/validate.py $(PLOT_TOOL_SRCS)
+	python3 -m mypy --config-file mypy.ini $(PLOT_TOOL_SRCS)
 
 
 # =============================================================================
@@ -351,7 +356,7 @@ vm-clean:
 	PROVIDER=$(PROVIDER) LATEXMK=latexmk sh scripts/cleanup.sh vm-clean
 
 
-.PHONY: all build-boxes boxes clean deep-clean clean-ssh-config box box-initial box-baseline box-solution experiment experiment-baseline experiment-solution experiment-exp1 plot-exp1 exp1 result plot plot-baseline plot-main paper test mypy vm-clean mobility-analysis test-mobility-analysis routing-analysis plot-routing test-routing-analysis
+.PHONY: all build-boxes boxes clean deep-clean clean-ssh-config box box-initial box-baseline box-solution experiment experiment-baseline experiment-solution experiment-exp1 plot-exp1 exp1 result plot plot-baseline plot-main paper test mypy vm-clean mobility-analysis routing-analysis plot-routing
 
 .DELETE_ON_ERROR:
 
