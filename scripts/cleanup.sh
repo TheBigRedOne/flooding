@@ -44,12 +44,36 @@ require_provider() {
   fi
 }
 
+lock_is_active() {
+  lock=$1
+  if [ ! -d "$lock" ]; then
+    return 1
+  fi
+  pid=$(cat "$lock/pid" 2>/dev/null || true)
+  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+    echo "skipping resources for $lock; pid $pid is running" >&2
+    return 0
+  fi
+  return 1
+}
+
+remove_idle_ssh_config() {
+  config=$1
+  lock=$2
+  if lock_is_active "$lock"; then
+    echo "keeping $config" >&2
+    return 0
+  fi
+  rm -f "$config"
+}
+
 remove_ssh_configs() {
+  remove_idle_ssh_config .ssh_config_baseline .baseline-vm.lock
+  remove_idle_ssh_config .ssh_config_solution .solution-vm.lock
+  remove_idle_ssh_config .ssh_config_exp1 .exp1-vm.lock
+  remove_idle_ssh_config .ssh_config_exp2 .exp2-vm.lock
+  remove_idle_ssh_config .ssh_config_exp3 .exp3-vm.lock
   rm -f \
-    .ssh_config_baseline \
-    .ssh_config_solution \
-    .ssh_config_exp2 \
-    .ssh_config_exp3 \
     test/.ssh_config_baseline \
     test/.ssh_config_solution
 }
@@ -78,9 +102,23 @@ remove_host_artifacts() {
     test/.sync_solution_*
 }
 
+project_is_absent() {
+  dir=$1
+  output=$(VAGRANT_DEFAULT_PROVIDER=$PROVIDER VAGRANT_CWD=$dir vagrant status --machine-readable) || return 1
+  printf '%s\n' "$output" | awk -F, '
+    $3 == "state" { seen = 1; if ($4 != "not_created") bad = 1 }
+    END { exit (seen && !bad) ? 0 : 1 }
+  '
+}
+
 destroy_vm() {
   echo "Destroying Vagrant environment: $1"
-  VAGRANT_DEFAULT_PROVIDER=$PROVIDER VAGRANT_CWD=$1 vagrant destroy -f || true
+  if ! VAGRANT_DEFAULT_PROVIDER=$PROVIDER VAGRANT_CWD=$1 vagrant destroy -f; then
+    echo "vagrant destroy failed for $1" >&2
+  fi
+  if ! project_is_absent "$1"; then
+    echo "$1 is still present after destroy" >&2
+  fi
 }
 
 destroy_smoke_vm() {
@@ -90,19 +128,43 @@ destroy_smoke_vm() {
   name_var=$4
   box_name=$5
   echo "Destroying Vagrant environment: $vagrant_dir"
-  env \
+  if ! env \
     "$path_var=$box_file" \
     "$name_var=$box_name" \
     VAGRANT_DEFAULT_PROVIDER="$PROVIDER" \
     VAGRANT_CWD="$vagrant_dir" \
-    vagrant destroy -f || true
+    vagrant destroy -f; then
+    echo "vagrant destroy failed for $vagrant_dir" >&2
+  fi
+  if ! project_is_absent "$vagrant_dir"; then
+    echo "$vagrant_dir is still present after destroy" >&2
+  fi
+}
+
+destroy_idle_vm() {
+  vagrant_dir=$1
+  lock=$2
+  if lock_is_active "$lock"; then
+    echo "keeping VM $vagrant_dir" >&2
+    return 0
+  fi
+  destroy_vm "$vagrant_dir"
+  if [ -d "$lock" ]; then
+    pid=$(cat "$lock/pid" 2>/dev/null || true)
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+      echo "leaving $lock; pid $pid started during cleanup" >&2
+    else
+      rm -rf "$lock"
+    fi
+  fi
 }
 
 destroy_all_vms() {
-  destroy_vm experiment/baseline
-  destroy_vm experiment/solution
-  destroy_vm experiment/extended/exp2
-  destroy_vm experiment/extended/exp3
+  destroy_idle_vm experiment/baseline .baseline-vm.lock
+  destroy_idle_vm experiment/solution .solution-vm.lock
+  destroy_idle_vm experiment/extended/exp1 .exp1-vm.lock
+  destroy_idle_vm experiment/extended/exp2 .exp2-vm.lock
+  destroy_idle_vm experiment/extended/exp3 .exp3-vm.lock
   destroy_smoke_vm \
     test/baseline \
     "$ROOT/box/baseline/baseline.$PROVIDER.box" \
@@ -118,7 +180,6 @@ destroy_all_vms() {
   destroy_vm box/baseline
   destroy_vm box/solution
   destroy_vm box/initial
-  rm -rf .exp2-vm.lock .exp3-vm.lock
 }
 
 remove_registered_box() {

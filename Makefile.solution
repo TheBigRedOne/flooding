@@ -3,9 +3,10 @@
 # Five independent runs of the same 8-handoff round trip as the baseline.
 # MAIN_HANDOFF_* comes from Makefile.baseline. Intervals are sampled again
 # inside each run; they are not paired with a baseline run.
-# The five VM recipes are order-only chained. The first waits for the Solution
-# smoke stamp and the last Baseline run, so a new stamp does not rebuild the
-# captures and `make -j` still finishes Baseline before Solution.
+# Each run creates a new VM from the Solution box and destroys it afterwards.
+# The five recipes are order-only chained. The first waits for the Solution
+# smoke stamp and the last Baseline run, so a newer stamp or earlier output
+# does not rebuild these captures.
 
 SOLUTION_INPUTS = box/solution/solution.$(PROVIDER).box \
                   experiment/app/producer.cpp \
@@ -61,7 +62,8 @@ endef
 
 $(foreach run,$(EXPERIMENT_RUN_IDS),$(call queue_solution_run,$(run)))
 
-# Host-side mobility-event analysis. Raw captures are not Make prerequisites.
+# Host-side mobility-event analysis. G0 captures and the five Solution runs are
+# real inputs. Other Baseline profiles are not.
 
 SOLUTION_COMPARE_OUTPUTS := results/solution/mobility_events.csv \
                             results/solution/mobility_event_audit.txt \
@@ -72,22 +74,26 @@ SOLUTION_COMPARE_OUTPUTS := results/solution/mobility_events.csv \
 
 # Recorded by the analysis command. Kept off the grouped rule so a missing
 # forwarding-cost PDF does not invalidate the solution figures, including RFV.
+SOLUTION_G0_OUTPUTS := $(foreach run,$(EXPERIMENT_RUN_IDS),$(call baseline_run_outputs,g0-h60-a10-r15-s60,$(run)))
+SOLUTION_ANALYSIS_EVIDENCE := $(SOLUTION_G0_OUTPUTS) $(SOLUTION_RESULTS)
+
 SOLUTION_FCR_PDF := results/solution_forwarding_cost_ratio.pdf
 
-# plot-main refreshes these figures after a campaign.
-# Paper builds use the host-side analysis outputs.
+# Paper builds use these host-side analysis outputs.
 SOLUTION_ANALYSIS_CMD = python3 -m experiment.tool.analysis.run_mobility_event_analysis analyze-solution
 
 $(SOLUTION_COMPARE_OUTPUTS) &: experiment/tool/analysis/run_mobility_event_analysis.py \
                               experiment/tool/analysis/mobility_event_metrics.py \
                               experiment/tool/analysis/plot_mobility_event_metrics.py \
                               experiment/tool/analysis/extract_overhead_csv.py \
-                              experiment/tool/resources/ndn.lua
+                              experiment/tool/resources/ndn.lua \
+                              $(SOLUTION_ANALYSIS_EVIDENCE)
 	$(SOLUTION_ANALYSIS_CMD)
 
 $(SOLUTION_FCR_PDF): experiment/tool/analysis/run_mobility_event_analysis.py \
                         experiment/tool/analysis/mobility_event_metrics.py \
                         experiment/tool/analysis/plot_mobility_event_metrics.py \
                         experiment/tool/analysis/extract_overhead_csv.py \
-                        experiment/tool/resources/ndn.lua
+                        experiment/tool/resources/ndn.lua \
+                        $(SOLUTION_ANALYSIS_EVIDENCE)
 	$(SOLUTION_ANALYSIS_CMD)

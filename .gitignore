@@ -96,6 +96,8 @@ experiment/tool/.venv/
 
 # SSH configs and one-VM locks
 .ssh_config_*
+.baseline-vm.lock/
+.solution-vm.lock/
 .exp*-vm.lock/
 
 # Provider-specific smoke PASS stamps

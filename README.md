@@ -22,24 +22,26 @@ make PROVIDER=libvirt all
 
 ### Execution order
 
-`make all` runs its stages one after another. `make -j` does not reorder them, and the VM runs inside each stage stay in their order-only chain:
+`make all` follows artifact dependencies. `make -j` may build the Baseline and Solution boxes at the same time after the Initial box, and otherwise keeps the experiment VMs in this order:
 
 ```
-baseline smoke -> g0/r1 -> ... -> g0/r5 -> g1/r1 -> ... -> g4/r5
--> solution smoke -> solution/r1 -> ... -> solution/r5
--> exp1 sync-delay d0 -> d1 -> d2 -> d4
--> exp1 verification-timeout t10 -> t25 -> t50 -> t100 -> t250
--> exp2 -> exp3 -> host analysis -> paper/OptoFlood.pdf
+initial box -> baseline box and solution box
+-> baseline smoke -> solution smoke
+-> g0/r1 -> ... -> g4/r5
+-> solution/r1 -> ... -> solution/r5
+-> exp1 d0 -> d1 -> d2 -> d4 -> t10 -> t25 -> t50 -> t100 -> t250
+-> exp2 formal runs -> exp3 formal runs
+-> analysis and figures -> paper/OptoFlood.pdf
 ```
 
-The baseline and solution boxes are built when those stages need them. `make paper` compiles the PDF on the host and does not start a VM.
+Each formal run creates a new VM from its prebuilt box and destroys that VM when the run finishes. `make paper` builds any missing evidence before compiling the PDF.
 
 Baseline tuning is 5 profiles × 5 runs. The OptoFlood comparison is 5 runs.
 Each of those runs is one round trip of 8 hand-offs. Exp1 is the OptoFlood
 parameter-sensitivity study: one SPRC Sync publication-delay sweep and one
 EDRC verification-timeout sweep. Every full cell is one run of the same eight
-handoffs and the same explicit interval list. It uses the solution VM and
-runs after the solution runs.
+handoffs and the same explicit interval list. It uses the Solution box in its
+own VM and runs after the solution runs.
 
 This command automates the entire process. It will:
 1.  Build the necessary Vagrant base images (`.box` files) if they don't exist.
@@ -52,26 +54,32 @@ This command automates the entire process. It will:
 
 ## Workflow Targets
 
+- `make box`
+  Builds the Initial, Baseline, and Solution boxes.
+- `make test`
+  Builds any boxes required by the smoke tests, then runs the Baseline smoke and the Solution smoke.
+- `make experiment`
+  Runs all 74 formal runs: Baseline (25), Solution (5), Exp1 (9), Exp2 (20), and Exp3 (15).
 - `make experiment-baseline`
-  Runs the five baseline profiles, five runs each, and stores raw capture artifacts under `results/baseline/<profile>/rN/`.
+  Runs the 25 Baseline formal runs.
 - `make experiment-solution`
-  Runs the five OptoFlood runs and stores raw capture artifacts under `results/solution/rN/`.
-- `make plot-baseline`
-  Regenerates the four G0--G4 mobility-event figures from existing raw captures.
-- `make plot-main`
-  Regenerates the four G0-versus-OptoFlood figures from the same event definitions.
+  Runs the five Solution formal runs.
+- `make experiment-exp1`
+  Runs the nine Exp1 formal cells.
+- `make experiment-exp2`
+  Runs the 20 Exp2 formal runs.
+- `make experiment-exp3`
+  Runs the 15 Exp3 formal runs.
+- `make analyse`
+  Builds the analysis tables and summaries required by the paper. Missing or outdated captures, smoke stamps, or boxes are rebuilt through their artifact dependencies.
 - `make plot`
-  Runs both plotting pipelines without re-running experiments.
-- `make plot-exp1`
-  Regenerates the two Exp1 parameter-sensitivity figures from existing captures.
-- `make PROVIDER=libvirt test`
-  Runs the Baseline smoke and then the Solution smoke. It writes `test/.baseline_pass.$(PROVIDER)` and `test/.solution_pass.$(PROVIDER)` and does not run the formal campaign.
-- `make mobility-analysis`
-  Regenerates baseline and solution mobility-event tables and figures, then the routing-convergence tables and figures, then the Exp1 sensitivity figures, from existing captures. Those steps run one after another, including under `make -j`.
-- `make routing-analysis`
-  Regenerates routing-convergence tables and the two routing figures from existing NLSR logs, NFD logs, handoff records, and mobility packet tables. It does not rerun experiments.
-- `make plot-routing`
-  Same host-side routing analysis as `make routing-analysis`.
+  Builds every experiment-derived figure included in the paper. Missing or outdated analysis outputs are rebuilt first, and that chain can reach the formal experiments and boxes.
+- `make paper`
+  Builds `paper/OptoFlood.pdf` from the manuscript and its figures, rebuilding outdated prerequisites when required.
+- `make all`
+  Completes the full workflow: boxes, smoke tests, formal experiments, analyses, figures, and the paper.
+
+Each target builds only the missing or outdated artifacts it requires. An up-to-date prerequisite is reused. Per-run checks and the Exp3 pilot remain available separately.
 
 ## Source layout
 
@@ -84,11 +92,11 @@ Active experiment code lives under `experiment/tool/`:
 
 Host recipes run `python3 -m experiment.tool...` from the repository root. Guest recipes pass `PYTHONPATH` to the repository root on the `sudo -E env` line and use the same module names. The two integration smokes stay in `test/`.
 
-Formal Baseline outputs depend on the Baseline smoke stamp only as an order-only prerequisite. Formal Solution, Exp2, and Exp3 outputs depend on the Solution smoke stamp the same way. A change that affects only the Solution smoke does not rebuild Baseline captures.
+The first Baseline run waits, as an order-only prerequisite, for both smoke stamps. Later Baseline runs wait only for the previous Baseline run. The first Solution run waits for the Solution smoke stamp and the last Baseline run. Formal Exp2 waits for the last Exp1 cell, and formal Exp3 waits for the last Exp2 run. Those links order the VMs; a newer predecessor does not rebuild the later captures. A change that affects only the Solution smoke does not rebuild Baseline captures.
 
 ## Mobility-event analysis
 
-Host-side analysis decodes each run's `pcap_nodes/*.pcap` with one Python decoder. Name equality uses `(component type, raw component bytes)`, not a rendered URI. Baseline is G0--G4, five runs, eight handoffs. The solution comparison is five OptoFlood runs of the same eight-handoff schedule. Exp1 reuses those mobility-event and routing measurements on one explicit eight-handoff schedule.
+Host-side analysis decodes each run's `pcap_nodes/*.pcap` with one Python decoder. Name equality uses `(component type, raw component bytes)`, not a rendered URI. Baseline is G0--G4, five runs, eight handoffs. The solution comparison is five OptoFlood runs of the same eight-handoff schedule. Exp1 reuses those mobility-event and routing measurements on one seeded r1 schedule shared by its nine cells.
 
 The active main-experiment metrics are service recovery time, content loss fraction, recovery flooding volume, and NLSR control rate. Service recovery time is the time from a handoff until the producer receives the first fresh post-handoff content Interest. Recovery flooding volume is the aggregate bytes of actual OptoFlood flood-marked sender-egress transmissions per handoff. NLSR control rate measures control-plane traffic; recovery flooding volume measures recovery-induced flooding traffic. Exp1 is OptoFlood parameter sensitivity. The Sync publication-delay figure reports service-path LSA lead, service-path FIB convergence, and network-wide FIB convergence. The verification-timeout figure reports complete mobility-topology update latency and the same two FIB times. Production figures:
 
@@ -112,7 +120,7 @@ Recorded by the analysis command, and not used as paper figure inputs:
 
 ## Routing-convergence analysis
 
-`make routing-analysis` and `make plot-routing` read existing `handoffs.txt`, per-node `nlsr.log` and `nfd.log`, and `mobility_packets.csv`. They do not start a VM. A missing input fails with `required routing evidence missing`.
+`make analyse` and `make plot` read `handoffs.txt`, per-node `nlsr.log` and `nfd.log`, and `mobility_packets.csv` when building the routing tables and figures. A missing input is rebuilt from its upstream artifact, or the analysis stops with `required routing evidence missing` if that input is not one of the experiment outputs.
 
 The measured routing quantities are:
 

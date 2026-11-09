@@ -14,9 +14,9 @@
 #
 # Repetition: five independent runs of one producer round trip (8 handoffs).
 # Runs sample NLSR_HANDOFF_INTERVAL_* independently. There is no paired seed.
-# VM recipes are chained by order-only prerequisites so `make -j` stays serial.
-# Order within a profile is r1..r5, then the next profile:
-#   g0/r1 .. g0/r5, g1/r1 .. g1/r5, ..., g4/r1 .. g4/r5.
+# Each run creates a new VM from the Baseline box and destroys it afterwards.
+# Order-only links keep `make -j` serial. Order within a profile is r1..r5,
+# then the next profile: g0/r1 .. g0/r5, g1/r1 .. g1/r5, ..., g4/r1 .. g4/r5.
 
 BASELINE_DEFAULT_DIR = results/baseline/g0-h60-a10-r15-s60
 BASELINE_PROFILE_LIST := g0-h60-a10-r15-s60 g1-h54-a9-r14-s54 g2-h48-a8-r12-s48 g3-h42-a7-r10-s42 g4-h36-a6-r9-s36
@@ -35,7 +35,15 @@ MAIN_HANDOFF_INTERVAL_BASE := 90
 MAIN_HANDOFF_INTERVAL_JITTER := 60
 MAIN_HANDOFF_ENV := NLSR_HANDOFF_COUNT='$(MAIN_HANDOFF_COUNT)' NLSR_HANDOFF_INTERVAL_BASE='$(MAIN_HANDOFF_INTERVAL_BASE)' NLSR_HANDOFF_INTERVAL_JITTER='$(MAIN_HANDOFF_INTERVAL_JITTER)' NLSR_HANDOFF_SEQUENCE='$(MAIN_HANDOFF_SEQUENCE)'
 
-EXPERIMENT_RUN_FILES := consumer_capture.pcap pcap_nodes/core.pcap pcap_nodes/agg1.pcap pcap_nodes/agg2.pcap pcap_nodes/acc1.pcap pcap_nodes/acc2.pcap pcap_nodes/acc3.pcap pcap_nodes/acc4.pcap pcap_nodes/acc5.pcap pcap_nodes/acc6.pcap pcap_nodes/producer.pcap pcap_nodes/consumer.pcap params.txt handoffs.txt
+# Pcaps match NODE_PCAPS. NLSR logs match routing.NODES. NFD logs match
+# routing.ROUTING_UNIVERSE. Producer NFD logs are not required by those analyses.
+MAIN_PCAP_NODES := core agg1 agg2 acc1 acc2 acc3 acc4 acc5 acc6 producer consumer
+MAIN_NLSR_LOG_NODES := producer consumer core agg1 agg2 acc1 acc2 acc3 acc4 acc5 acc6
+MAIN_NFD_LOG_NODES := consumer core agg1 agg2 acc1 acc2 acc3 acc4 acc5 acc6
+EXPERIMENT_RUN_FILES := consumer_capture.pcap params.txt handoffs.txt \
+	$(addprefix pcap_nodes/,$(addsuffix .pcap,$(MAIN_PCAP_NODES))) \
+	$(addprefix minindn-logs/,$(addsuffix /nlsr.log,$(MAIN_NLSR_LOG_NODES))) \
+	$(addprefix minindn-logs/,$(addsuffix /nfd.log,$(MAIN_NFD_LOG_NODES)))
 
 baseline_run_outputs = $(addprefix results/baseline/$(1)/$(2)/,$(EXPERIMENT_RUN_FILES))
 
@@ -65,9 +73,9 @@ $(call baseline_run_outputs,$(1),$(2)) &: scripts/run-in-vm.sh $$(BASELINE_EXPER
 	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="$(BASELINE_PROFILE_ENV_$(1)) $$(MAIN_HANDOFF_ENV) make all" sh $$^ $$@
 endef
 
-# The first run waits for the Baseline smoke. Later runs wait only for the
-# previous run, so one VM is used and a new stamp does not rebuild captures.
-BASELINE_CHAIN_PREV := test/.baseline_pass.$(PROVIDER)
+# The first run waits for both smoke stamps. Later runs wait only for the
+# previous run. A newer stamp or earlier output does not rebuild this run.
+BASELINE_CHAIN_PREV := test/.baseline_pass.$(PROVIDER) test/.solution_pass.$(PROVIDER)
 
 define queue_baseline_run
 $(eval $(call emit_baseline_run,$(1),$(2),$(BASELINE_CHAIN_PREV)))
@@ -76,10 +84,8 @@ endef
 
 $(foreach profile,$(BASELINE_PROFILE_LIST),$(foreach run,$(EXPERIMENT_RUN_IDS),$(call queue_baseline_run,$(profile),$(run))))
 
-# Host-side mobility-event analysis.
-# Prerequisites are the analysis programs only. Raw captures are evidence:
-# the recipe checks that they exist and never lists them as Make targets,
-# so a stale PCAP cannot select the VM recipe.
+# Host-side mobility-event analysis. The raw run outputs are real inputs, so a
+# new capture rebuilds these figures and a missing capture builds that run.
 
 BASELINE_PROFILE_COMPARE_OUTPUTS := results/baseline/mobility_events.csv \
                                    results/baseline/mobility_event_audit.txt \
@@ -91,20 +97,21 @@ BASELINE_PROFILE_COMPARE_OUTPUTS := results/baseline/mobility_events.csv \
 # rule above would rebuild the paper figures whenever this PDF is absent.
 BASELINE_FCR_PDF := results/baseline_forwarding_cost_ratio.pdf
 
-# plot-baseline refreshes these figures after a campaign.
-# Paper builds use the host-side analysis outputs.
+# Paper builds use these host-side analysis outputs.
 BASELINE_ANALYSIS_CMD = python3 -m experiment.tool.analysis.run_mobility_event_analysis analyze-baseline
 
 $(BASELINE_PROFILE_COMPARE_OUTPUTS) &: experiment/tool/analysis/run_mobility_event_analysis.py \
                                       experiment/tool/analysis/mobility_event_metrics.py \
                                       experiment/tool/analysis/plot_mobility_event_metrics.py \
                                       experiment/tool/analysis/extract_overhead_csv.py \
-                                      experiment/tool/resources/ndn.lua
+                                      experiment/tool/resources/ndn.lua \
+                                      $(BASELINE_RAW_OUTPUTS)
 	$(BASELINE_ANALYSIS_CMD)
 
 $(BASELINE_FCR_PDF): experiment/tool/analysis/run_mobility_event_analysis.py \
                         experiment/tool/analysis/mobility_event_metrics.py \
                         experiment/tool/analysis/plot_mobility_event_metrics.py \
                         experiment/tool/analysis/extract_overhead_csv.py \
-                        experiment/tool/resources/ndn.lua
+                        experiment/tool/resources/ndn.lua \
+                        $(BASELINE_RAW_OUTPUTS)
 	$(BASELINE_ANALYSIS_CMD)

@@ -20,6 +20,8 @@ import experiment.tool.analysis.run_mobility_event_analysis as mobility
 ROOT = Path(__file__).resolve().parents[3]
 RESULTS = ROOT / "results" / "extended" / "exp1"
 EXPECTED_HANDOFFS = 8
+# The nine cells share this one repetition. Statistics stay the eight handoffs of that run.
+EXP1_REPETITION = "r1"
 
 SYNC_CELLS: Tuple[Tuple[str, str], ...] = (
     ("d0", "0"),
@@ -153,7 +155,7 @@ def _require_evidence(run_dir: Path) -> None:
 
 
 def _measure_cell(study: str, cell: str, parameter: str) -> List[Dict[str, object]]:
-    run_dir = RESULTS / study / cell
+    run_dir = RESULTS / study / cell / EXP1_REPETITION
     _require_evidence(run_dir)
     packets_path = run_dir / "mobility_packets.csv"
     mobility.decode_run(run_dir, packets_path)

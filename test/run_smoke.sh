@@ -34,16 +34,52 @@ else
   export SOLUTION_BOX_NAME=$box_name
 fi
 
+smoke_vm_absent() {
+  output=$(VAGRANT_DEFAULT_PROVIDER=$provider vagrant status --machine-readable) || return 1
+  printf '%s\n' "$output" | awk -F, '
+    $3 == "state" { seen = 1; if ($4 != "not_created") bad = 1 }
+    END { exit (seen && !bad) ? 0 : 1 }
+  '
+}
+
+destroy_smoke_vm() {
+  destroy_status=0
+  VAGRANT_DEFAULT_PROVIDER=$provider vagrant destroy -f || destroy_status=$?
+  if smoke_vm_absent; then
+    return 0
+  fi
+  echo "smoke VM was not destroyed: $vagrant_dir (destroy status $destroy_status)" >&2
+  return 1
+}
+
+cleanup_smoke() {
+  status=$?
+  if ! destroy_smoke_vm; then
+    if [ "$status" -eq 0 ]; then
+      status=1
+    fi
+  fi
+  rm -f "$root/test/.ssh_config_$role"
+  trap - EXIT
+  exit "$status"
+}
+
 cd "$vagrant_dir"
+if ! destroy_smoke_vm; then
+  echo "refusing to start $role smoke; stale VM remains in $vagrant_dir" >&2
+  exit 1
+fi
+trap cleanup_smoke EXIT
 VAGRANT_DEFAULT_PROVIDER=$provider vagrant up --provision
 VAGRANT_DEFAULT_PROVIDER=$provider vagrant ssh-config --host "$host_alias" > "$root/test/.ssh_config_$role"
 rsync -aH --stats --human-readable -e "ssh -F $root/test/.ssh_config_$role" \
-  --exclude .git --exclude .vagrant --exclude results --exclude paper/bin \
-  --exclude box --exclude '*.box' \
+  --exclude .git/ --exclude .vagrant/ --exclude results/ --exclude paper/bin/ \
+  --exclude box/ --exclude '*.box' \
   --exclude experiment/tool/.venv/ \
   --exclude __pycache__/ \
   --exclude '*.pyc' \
   --exclude '.ssh_config_*' \
+  --exclude '*.tar' --exclude '*.tar.gz' --exclude '*.tgz' \
   "$root/" "$host_alias:/home/vagrant/flooding/"
 
 set +e
@@ -54,5 +90,4 @@ set -e
 mkdir -p "$vagrant_dir/results"
 rsync -aH --stats --human-readable -e "ssh -F $root/test/.ssh_config_$role" \
   "$host_alias:/home/vagrant/flooding/test/$role/results/" "$vagrant_dir/results/" || true
-VAGRANT_DEFAULT_PROVIDER=$provider vagrant halt -f || true
 exit "$status"

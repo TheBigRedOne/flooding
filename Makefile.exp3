@@ -1,5 +1,6 @@
-# Exp3 independent mobility. These targets do not depend on baseline, solution,
-# Exp1, or Exp2 runs. One Exp3 VM is locked, so smoke targets stay serial.
+# Exp3 independent mobility. Formal runs are order-only after the last Exp2 run,
+# so a newer Exp2 output does not rebuild them. One Exp3 VM is locked, so smoke
+# targets stay serial.
 
 EXP3_ROOT := results/extended/exp3
 EXP3_P1_NODES := core agg1 agg2 acc1 acc2 acc3 acc4 acc5 acc6 producer1 consumer1
@@ -59,7 +60,7 @@ $(eval $(call exp3_smoke_rule,P4,p4,1 2 3 4,$(EXP3_P4_NODES)))
 define exp3_full_rule
 EXP3_$(1)_$(2)_OUTPUTS := $$(call exp3_outputs,$(EXP3_ROOT)/$(3)/$(2),$(4),$(5))
 
-$$(EXP3_$(1)_$(2)_OUTPUTS) &: $$(EXP3_VM_PREREQS) | test/.solution_pass.$$(PROVIDER)
+$$(EXP3_$(1)_$(2)_OUTPUTS) &: $$(EXP3_VM_PREREQS) | $(6)
 	RUN_IN_VM_PROFILE=exp3 MOBILITY_LOG_NODES="$(5)" RUN_IN_VM_REMOTE_MAKE="$(SOLUTION_NLSR_ENV) EXP3_POPULATION='$(3)' EXP3_SCHEDULE='full' EXP3_RUN_ID='$(2)' EXP_REQUEST_INTERVAL_MS='20' make exp3" sh $$(EXP3_VM_PREREQS) $$@
 
 .PHONY: experiment-exp3-$(3)-$(2) check-exp3-$(3)-$(2)
@@ -70,38 +71,57 @@ check-exp3-$(3)-$(2):
 	python3 -m experiment.tool.exp3.check_exp3_evidence $(EXP3_ROOT)/$(3)/$(2)
 endef
 
-$(foreach run,$(EXP3_FULL_RUNS),$(eval $(call exp3_full_rule,P1,$(run),p1,1,$(EXP3_P1_NODES))))
-$(foreach run,$(EXP3_FULL_RUNS),$(eval $(call exp3_full_rule,P2,$(run),p2,1 2,$(EXP3_P2_NODES))))
-$(foreach run,$(EXP3_FULL_RUNS),$(eval $(call exp3_full_rule,P4,$(run),p4,1 2 3 4,$(EXP3_P4_NODES))))
+EXP3_CHAIN_PREV := $(EXP2_FORMAL_LAST)
+
+define queue_exp3_p1
+$(eval $(call exp3_full_rule,P1,$(1),p1,1,$(EXP3_P1_NODES),$(EXP3_CHAIN_PREV)))
+$(eval EXP3_CHAIN_PREV := $(EXP3_P1_$(1)_OUTPUTS))
+endef
+
+define queue_exp3_p2
+$(eval $(call exp3_full_rule,P2,$(1),p2,1 2,$(EXP3_P2_NODES),$(EXP3_CHAIN_PREV)))
+$(eval EXP3_CHAIN_PREV := $(EXP3_P2_$(1)_OUTPUTS))
+endef
+
+define queue_exp3_p4
+$(eval $(call exp3_full_rule,P4,$(1),p4,1 2 3 4,$(EXP3_P4_NODES),$(EXP3_CHAIN_PREV)))
+$(eval EXP3_CHAIN_PREV := $(EXP3_P4_$(1)_OUTPUTS))
+endef
+
+$(foreach run,$(EXP3_FULL_RUNS),$(call queue_exp3_p1,$(run)))
+$(foreach run,$(EXP3_FULL_RUNS),$(call queue_exp3_p2,$(run)))
+$(foreach run,$(EXP3_FULL_RUNS),$(call queue_exp3_p4,$(run)))
 
 # Formal VM runs only. One population finishes before the next; smoke and pilot stay out.
 .PHONY: experiment-exp3-p1-full experiment-exp3-p2-full experiment-exp3-p4-full experiment-exp3
 
-experiment-exp3-p1-full:
-	$(MAKE) experiment-exp3-p1-r1
-	$(MAKE) experiment-exp3-p1-r2
-	$(MAKE) experiment-exp3-p1-r3
-	$(MAKE) experiment-exp3-p1-r4
-	$(MAKE) experiment-exp3-p1-r5
+experiment-exp3-p1-full: $(EXP3_P1_r5_OUTPUTS)
 
-experiment-exp3-p2-full:
-	$(MAKE) experiment-exp3-p2-r1
-	$(MAKE) experiment-exp3-p2-r2
-	$(MAKE) experiment-exp3-p2-r3
-	$(MAKE) experiment-exp3-p2-r4
-	$(MAKE) experiment-exp3-p2-r5
+experiment-exp3-p2-full: $(EXP3_P2_r5_OUTPUTS)
 
-experiment-exp3-p4-full:
-	$(MAKE) experiment-exp3-p4-r1
-	$(MAKE) experiment-exp3-p4-r2
-	$(MAKE) experiment-exp3-p4-r3
-	$(MAKE) experiment-exp3-p4-r4
-	$(MAKE) experiment-exp3-p4-r5
+experiment-exp3-p4-full: $(EXP3_P4_r5_OUTPUTS)
 
-experiment-exp3:
-	$(MAKE) experiment-exp3-p1-full
-	$(MAKE) experiment-exp3-p2-full
-	$(MAKE) experiment-exp3-p4-full
+experiment-exp3: $(EXP3_CHAIN_PREV)
+
+EXP3_FORMAL_EVIDENCE := $(foreach run,$(EXP3_FULL_RUNS),$(EXP3_P1_$(run)_OUTPUTS) $(EXP3_P2_$(run)_OUTPUTS) $(EXP3_P4_$(run)_OUTPUTS))
+EXP3_CAMPAIGN_OUTPUTS := $(EXP3_ROOT)/analysis/campaign/campaign_status.txt \
+	$(EXP3_ROOT)/analysis/campaign/events.csv \
+	$(EXP3_ROOT)/analysis/campaign/prefix_rfv.csv \
+	$(EXP3_ROOT)/analysis/campaign/network_overhead.csv \
+	$(EXP3_ROOT)/analysis/campaign/run_summary.csv \
+	$(EXP3_ROOT)/analysis/campaign/timing_audit.csv \
+	$(EXP3_ROOT)/analysis/campaign/population_comparison.csv
+
+$(EXP3_CAMPAIGN_OUTPUTS) &: experiment/tool/exp3/run_exp3_analysis.py \
+	experiment/tool/exp3/exp3_metrics.py \
+	experiment/tool/exp3/exp3_config.py \
+	experiment/tool/exp3/check_exp3_evidence.py \
+	experiment/tool/analysis/mobility_event_metrics.py \
+	experiment/tool/analysis/run_mobility_event_analysis.py \
+	experiment/tool/analysis/extract_overhead_csv.py \
+	experiment/tool/resources/ndn.lua \
+	$(EXP3_FORMAL_EVIDENCE)
+	python3 -m experiment.tool.exp3.run_exp3_analysis --campaign
 
 # One P=4 full sequence in a non-formal directory. Seed 1 matches formal p4/r1.
 EXP3_P4_PILOT_DIR := $(EXP3_ROOT)/p4/pilot
@@ -117,8 +137,9 @@ experiment-exp3-p4-pilot: $(EXP3_P4_PILOT_OUTPUTS)
 check-exp3-p4-pilot:
 	python3 -m experiment.tool.exp3.check_exp3_evidence $(EXP3_P4_PILOT_DIR)
 
-# Host-side measurement only. These targets have no VM, box, or experiment prerequisite.
-.PHONY: analyze-exp3-run analyze-exp3-p4-pilot analyze-exp3-campaign plot-exp3 plot-exp3-pilot plot-exp3-extended
+# Single-run and pilot helpers. The formal campaign tables and paper figures
+# are the file rules used by `analyse` and `plot`.
+.PHONY: analyze-exp3-run analyze-exp3-p4-pilot plot-exp3-pilot
 
 analyze-exp3-run:
 	python3 -m experiment.tool.exp3.run_exp3_analysis $(EXP3_POPULATION) $(EXP3_RUN_ID)
@@ -126,24 +147,5 @@ analyze-exp3-run:
 analyze-exp3-p4-pilot:
 	python3 -m experiment.tool.exp3.run_exp3_analysis p4 pilot
 
-analyze-exp3-campaign:
-	python3 -m experiment.tool.exp3.run_exp3_analysis --campaign
-
-plot-exp3:
-	python3 -m experiment.tool.exp3.plot_exp3
-
 plot-exp3-pilot:
 	python3 -m experiment.tool.exp3.plot_exp3 --pilot
-
-# Supplementary SRT and attachment figures. Reads the formal analysis tree and
-# writes outside it, so the analysis-directory guard stays in force.
-plot-exp3-extended:
-	python3 -m experiment.tool.exp3.plot_exp3 --extended --analysis-root $(EXP3_ROOT)/analysis --figure-dir $(EXP3_ROOT)/paper-figures
-
-# Host-side campaign measurement and paper figures. Does not start a VM.
-.PHONY: analyze-exp3
-
-analyze-exp3:
-	$(MAKE) analyze-exp3-campaign
-	$(MAKE) plot-exp3
-	$(MAKE) plot-exp3-extended

@@ -1,25 +1,52 @@
 # OptoFlood parameter sensitivity.
 # SPRC Sync publication-delay sweep, then EDRC verification-timeout sweep.
-# Order-only links keep every cell on one solution VM: solution outputs,
-# then d0 through d4, then t10 through t250.
+# One r1 schedule is generated before the nine cells and reused by every cell.
+# Each cell creates a new VM from the Solution box. Order-only links run the
+# cells serially: solution outputs, then d0 through d4, then t10 through t250.
 
-SENSITIVITY_INTERVAL_FILE := experiment/extended/sensitivity_handoff_intervals.txt
-SENSITIVITY_INTERVALS := $(strip $(file < $(SENSITIVITY_INTERVAL_FILE)))
+EXP1_RUN_ID := r1
+EXP1_SCHEDULE_SEED := 1
+EXP1_SCHEDULE_DIR := results/extended/exp1/schedules
+EXP1_SCHEDULE_FILE := $(EXP1_SCHEDULE_DIR)/$(EXP1_RUN_ID).txt
+EXP1_SCHEDULE_SEED_FILE := $(EXP1_SCHEDULE_DIR)/$(EXP1_RUN_ID).seed
 SENSITIVITY_SEQUENCE := acc2,acc3,acc4,acc5,acc6,acc5,acc4,acc3,acc2
-SENSITIVITY_COMMON_ENV := NLSR_HANDOFF_COUNT='8' NLSR_HANDOFF_SEQUENCE='$(SENSITIVITY_SEQUENCE)' NLSR_HANDOFF_INTERVALS='$(SENSITIVITY_INTERVALS)' EXP_REQUEST_INTERVAL_MS='20'
+SENSITIVITY_COMMON_ENV := NLSR_HANDOFF_COUNT='8' NLSR_HANDOFF_SEQUENCE='$(SENSITIVITY_SEQUENCE)' EXP_REQUEST_INTERVAL_MS='20'
 SENSITIVITY_FEATURE_ENV := NLSR_RESULT_DRIVEN_ADJ_LSA_BUILD='on' NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION='on' NLSR_CORRIDOR_PRIORITISED_ROUTING='on'
-SENSITIVITY_DRIVER_PREREQS := experiment/tool/common/handoff_schedule.py
+EXP1_VM_PREREQS := scripts/run-in-vm.sh \
+	box/solution/solution.$(PROVIDER).box \
+	experiment/app/producer.cpp \
+	experiment/app/consumer.cpp \
+	experiment/app/optoflood-daemon.cpp \
+	experiment/app/guard_flood_id.hpp \
+	experiment/app/trust-schema.conf \
+	experiment/extended/exp1/Vagrantfile \
+	experiment/extended/exp1/Makefile \
+	experiment/tool/common/exp.py \
+	experiment/tool/common/handoff_schedule.py \
+	$(EXP1_SCHEDULE_FILE) \
+	$(EXP1_SCHEDULE_SEED_FILE)
+
+# The seed and the nine intervals are one artifact. A later cell retry does not
+# rebuild them unless the Exp1 generator or the shared formatter changes.
+$(EXP1_SCHEDULE_FILE) $(EXP1_SCHEDULE_SEED_FILE) &: \
+	experiment/tool/exp1/generate_schedule.py \
+	experiment/tool/common/handoff_schedule.py
+	python3 -m experiment.tool.exp1.generate_schedule --directory $(EXP1_SCHEDULE_DIR) --run-id $(EXP1_RUN_ID) --seed $(EXP1_SCHEDULE_SEED)
 
 SENSITIVITY_SYNC_ROOT := results/extended/exp1/sync-delay
 SENSITIVITY_TIMEOUT_ROOT := results/extended/exp1/verification-timeout
 
-sensitivity_cell_outputs = $(addprefix $(1)/,$(EXPERIMENT_RUN_FILES))
+sensitivity_cell_outputs = $(addprefix $(1)/$(EXP1_RUN_ID)/,$(EXPERIMENT_RUN_FILES))
 
-# $(1) result directory, $(2) order-only predecessor outputs,
+# $(1) cell directory, $(2) order-only predecessor outputs,
 # $(3) sync publication delay in seconds, $(4) verification timeout in ms.
+# The interval list is read when the recipe runs, not while Make parses this file.
 define emit_sensitivity_cell
-$(call sensitivity_cell_outputs,$(1)) &: scripts/run-in-vm.sh $$(SOLUTION_INPUTS) $(SENSITIVITY_DRIVER_PREREQS) $(SENSITIVITY_INTERVAL_FILE)$(if $(2), | $(2))
-	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="$$(SENSITIVITY_COMMON_ENV) $$(SENSITIVITY_FEATURE_ENV) NLSR_CORRIDOR_ADJ_LSA_SYNC_PUBLISH_DELAY='$(3)' NLSR_EVENT_DRIVEN_VERIFICATION_TIMEOUT_MS='$(4)' make all" sh $$^ $$@
+$(call sensitivity_cell_outputs,$(1)) &: $$(EXP1_VM_PREREQS)$(if $(2), | $(2))
+	set -eu; \
+	intervals=$$$$(tr -d '\r\n' < $(EXP1_SCHEDULE_FILE)); \
+	test -n "$$$$intervals"; \
+	RUN_IN_VM_PROFILE=exp1 RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="$$(SENSITIVITY_COMMON_ENV) $$(SENSITIVITY_FEATURE_ENV) NLSR_HANDOFF_INTERVALS=\"$$$$intervals\" NLSR_CORRIDOR_ADJ_LSA_SYNC_PUBLISH_DELAY='$(3)' NLSR_EVENT_DRIVEN_VERIFICATION_TIMEOUT_MS='$(4)' make all" sh $$(EXP1_VM_PREREQS) $$@
 endef
 
 SENSITIVITY_SYNC_PREV := $(SOLUTION_RESULTS)
@@ -42,20 +69,19 @@ $(eval $(call emit_sensitivity_cell,$(SENSITIVITY_TIMEOUT_ROOT)/t100,$(SENSITIVI
 $(eval SENSITIVITY_TIMEOUT_PREV := $(call sensitivity_cell_outputs,$(SENSITIVITY_TIMEOUT_ROOT)/t100))
 $(eval $(call emit_sensitivity_cell,$(SENSITIVITY_TIMEOUT_ROOT)/t250,$(SENSITIVITY_TIMEOUT_PREV),1,250))
 
-.PHONY: experiment-exp1-sync-delay experiment-exp1-verification-timeout \
-        analyze-exp1-sync-delay analyze-exp1-verification-timeout analyze-exp1-sensitivity
+EXP1_RAW_OUTPUTS := \
+	$(call sensitivity_cell_outputs,$(SENSITIVITY_SYNC_ROOT)/d0) \
+	$(call sensitivity_cell_outputs,$(SENSITIVITY_SYNC_ROOT)/d1) \
+	$(call sensitivity_cell_outputs,$(SENSITIVITY_SYNC_ROOT)/d2) \
+	$(call sensitivity_cell_outputs,$(SENSITIVITY_SYNC_ROOT)/d4) \
+	$(call sensitivity_cell_outputs,$(SENSITIVITY_TIMEOUT_ROOT)/t10) \
+	$(call sensitivity_cell_outputs,$(SENSITIVITY_TIMEOUT_ROOT)/t25) \
+	$(call sensitivity_cell_outputs,$(SENSITIVITY_TIMEOUT_ROOT)/t50) \
+	$(call sensitivity_cell_outputs,$(SENSITIVITY_TIMEOUT_ROOT)/t100) \
+	$(call sensitivity_cell_outputs,$(SENSITIVITY_TIMEOUT_ROOT)/t250)
+
+.PHONY: experiment-exp1-sync-delay experiment-exp1-verification-timeout
 
 experiment-exp1-sync-delay: $(call sensitivity_cell_outputs,$(SENSITIVITY_SYNC_ROOT)/d4)
 
 experiment-exp1-verification-timeout: $(call sensitivity_cell_outputs,$(SENSITIVITY_TIMEOUT_ROOT)/t250)
-
-analyze-exp1-sync-delay:
-	python3 -m experiment.tool.exp1.run_sensitivity_analysis sync-delay
-
-analyze-exp1-verification-timeout:
-	python3 -m experiment.tool.exp1.run_sensitivity_analysis verification-timeout
-
-analyze-exp1-sensitivity:
-	python3 -m experiment.tool.exp1.run_sensitivity_analysis sync-delay
-	python3 -m experiment.tool.exp1.run_sensitivity_analysis verification-timeout
-	python3 -m experiment.tool.exp1.run_sensitivity_analysis cross-check

@@ -32,7 +32,7 @@ BASELINE_PROFILE_DIRS := $(addprefix results/baseline/,$(BASELINE_PROFILE_LIST))
 
 # Active paper figures. Baseline tuning is G0..G4: SRT, content loss fraction,
 # and NLSR control rate. The OptoFlood comparison adds recovery flooding volume.
-# Routing convergence figures are produced by routing-analysis. Legacy
+# Routing convergence figures are produced with the routing tables. Legacy
 # forwarding-cost-ratio PDFs stay on the lower-level analysis targets only.
 GENERATED_FIGURES := results/baseline_service_recovery_time.pdf \
                      results/baseline_content_loss_fraction.pdf \
@@ -128,45 +128,27 @@ PLOT_TOOL_SRCS := experiment/tool/common/exp.py \
                   experiment/tool/analysis/run_mobility_event_analysis.py \
                   experiment/tool/analysis/run_routing_convergence_analysis.py
 
-# Full workflow. Each recipe line finishes before the next, including under
-# `make -j`. Baseline and Solution experiments pull their smoke stamps.
-all:
-	$(MAKE) experiment-baseline
-	$(MAKE) experiment-solution
-	$(MAKE) experiment-exp1
-	$(MAKE) experiment-exp2
-	$(MAKE) experiment-exp3
-	$(MAKE) mobility-analysis
-	$(MAKE) analyze-exp2
-	$(MAKE) analyze-exp3
-	$(MAKE) paper
+# Full workflow. File and order-only prerequisites enforce the stage order,
+# including under `make -j`.
+all: paper/OptoFlood.pdf
 
 # High-level orchestration targets (set the provider via `PROVIDER=...` when needed)
-.PHONY: boxes experiment experiment-baseline experiment-solution experiment-exp1 plot-exp1 exp1 \
-        result plot plot-baseline plot-main paper test mypy vm-clean
+.PHONY: boxes experiment experiment-baseline experiment-solution experiment-exp1 exp1 \
+        analyse plot paper test mypy vm-clean
 
 
 # Experiments run inside VMs and pull the captures back.
-# Baseline, solution, and Exp1 run one after another.
+# `experiment` is the five formal groups. The last Exp3 run order-only follows
+# Exp2, Exp1, Solution, and Baseline. Analyses and the paper stay on `all`.
 experiment-baseline: $(BASELINE_RAW_OUTPUTS)
 
 experiment-solution: $(SOLUTION_RESULTS)
 
-experiment-exp1:
-	$(MAKE) experiment-exp1-sync-delay
-	$(MAKE) experiment-exp1-verification-timeout
+experiment-exp1: $(call sensitivity_cell_outputs,$(SENSITIVITY_TIMEOUT_ROOT)/t250)
 
-exp1:
-	$(MAKE) experiment-exp1
-	$(MAKE) plot-exp1
+exp1: $(EXP1_PAPER_FIGURES)
 
-experiment:
-	$(MAKE) experiment-baseline
-	$(MAKE) experiment-solution
-	$(MAKE) experiment-exp1
-
-# Baseline and solution comparison outputs, plus the Exp1 sensitivity figures.
-result: $(BASELINE_PROFILE_COMPARE_OUTPUTS) $(SOLUTION_COMPARE_OUTPUTS) $(EXP1_PAPER_FIGURES)
+experiment: experiment-exp3
 
 # Integration smokes. A stamp exists only after that smoke's assertions pass.
 # The provider is part of the file name, so one hypervisor cannot satisfy the other.
@@ -199,57 +181,39 @@ SOLUTION_SMOKE_INPUTS := box/solution/solution.$(PROVIDER).box \
 	test/smoke_validate.py \
 	test/solution/Vagrantfile
 
-$(BASELINE_SMOKE_PASS): $(BASELINE_SMOKE_INPUTS)
+$(BASELINE_SMOKE_PASS): $(BASELINE_SMOKE_INPUTS) | box/solution/solution.$(PROVIDER).box
 	rm -f $@
 	PROVIDER=$(PROVIDER) sh test/run_smoke.sh baseline
 	echo $(PROVIDER) > $@
 
-$(SOLUTION_SMOKE_PASS): $(SOLUTION_SMOKE_INPUTS)
+$(SOLUTION_SMOKE_PASS): $(SOLUTION_SMOKE_INPUTS) | $(BASELINE_SMOKE_PASS)
 	rm -f $@
 	PROVIDER=$(PROVIDER) sh test/run_smoke.sh solution
 	echo $(PROVIDER) > $@
 
-test:
-	$(MAKE) $(BASELINE_SMOKE_PASS)
-	$(MAKE) $(SOLUTION_SMOKE_PASS)
+test: $(BASELINE_SMOKE_PASS) $(SOLUTION_SMOKE_PASS)
 
-# Plot only (reuse existing captures; no VM run).
-# plot-main is the G0-versus-OptoFlood box plots.
-# plot-baseline and plot-main refresh the host-side comparison figures.
-plot: plot-baseline plot-main
-
-# Host-side analysis. `make all` runs these targets after the experiments,
-# so the PDF figures come from the captures just written.
-
-.PHONY: mobility-analysis routing-analysis plot-routing
-
-mobility-analysis:
-	$(MAKE) plot-baseline
-	$(MAKE) plot-main
-	$(MAKE) routing-analysis
-	$(MAKE) plot-exp1
-
-# One command, used by the explicit routing-analysis target and by the paper
-# PDF rule. The PDF rule must not call $(MAKE): a dry-run would execute that
-# recipe, and a failed grouped-target update can delete the sibling PDF.
+# One command writes the routing tables and the three paper figures. The
+# stacked routing_fib_convergence.pdf remains a diagnostic side effect and is
+# not a member of this group. Mobility tables are real inputs, so missing
+# captures are built before this command.
 ROUTING_ANALYSIS_CMD = python3 -m experiment.tool.analysis.run_routing_convergence_analysis
-
-routing-analysis:
-	$(ROUTING_ANALYSIS_CMD)
-
-# Paper depends on the topology-update PDF and the two FIB subfigure PDFs.
-# The stacked routing_fib_convergence.pdf remains a diagnostic side effect of
-# the analysis command and is not a paper input. Missing a paper PDF reruns
-# analysis of existing logs and captures, and does not start a VM.
 ROUTING_PAPER_FIGURES := results/routing_topology_update_latency.pdf \
                          results/routing_service_path_fib_convergence.pdf \
                          results/routing_network_fib_convergence.pdf
+ROUTING_ANALYSIS_OUTPUTS := results/routing/routing_events.csv \
+                            results/routing/service_path_lsa_lead.csv \
+                            results/routing/service_path_priority_lead_pairs.csv \
+                            results/routing/routing_summary.csv \
+                            results/routing/routing_summary.txt \
+                            results/routing/routing_audit.txt
 
-$(ROUTING_PAPER_FIGURES) &: experiment/tool/analysis/run_routing_convergence_analysis.py \
-                            experiment/tool/analysis/routing_convergence_metrics.py
+$(ROUTING_ANALYSIS_OUTPUTS) $(ROUTING_PAPER_FIGURES) &: \
+                            experiment/tool/analysis/run_routing_convergence_analysis.py \
+                            experiment/tool/analysis/routing_convergence_metrics.py \
+                            results/baseline/mobility_events.csv \
+                            results/solution/mobility_events.csv
 	$(ROUTING_ANALYSIS_CMD)
-
-plot-routing: routing-analysis
 
 define EXP1_ANALYSIS_CMD
 python3 -m experiment.tool.exp1.run_sensitivity_analysis sync-delay
@@ -257,25 +221,46 @@ python3 -m experiment.tool.exp1.run_sensitivity_analysis verification-timeout
 python3 -m experiment.tool.exp1.run_sensitivity_analysis cross-check
 endef
 
-plot-exp1:
-	$(EXP1_ANALYSIS_CMD)
+# The sensitivity studies and the default cross-check are one invocation.
+# Cross-check reads the solution mobility table and the routing event table.
+EXP1_ANALYSIS_OUTPUTS := results/extended/exp1/sync-delay/sensitivity_events.csv \
+                         results/extended/exp1/sync-delay/sensitivity_summary.txt \
+                         results/extended/exp1/verification-timeout/sensitivity_events.csv \
+                         results/extended/exp1/verification-timeout/sensitivity_summary.txt \
+                         results/extended/exp1/default_cross_check.txt
 
-# Host-side Exp1 figures. plot-exp1 runs this analysis after the experiment stage.
-# Paper builds these outputs directly.
-$(EXP1_PAPER_FIGURES) &: experiment/tool/exp1/run_sensitivity_analysis.py \
+$(EXP1_ANALYSIS_OUTPUTS) $(EXP1_PAPER_FIGURES) &: \
+                         experiment/tool/exp1/run_sensitivity_analysis.py \
                          experiment/tool/analysis/mobility_event_metrics.py \
                          experiment/tool/analysis/routing_convergence_metrics.py \
                          experiment/tool/analysis/run_mobility_event_analysis.py \
                          experiment/tool/analysis/plot_mobility_event_metrics.py \
                          experiment/tool/analysis/extract_overhead_csv.py \
-                         experiment/tool/resources/ndn.lua
+                         experiment/tool/resources/ndn.lua \
+                         $(EXP1_RAW_OUTPUTS) \
+                         results/solution/mobility_events.csv \
+                         results/routing/routing_events.csv
 	$(EXP1_ANALYSIS_CMD)
 
-plot-baseline:
-	$(BASELINE_ANALYSIS_CMD)
+# Analysis products. Baseline, Solution, routing, and Exp1 tables share their
+# generating commands with the corresponding paper figures, so those grouped
+# rules run once. Exp2 and Exp3 tables are separate from their plot recipes.
+ANALYSE_OUTPUTS := results/baseline/mobility_events.csv \
+                   results/baseline/mobility_event_audit.txt \
+                   results/solution/mobility_events.csv \
+                   results/solution/mobility_event_audit.txt \
+                   $(ROUTING_ANALYSIS_OUTPUTS) \
+                   $(EXP1_ANALYSIS_OUTPUTS) \
+                   $(EXP2_SHARED_ANALYSIS_OUTPUTS) \
+                   $(EXP2_DISTINCT_ANALYSIS_OUTPUTS) \
+                   $(EXP3_CAMPAIGN_OUTPUTS)
 
-plot-main:
-	$(SOLUTION_ANALYSIS_CMD)
+analyse: $(ANALYSE_OUTPUTS)
+
+# Experiment-derived figures named by paper/OptoFlood.tex. Static diagrams
+# under paper/figures/ stay on the paper rule only.
+plot: $(GENERATED_FIGURES) $(EXP1_PAPER_FIGURES) $(EXP2_PAPER_FIGURES) \
+      $(EXP3_FORMAL_PAPER_FIGURES) $(EXP3_SUPPLEMENTARY_FIGURES)
 
 # Build the paper PDF (follow dependencies; do not hand-check and exit)
 paper: paper/OptoFlood.pdf
@@ -349,7 +334,7 @@ deep-clean: clean
 
 # SSH configs for the formal experiments and the two smoke VMs.
 clean-ssh-config:
-	rm -f .ssh_config_baseline .ssh_config_solution .ssh_config_exp2 .ssh_config_exp3 \
+	rm -f .ssh_config_baseline .ssh_config_solution .ssh_config_exp1 .ssh_config_exp2 .ssh_config_exp3 \
 	  test/.ssh_config_baseline test/.ssh_config_solution
 
 # Destroy repository VMs and keep generated boxes.
@@ -357,7 +342,7 @@ vm-clean:
 	PROVIDER=$(PROVIDER) LATEXMK=latexmk sh scripts/cleanup.sh vm-clean
 
 
-.PHONY: all build-boxes boxes clean deep-clean clean-ssh-config box box-initial box-baseline box-solution experiment experiment-baseline experiment-solution experiment-exp1 plot-exp1 exp1 result plot plot-baseline plot-main paper test mypy vm-clean mobility-analysis routing-analysis plot-routing
+.PHONY: all build-boxes boxes clean deep-clean clean-ssh-config box box-initial box-baseline box-solution experiment experiment-baseline experiment-solution experiment-exp1 exp1 analyse plot paper test mypy vm-clean
 
 .DELETE_ON_ERROR:
 

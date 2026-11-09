@@ -81,8 +81,66 @@ provider=${PROVIDER:-virtualbox}
 remote_dir=${REMOTE_DIR:-/home/vagrant/flooding}
 mobility_log_nodes=${MOBILITY_LOG_NODES:-"core agg1 agg2 acc1 acc2 acc3 acc4 acc5 acc6 producer consumer"}
 profile=${RUN_IN_VM_PROFILE:-}
+ssh_config=
+vm_lock=
+vagrant_dir=
 
-if [ "$profile" = "exp2" ]; then
+# True only when every machine in this Vagrant project is not_created.
+project_vm_absent() {
+  output=$(VAGRANT_DEFAULT_PROVIDER="$provider" VAGRANT_CWD="$vagrant_dir" vagrant status --machine-readable) || return 1
+  printf '%s\n' "$output" | awk -F, '
+    $3 == "state" { seen = 1; if ($4 != "not_created") bad = 1 }
+    END { exit (seen && !bad) ? 0 : 1 }
+  '
+}
+
+# Destroy only this project. Success means the project is not_created afterwards.
+destroy_project_vm() {
+  destroy_status=0
+  VAGRANT_DEFAULT_PROVIDER="$provider" VAGRANT_CWD="$vagrant_dir" vagrant destroy -f || destroy_status=$?
+  if project_vm_absent; then
+    return 0
+  fi
+  echo "$experiment VM in $vagrant_dir is still present after destroy (destroy status $destroy_status)" >&2
+  return 1
+}
+
+release_run_files() {
+  if [ -n "$ssh_config" ]; then
+    rm -f "$ssh_config"
+  fi
+  if [ -n "$vm_lock" ]; then
+    rm -f "$vm_lock/pid"
+    rmdir "$vm_lock" 2>/dev/null || true
+  fi
+}
+
+finish_run() {
+  status=$1
+  if ! destroy_project_vm; then
+    echo "$experiment VM cleanup failed for $vagrant_dir" >&2
+    if [ "$status" -eq 0 ]; then
+      status=1
+    fi
+  fi
+  release_run_files
+  trap - EXIT
+  exit "$status"
+}
+
+cleanup_run() {
+  status=$?
+  finish_run "$status"
+}
+
+if [ "$profile" = "exp1" ]; then
+  experiment=exp1
+  host_alias=exp1
+  vagrant_dir=experiment/extended/exp1
+  box_env_name=ACTUAL_SOLUTION_BOX_PATH
+  remote_subdir=experiment/extended/exp1
+  remote_make=${RUN_IN_VM_REMOTE_MAKE:?RUN_IN_VM_REMOTE_MAKE is required for exp1}
+elif [ "$profile" = "exp2" ]; then
   experiment=exp2
   host_alias=exp2
   vagrant_dir=experiment/extended/exp2
@@ -125,73 +183,139 @@ else
 fi
 
 ssh_config=${RUN_IN_VM_SSH_CONFIG:-.ssh_config_${experiment}}
+vm_lock=${RUN_IN_VM_LOCK:-.${experiment}-vm.lock}
+if ! mkdir "$vm_lock" 2>/dev/null; then
+  echo "$experiment VM is already in use ($vm_lock)" >&2
+  exit 1
+fi
+echo $$ > "$vm_lock/pid"
+trap cleanup_run EXIT
 
-if [ "$experiment" = "exp2" ]; then
+if [ "$experiment" = "exp2" ] || [ "$experiment" = "exp3" ]; then
   if ! single_run_root "$result_dir" "$target_output"; then
-    echo "refusing to replace Exp2 results outside one run directory: $result_dir" >&2
+    echo "refusing to replace $experiment results outside one run directory: $result_dir" >&2
     exit 1
   fi
-  exp2_lock=${RUN_IN_VM_LOCK:-.exp2-vm.lock}
-  if ! mkdir "$exp2_lock" 2>/dev/null; then
-    echo "Exp2 VM is already in use ($exp2_lock)" >&2
-    exit 1
-  fi
-  trap 'rc=$?; VAGRANT_DEFAULT_PROVIDER="$provider" VAGRANT_CWD="$vagrant_dir" vagrant halt -f >/dev/null 2>&1 || true; rmdir "$exp2_lock" 2>/dev/null || true; exit "$rc"' EXIT
-elif [ "$experiment" = "exp3" ]; then
-  if ! single_run_root "$result_dir" "$target_output"; then
-    echo "refusing to replace Exp3 results outside one run directory: $result_dir" >&2
-    exit 1
-  fi
-  exp3_lock=${RUN_IN_VM_LOCK:-.exp3-vm.lock}
-  if ! mkdir "$exp3_lock" 2>/dev/null; then
-    echo "Exp3 VM is already in use ($exp3_lock)" >&2
-    exit 1
-  fi
-  trap 'rc=$?; VAGRANT_DEFAULT_PROVIDER="$provider" VAGRANT_CWD="$vagrant_dir" vagrant halt -f >/dev/null 2>&1 || true; rmdir "$exp3_lock" 2>/dev/null || true; exit "$rc"' EXIT
 fi
 
 echo "*** Running experiment VM workflow: $remote_subdir ($provider, dir=$vagrant_dir)"
 
+if ! destroy_project_vm; then
+  echo "refusing to start $experiment; stale VM remains in $vagrant_dir" >&2
+  exit 1
+fi
 env "$box_env_name=$box_path" VAGRANT_DEFAULT_PROVIDER="$provider" VAGRANT_CWD="$vagrant_dir" vagrant up --provision
 VAGRANT_DEFAULT_PROVIDER="$provider" VAGRANT_CWD="$vagrant_dir" vagrant ssh-config --host "$host_alias" > "$ssh_config"
 
-if [ "$experiment" = "exp2" ] || [ "$experiment" = "exp3" ]; then
-  rsync -avH -e "ssh -F $ssh_config -o TCPKeepAlive=no -o ServerAliveInterval=10" --exclude .git --exclude .vagrant --exclude results --exclude paper/bin --exclude box --exclude '*.box' --exclude '*.tar' --exclude '*.tar.gz' --exclude '*.tgz' ./ "$host_alias:$remote_dir/"
-else
-  rsync -avH -e "ssh -F $ssh_config -o TCPKeepAlive=no -o ServerAliveInterval=10" --exclude .git --exclude .vagrant --exclude results --exclude paper/bin ./ "$host_alias:$remote_dir/"
+ready=0
+attempt=0
+while [ "$attempt" -lt 30 ]; do
+  if ssh -F "$ssh_config" -o BatchMode=yes -o ConnectTimeout=5 -o TCPKeepAlive=no "$host_alias" true; then
+    ready=1
+    break
+  fi
+  attempt=$((attempt + 1))
+  sleep 2
+done
+if [ "$ready" -ne 1 ]; then
+  echo "SSH to $host_alias was not ready" >&2
+  exit 1
 fi
+
+rsync -aH --stats --human-readable \
+  -e "ssh -F $ssh_config -o TCPKeepAlive=no -o ServerAliveInterval=10 -o BatchMode=yes" \
+  --exclude .git/ --exclude .vagrant/ --exclude results/ --exclude paper/bin/ \
+  --exclude experiment/tool/.venv/ --exclude __pycache__/ --exclude '*.pyc' \
+  --exclude '.ssh_config_*' --exclude box/ --exclude '*.box' \
+  --exclude '*.tar' --exclude '*.tar.gz' --exclude '*.tgz' \
+  ./ "$host_alias:$remote_dir/"
 
 mkdir -p "$result_dir"
 if [ "$experiment" = "exp2" ] || [ "$experiment" = "exp3" ]; then
-  # Clear this out-of-date run before the new guest results are copied back.
   rm -rf "$result_dir"/*
 elif [ "${RUN_IN_VM_CLEAR_LOCAL:-}" = "1" ]; then
   rm -rf "$result_dir"/*
 fi
 
-# Use ssh -F directly so the keepalive options appended to $ssh_config above take effect on the long-running command.
+# Best-effort copies for experiments whose node set is not the main topology.
 copy_guest_diagnostics() {
-  ssh -F "$ssh_config" -o TCPKeepAlive=no -o ServerAliveInterval=10 "$host_alias" "set -e; cd $remote_dir/$remote_subdir && mkdir -p results/minindn-logs; if [ -d /tmp/minindn ]; then for name in $mobility_log_nodes; do node=/tmp/minindn/\$name; if [ -d \"\$node/log\" ]; then mkdir -p \"results/minindn-logs/\$name\"; cp -f \"\$node/log/nfd.log\" \"results/minindn-logs/\$name/\" 2>/dev/null || true; cp -f \"\$node/log/nlsr.log\" \"results/minindn-logs/\$name/\" 2>/dev/null || true; fi; done; fi"
+  ssh -F "$ssh_config" -o BatchMode=yes -o TCPKeepAlive=no -o ServerAliveInterval=10 "$host_alias" "set -e; cd $remote_dir/$remote_subdir && mkdir -p results/minindn-logs; if [ -d /tmp/minindn ]; then for name in $mobility_log_nodes; do node=/tmp/minindn/\$name; if [ -d \"\$node/log\" ]; then mkdir -p \"results/minindn-logs/\$name\"; cp -f \"\$node/log/nfd.log\" \"results/minindn-logs/\$name/\" 2>/dev/null || true; cp -f \"\$node/log/nlsr.log\" \"results/minindn-logs/\$name/\" 2>/dev/null || true; fi; done; fi"
 }
 
-if [ "$experiment" = "exp3" ]; then
-  # set -e would skip every later copy when the guest make fails. Collection is
-  # best-effort and does not change the guest status.
-  guest_status=0
-  ssh -F "$ssh_config" -o TCPKeepAlive=no -o ServerAliveInterval=10 "$host_alias" "set -e; cd $remote_dir/$remote_subdir && make clean && $remote_make" || guest_status=$?
-  if [ "$guest_status" -ne 0 ]; then
-    copy_guest_diagnostics || true
-    rsync -avH -e "ssh -F $ssh_config -o TCPKeepAlive=no -o ServerAliveInterval=10" "$host_alias:$remote_dir/$remote_subdir/results/." "$result_dir/" || true
-    echo "Exp3 guest command failed with status ${guest_status}; diagnostic results were copied when available" >&2
-    exit "$guest_status"
-  fi
-  copy_guest_diagnostics
-else
-  ssh -F "$ssh_config" -o TCPKeepAlive=no -o ServerAliveInterval=10 "$host_alias" "set -e; cd $remote_dir/$remote_subdir && make clean && $remote_make; mkdir -p results/minindn-logs; if [ -d /tmp/minindn ]; then for name in $mobility_log_nodes; do node=/tmp/minindn/\$name; if [ -d \"\$node/log\" ]; then mkdir -p \"results/minindn-logs/\$name\"; cp -f \"\$node/log/nfd.log\" \"results/minindn-logs/\$name/\" 2>/dev/null || true; cp -f \"\$node/log/nlsr.log\" \"results/minindn-logs/\$name/\" 2>/dev/null || true; fi; done; fi"
-fi
+# NLSR logs for routing.NODES and NFD logs for routing.ROUTING_UNIVERSE.
+# A missing required log fails this command. Producer NFD is supplementary.
+copy_required_logs() {
+  ssh -F "$ssh_config" -o BatchMode=yes -o TCPKeepAlive=no -o ServerAliveInterval=10 "$host_alias" "set -eu; cd $remote_dir/$remote_subdir; copy_log() { name=\$1; kind=\$2; src=/tmp/minindn/\$name/log/\$kind.log; dest=results/minindn-logs/\$name/\$kind.log; test -f \"\$src\"; mkdir -p \"results/minindn-logs/\$name\"; cp -f \"\$src\" \"\$dest\"; }; for name in producer consumer core agg1 agg2 acc1 acc2 acc3 acc4 acc5 acc6; do copy_log \"\$name\" nlsr; done; for name in consumer core agg1 agg2 acc1 acc2 acc3 acc4 acc5 acc6; do copy_log \"\$name\" nfd; done; if [ -f /tmp/minindn/producer/log/nfd.log ]; then mkdir -p results/minindn-logs/producer; cp -f /tmp/minindn/producer/log/nfd.log results/minindn-logs/producer/nfd.log || true; fi"
+}
 
-rsync -avH -e "ssh -F $ssh_config -o TCPKeepAlive=no -o ServerAliveInterval=10" "$host_alias:$remote_dir/$remote_subdir/results/." "$result_dir/"
-VAGRANT_DEFAULT_PROVIDER="$provider" VAGRANT_CWD="$vagrant_dir" vagrant halt -f || true
+copy_guest_results() {
+  rsync -aH --stats --human-readable \
+    -e "ssh -F $ssh_config -o TCPKeepAlive=no -o ServerAliveInterval=10 -o BatchMode=yes" \
+    "$host_alias:$remote_dir/$remote_subdir/results/." "$result_dir/"
+}
+
+main_experiment() {
+  [ "$experiment" = "baseline" ] || [ "$experiment" = "solution" ] || [ "$experiment" = "exp1" ]
+}
+
+require_main_evidence() {
+  missing=0
+  for name in params.txt handoffs.txt consumer_capture.pcap; do
+    if [ ! -f "$result_dir/$name" ]; then
+      echo "required evidence missing: $result_dir/$name" >&2
+      missing=1
+    fi
+  done
+  for node in core agg1 agg2 acc1 acc2 acc3 acc4 acc5 acc6 producer consumer; do
+    if [ ! -f "$result_dir/pcap_nodes/$node.pcap" ]; then
+      echo "required evidence missing: $result_dir/pcap_nodes/$node.pcap" >&2
+      missing=1
+    fi
+    if [ ! -f "$result_dir/minindn-logs/$node/nlsr.log" ]; then
+      echo "required evidence missing: $result_dir/minindn-logs/$node/nlsr.log" >&2
+      missing=1
+    fi
+  done
+  for node in consumer core agg1 agg2 acc1 acc2 acc3 acc4 acc5 acc6; do
+    if [ ! -f "$result_dir/minindn-logs/$node/nfd.log" ]; then
+      echo "required evidence missing: $result_dir/minindn-logs/$node/nfd.log" >&2
+      missing=1
+    fi
+  done
+  [ "$missing" -eq 0 ]
+}
+
+collect_logs() {
+  if main_experiment; then
+    copy_required_logs
+  else
+    copy_guest_diagnostics
+  fi
+}
+
+guest_status=0
+ssh -F "$ssh_config" -o BatchMode=yes -o TCPKeepAlive=no -o ServerAliveInterval=10 "$host_alias" "set -e; cd $remote_dir/$remote_subdir && make clean && $remote_make" || guest_status=$?
+log_status=0
+result_status=0
+collect_logs || log_status=$?
+copy_guest_results || result_status=$?
+if [ "$guest_status" -ne 0 ]; then
+  echo "$experiment guest command failed with status ${guest_status}; log copy status ${log_status}; result copy status ${result_status}" >&2
+  exit "$guest_status"
+fi
+if [ "$result_status" -ne 0 ]; then
+  echo "mandatory result retrieval failed with status ${result_status}; log copy status ${log_status}" >&2
+  exit "$result_status"
+fi
+if main_experiment; then
+  if [ "$log_status" -ne 0 ]; then
+    echo "required log collection failed with status ${log_status}" >&2
+    exit "$log_status"
+  fi
+  require_main_evidence
+elif [ "$log_status" -ne 0 ]; then
+  echo "$experiment supplementary log collection failed with status ${log_status}" >&2
+fi
 
 echo ""
 echo "*** Finished experiment VM workflow: $remote_subdir ($provider, dir=$vagrant_dir)"
