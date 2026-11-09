@@ -136,7 +136,13 @@ destroy_smoke_vm() {
     vagrant destroy -f; then
     echo "vagrant destroy failed for $vagrant_dir" >&2
   fi
-  if ! project_is_absent "$vagrant_dir"; then
+  # vagrant status loads the smoke Vagrantfile, which requires the same
+  # box path and name as destroy. Keep them in this subshell only.
+  if ! (
+    export "$path_var=$box_file"
+    export "$name_var=$box_name"
+    project_is_absent "$vagrant_dir"
+  ); then
     echo "$vagrant_dir is still present after destroy" >&2
   fi
 }

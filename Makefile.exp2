@@ -197,7 +197,8 @@ $(EXP2_SHARED_ANALYSIS_OUTPUTS) &: experiment/tool/exp2/run_exp2_scale_analysis.
 	experiment/tool/analysis/run_mobility_event_analysis.py \
 	experiment/tool/analysis/extract_overhead_csv.py \
 	experiment/tool/resources/ndn.lua \
-	$(EXP2_SHARED_RAW_OUTPUTS)
+	$(EXP2_SHARED_RAW_OUTPUTS) \
+	results/solution/mobility_events.csv
 	python3 -m experiment.tool.exp2.run_exp2_scale_analysis
 
 $(EXP2_DISTINCT_ANALYSIS_OUTPUTS) &: experiment/tool/exp2/run_exp2_distinct_analysis.py \
