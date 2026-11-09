@@ -1,13 +1,12 @@
 # Rules to run the OptoFlood experiment.
 #
 # Five independent runs of the same 8-handoff round trip as the baseline.
-# MAIN_HANDOFF_* comes from Makefile.baseline. Intervals are sampled again
-# inside each run; they are not paired with a baseline run.
+# The handoff values are owned here. Intervals are sampled again inside each
+# run; they are not paired with a baseline run.
 # Each run creates a new VM from the Solution box and destroys it afterwards.
 # The five recipes are order-only chained. The first waits for
 # experiment-baseline, so a newer Baseline output does not rebuild these
-# captures. MAIN_HANDOFF_* is defined in Makefile.baseline, so that file is a
-# normal prerequisite.
+# captures.
 
 SOLUTION_INPUTS = box/solution/solution.$(PROVIDER).box \
                   experiment/app/producer.cpp \
@@ -20,7 +19,12 @@ SOLUTION_INPUTS = box/solution/solution.$(PROVIDER).box \
                   experiment/tool/common/exp.py \
                   experiment/tool/common/handoff_schedule.py
 
-SOLUTION_HANDOFF_ENV = $(MAIN_HANDOFF_ENV)
+SOLUTION_RUN_IDS := r1 r2 r3 r4 r5
+SOLUTION_HANDOFF_COUNT := 8
+SOLUTION_HANDOFF_SEQUENCE := acc2,acc3,acc4,acc5,acc6,acc5,acc4,acc3,acc2
+SOLUTION_HANDOFF_INTERVAL_BASE := 90
+SOLUTION_HANDOFF_INTERVAL_JITTER := 60
+SOLUTION_HANDOFF_ENV := NLSR_HANDOFF_COUNT='$(SOLUTION_HANDOFF_COUNT)' NLSR_HANDOFF_INTERVAL_BASE='$(SOLUTION_HANDOFF_INTERVAL_BASE)' NLSR_HANDOFF_INTERVAL_JITTER='$(SOLUTION_HANDOFF_INTERVAL_JITTER)' NLSR_HANDOFF_SEQUENCE='$(SOLUTION_HANDOFF_SEQUENCE)'
 
 # NLSR feature switches for the solution runs.
 # Override on the command line for ablation cells, e.g.
@@ -45,12 +49,12 @@ export SOLUTION_NLSR_EVENT_DRIVEN_VERIFICATION_TIMEOUT_MS
 SOLUTION_NLSR_ENV = NLSR_RESULT_DRIVEN_ADJ_LSA_BUILD='$(SOLUTION_NLSR_RESULT_DRIVEN)' NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION='$(SOLUTION_NLSR_EVENT_DRIVEN_VERIFICATION)' NLSR_CORRIDOR_PRIORITISED_ROUTING='$(SOLUTION_NLSR_CORRIDOR_PRIORITISED_ROUTING)' NLSR_CORRIDOR_ADJ_LSA_SYNC_PUBLISH_DELAY='$(SOLUTION_NLSR_CORRIDOR_ADJ_LSA_SYNC_PUBLISH_DELAY)' NLSR_EVENT_DRIVEN_VERIFICATION_TIMEOUT_MS='$(SOLUTION_NLSR_EVENT_DRIVEN_VERIFICATION_TIMEOUT_MS)'
 
 solution_run_outputs = $(addprefix results/solution/$(1)/,$(EXPERIMENT_RUN_FILES))
-SOLUTION_RAW_OUTPUTS := $(foreach run,$(EXPERIMENT_RUN_IDS),$(call solution_run_outputs,$(run)))
+SOLUTION_RAW_OUTPUTS := $(foreach run,$(SOLUTION_RUN_IDS),$(call solution_run_outputs,$(run)))
 
 # $(1) run id, $(2) order-only prerequisites (never empty).
-# The two Makefiles are normal prerequisites and are not passed to run-in-vm.sh.
+# Makefile.solution is a normal prerequisite and is not passed to run-in-vm.sh.
 define emit_solution_run
-$(call solution_run_outputs,$(1)) &: scripts/run-in-vm.sh $$(SOLUTION_INPUTS) Makefile.solution Makefile.baseline | $(2)
+$(call solution_run_outputs,$(1)) &: scripts/run-in-vm.sh $$(SOLUTION_INPUTS) Makefile.solution | $(2)
 	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="$$(SOLUTION_HANDOFF_ENV) $$(SOLUTION_NLSR_ENV) make all" sh scripts/run-in-vm.sh $$(SOLUTION_INPUTS) $$@
 endef
 
@@ -61,7 +65,7 @@ $(eval $(call emit_solution_run,$(1),$(SOLUTION_CHAIN_PREV)))
 $(eval SOLUTION_CHAIN_PREV := $(call solution_run_outputs,$(1)))
 endef
 
-$(foreach run,$(EXPERIMENT_RUN_IDS),$(call queue_solution_run,$(run)))
+$(foreach run,$(SOLUTION_RUN_IDS),$(call queue_solution_run,$(run)))
 
 # Host-side mobility-event analysis. G0 captures and the five Solution runs are
 # real inputs. Other Baseline profiles are not.
@@ -76,7 +80,7 @@ SOLUTION_MOBILITY_OUTPUTS := $(SOLUTION_ANALYSIS_OUTPUTS) $(SOLUTION_PAPER_FIGUR
 
 # Recorded by the analysis command. Kept off the grouped rule so a missing
 # forwarding-cost PDF does not invalidate the solution figures, including RFV.
-SOLUTION_G0_OUTPUTS := $(foreach run,$(EXPERIMENT_RUN_IDS),$(call baseline_run_outputs,g0-h60-a10-r15-s60,$(run)))
+SOLUTION_G0_OUTPUTS := $(foreach run,$(SOLUTION_RUN_IDS),$(call baseline_run_outputs,g0-h60-a10-r15-s60,$(run)))
 SOLUTION_MOBILITY_INPUTS := $(SOLUTION_G0_OUTPUTS) $(SOLUTION_RAW_OUTPUTS)
 
 SOLUTION_FCR_PDF := results/solution_forwarding_cost_ratio.pdf

@@ -21,28 +21,18 @@
 BASELINE_DEFAULT_DIR = results/baseline/g0-h60-a10-r15-s60
 BASELINE_PROFILE_LIST := g0-h60-a10-r15-s60 g1-h54-a9-r14-s54 g2-h48-a8-r12-s48 g3-h42-a7-r10-s42 g4-h36-a6-r9-s36
 
-EXPERIMENT_RUN_IDS := r1 r2 r3 r4 r5
+BASELINE_RUN_IDS := r1 r2 r3 r4 r5
 
-# Eight-handoff schedule shared by the baseline profiles and the solution runs.
-MAIN_HANDOFF_COUNT := 8
-MAIN_HANDOFF_SEQUENCE := acc2,acc3,acc4,acc5,acc6,acc5,acc4,acc3,acc2
-MAIN_HANDOFF_INTERVAL_BASE := 90
-MAIN_HANDOFF_INTERVAL_JITTER := 60
-MAIN_HANDOFF_ENV := NLSR_HANDOFF_COUNT='$(MAIN_HANDOFF_COUNT)' NLSR_HANDOFF_INTERVAL_BASE='$(MAIN_HANDOFF_INTERVAL_BASE)' NLSR_HANDOFF_INTERVAL_JITTER='$(MAIN_HANDOFF_INTERVAL_JITTER)' NLSR_HANDOFF_SEQUENCE='$(MAIN_HANDOFF_SEQUENCE)'
-
-# Pcaps match NODE_PCAPS. NLSR logs match routing.NODES. NFD logs match
-# routing.ROUTING_UNIVERSE. Producer NFD logs are not required by those analyses.
-MAIN_PCAP_NODES := core agg1 agg2 acc1 acc2 acc3 acc4 acc5 acc6 producer consumer
-MAIN_NLSR_LOG_NODES := producer consumer core agg1 agg2 acc1 acc2 acc3 acc4 acc5 acc6
-MAIN_NFD_LOG_NODES := consumer core agg1 agg2 acc1 acc2 acc3 acc4 acc5 acc6
-EXPERIMENT_RUN_FILES := consumer_capture.pcap params.txt handoffs.txt \
-	$(addprefix pcap_nodes/,$(addsuffix .pcap,$(MAIN_PCAP_NODES))) \
-	$(addprefix minindn-logs/,$(addsuffix /nlsr.log,$(MAIN_NLSR_LOG_NODES))) \
-	$(addprefix minindn-logs/,$(addsuffix /nfd.log,$(MAIN_NFD_LOG_NODES)))
+# Eight-handoff schedule for the baseline profiles. Solution keeps its own copy.
+BASELINE_HANDOFF_COUNT := 8
+BASELINE_HANDOFF_SEQUENCE := acc2,acc3,acc4,acc5,acc6,acc5,acc4,acc3,acc2
+BASELINE_HANDOFF_INTERVAL_BASE := 90
+BASELINE_HANDOFF_INTERVAL_JITTER := 60
+BASELINE_HANDOFF_ENV := NLSR_HANDOFF_COUNT='$(BASELINE_HANDOFF_COUNT)' NLSR_HANDOFF_INTERVAL_BASE='$(BASELINE_HANDOFF_INTERVAL_BASE)' NLSR_HANDOFF_INTERVAL_JITTER='$(BASELINE_HANDOFF_INTERVAL_JITTER)' NLSR_HANDOFF_SEQUENCE='$(BASELINE_HANDOFF_SEQUENCE)'
 
 baseline_run_outputs = $(addprefix results/baseline/$(1)/$(2)/,$(EXPERIMENT_RUN_FILES))
 
-BASELINE_RAW_OUTPUTS := $(foreach profile,$(BASELINE_PROFILE_LIST),$(foreach run,$(EXPERIMENT_RUN_IDS),$(call baseline_run_outputs,$(profile),$(run))))
+BASELINE_RAW_OUTPUTS := $(foreach profile,$(BASELINE_PROFILE_LIST),$(foreach run,$(BASELINE_RUN_IDS),$(call baseline_run_outputs,$(profile),$(run))))
 
 BASELINE_EXPERIMENT_INPUTS = box/baseline/baseline.$(PROVIDER).box \
                              experiment/app/producer.cpp \
@@ -64,7 +54,7 @@ BASELINE_PROFILE_ENV_g4-h36-a6-r9-s36 := NLSR_HELLO_INTERVAL='36' NLSR_ADJ_LSA_B
 define emit_baseline_run
 $(if $(BASELINE_PROFILE_ENV_$(1)),,$(error missing baseline profile environment for $(1)))
 $(call baseline_run_outputs,$(1),$(2)) &: scripts/run-in-vm.sh $$(BASELINE_EXPERIMENT_INPUTS) Makefile.baseline$(if $(3), | $(3))
-	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="$(BASELINE_PROFILE_ENV_$(1)) $$(MAIN_HANDOFF_ENV) make all" sh scripts/run-in-vm.sh $$(BASELINE_EXPERIMENT_INPUTS) $$@
+	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="$(BASELINE_PROFILE_ENV_$(1)) $$(BASELINE_HANDOFF_ENV) make all" sh scripts/run-in-vm.sh $$(BASELINE_EXPERIMENT_INPUTS) $$@
 endef
 
 # The first run waits for both smoke stamps. Later runs wait only for the
@@ -76,7 +66,7 @@ $(eval $(call emit_baseline_run,$(1),$(2),$(BASELINE_CHAIN_PREV)))
 $(eval BASELINE_CHAIN_PREV := $(call baseline_run_outputs,$(1),$(2)))
 endef
 
-$(foreach profile,$(BASELINE_PROFILE_LIST),$(foreach run,$(EXPERIMENT_RUN_IDS),$(call queue_baseline_run,$(profile),$(run))))
+$(foreach profile,$(BASELINE_PROFILE_LIST),$(foreach run,$(BASELINE_RUN_IDS),$(call queue_baseline_run,$(profile),$(run))))
 
 # Host-side mobility-event analysis. The raw run outputs are real inputs, so a
 # new capture rebuilds these figures and a missing capture builds that run.

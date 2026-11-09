@@ -22,6 +22,17 @@ BOXES = box/initial/initial.$(PROVIDER).box \
         box/baseline/baseline.$(PROVIDER).box \
         box/solution/solution.$(PROVIDER).box
 
+# Shared raw-evidence schema for Baseline, Solution, and Exp1. Pcaps match
+# NODE_PCAPS. NLSR logs match routing.NODES. NFD logs match
+# routing.ROUTING_UNIVERSE. Producer NFD logs are not required by those analyses.
+MAIN_PCAP_NODES := core agg1 agg2 acc1 acc2 acc3 acc4 acc5 acc6 producer consumer
+MAIN_NLSR_LOG_NODES := producer consumer core agg1 agg2 acc1 acc2 acc3 acc4 acc5 acc6
+MAIN_NFD_LOG_NODES := consumer core agg1 agg2 acc1 acc2 acc3 acc4 acc5 acc6
+EXPERIMENT_RUN_FILES := consumer_capture.pcap params.txt handoffs.txt \
+	$(addprefix pcap_nodes/,$(addsuffix .pcap,$(MAIN_PCAP_NODES))) \
+	$(addprefix minindn-logs/,$(addsuffix /nlsr.log,$(MAIN_NLSR_LOG_NODES))) \
+	$(addprefix minindn-logs/,$(addsuffix /nfd.log,$(MAIN_NFD_LOG_NODES)))
+
 # Experiment rules and result variables.
 include Makefile.baseline
 include Makefile.solution
