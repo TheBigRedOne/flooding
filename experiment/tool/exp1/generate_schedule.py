@@ -1,4 +1,4 @@
-"""Write the one seeded Exp1 handoff schedule shared by the nine cells."""
+"""Write one seeded Exp1 handoff schedule shared by the nine cells of that repetition."""
 
 from __future__ import annotations
 

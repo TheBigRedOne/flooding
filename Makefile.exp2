@@ -66,7 +66,7 @@ check-exp2-shared-$(3)-$(2):
 	python3 -m experiment.tool.exp2.check_exp2_shared_evidence $(EXP2_SHARED_ROOT)/$(3)/$(2)
 endef
 
-EXP2_CHAIN_PREV := $(call sensitivity_cell_outputs,$(SENSITIVITY_TIMEOUT_ROOT)/t250)
+EXP2_CHAIN_PREV := $(EXP1_LAST_OUTPUTS)
 
 define queue_exp2_n2
 $(eval $(call exp2_full_rule,N2,$(1),n2,consumer1 consumer2,consumer1+consumer2,$(EXP2_N2_NODES),$(EXP2_CHAIN_PREV)))

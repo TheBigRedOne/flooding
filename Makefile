@@ -144,7 +144,7 @@ experiment-baseline: $(BASELINE_RAW_OUTPUTS)
 
 experiment-solution: $(SOLUTION_RESULTS)
 
-experiment-exp1: $(call sensitivity_cell_outputs,$(SENSITIVITY_TIMEOUT_ROOT)/t250)
+experiment-exp1: $(EXP1_LAST_OUTPUTS)
 
 exp1: $(EXP1_PAPER_FIGURES)
 

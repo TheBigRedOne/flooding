@@ -9,9 +9,10 @@ measure_run functions.
 from __future__ import annotations
 
 import csv
+import math
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import experiment.tool.analysis.mobility_event_metrics as metrics
 import experiment.tool.analysis.routing_convergence_metrics as routing
@@ -20,8 +21,7 @@ import experiment.tool.analysis.run_mobility_event_analysis as mobility
 ROOT = Path(__file__).resolve().parents[3]
 RESULTS = ROOT / "results" / "extended" / "exp1"
 EXPECTED_HANDOFFS = 8
-# The nine cells share this one repetition. Statistics stay the eight handoffs of that run.
-EXP1_REPETITION = "r1"
+EXP1_REPETITIONS = ("r1", "r2", "r3", "r4", "r5")
 
 SYNC_CELLS: Tuple[Tuple[str, str], ...] = (
     ("d0", "0"),
@@ -87,6 +87,7 @@ VERIFICATION_FAILURE_NOTES = frozenset({
 EVENT_FIELDS = (
     "study",
     "cell",
+    "repetition",
     "parameter_value",
     "handoff_index",
     "from_node",
@@ -154,8 +155,8 @@ def _require_evidence(run_dir: Path) -> None:
         raise SystemExit("\n".join(missing))
 
 
-def _measure_cell(study: str, cell: str, parameter: str) -> List[Dict[str, object]]:
-    run_dir = RESULTS / study / cell / EXP1_REPETITION
+def _measure_run(study: str, cell: str, parameter: str, repetition: str) -> List[Dict[str, object]]:
+    run_dir = RESULTS / study / cell / repetition
     _require_evidence(run_dir)
     packets_path = run_dir / "mobility_packets.csv"
     mobility.decode_run(run_dir, packets_path)
@@ -196,6 +197,7 @@ def _measure_cell(study: str, cell: str, parameter: str) -> List[Dict[str, objec
         combined.append({
             "study": study,
             "cell": cell,
+            "repetition": repetition,
             "parameter_value": parameter,
             "handoff_index": index,
             "from_node": service["from_node"],
@@ -225,6 +227,14 @@ def _measure_cell(study: str, cell: str, parameter: str) -> List[Dict[str, objec
     return combined
 
 
+def _measure_cell(study: str, cell: str, parameter: str) -> List[Dict[str, object]]:
+    """Pool the eight handoffs from each of the five repetitions. Order is r1..r5."""
+    rows: List[Dict[str, object]] = []
+    for repetition in EXP1_REPETITIONS:
+        rows.extend(_measure_run(study, cell, parameter, repetition))
+    return rows
+
+
 def _write_rows(path: Path, rows: Sequence[Dict[str, object]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="") as handle:
@@ -243,7 +253,7 @@ def timeout_cell_status(cell: str, rows: Sequence[Mapping[str, Any]]) -> str:
         1 for row in rows
         if row.get("verification_established") is True or str(row.get("verification_established")) == "True"
     )
-    censored = sum(1 for row in rows if str(row.get("network_fib_converged")) == "false")
+    censored = sum(1 for row in rows if is_network_fib_right_censored(row))
     counted = _as_dicts(rows)
     return (
         f"{cell}: events={len(rows)} "
@@ -264,11 +274,92 @@ CROSS_CHECK_FIELDS: Tuple[Tuple[str, str, str], ...] = (
 )
 
 
-def _median_text(values: Sequence[float]) -> str:
+def _blank(value: object) -> bool:
+    return value is None or value == ""
+
+
+def _valid_censor_boundary(value: object) -> bool:
+    if _blank(value):
+        return False
+    try:
+        return math.isfinite(float(value))
+    except (TypeError, ValueError):
+        return False
+
+
+def is_network_fib_right_censored(row: Mapping[str, Any]) -> bool:
+    """True only for a blank network FIB time with a numeric censor boundary.
+
+    A false convergence flag without that boundary is not evaluable. The
+    boundary itself is never a convergence time.
+    """
+    return (
+        str(row.get("network_fib_converged")) == "false"
+        and _blank(row.get("network_fib_convergence_ms", ""))
+        and _valid_censor_boundary(row.get("network_fib_censor_boundary_ms", ""))
+    )
+
+
+def pooled_event_summary(rows: Sequence[Mapping[str, Any]], field: str) -> Dict[str, Any]:
+    """Median, min, and max of the pooled valid handoff values.
+
+    Right-censored and other non-numeric rows stay in the event counts and
+    out of the numeric list. This is not a median of per-run medians.
+    """
+    values: List[float] = []
+    censored = 0
+    missing = 0
+    for row in rows:
+        if field == "network_fib_convergence_ms" and is_network_fib_right_censored(row):
+            censored += 1
+            continue
+        raw = row.get(field, "")
+        if _blank(raw):
+            missing += 1
+            continue
+        try:
+            values.append(float(raw))
+        except (TypeError, ValueError):
+            missing += 1
     if not values:
-        return ""
+        return {
+            "values": [],
+            "median": None,
+            "minimum": None,
+            "maximum": None,
+            "numeric_n": 0,
+            "missing_n": missing,
+            "censored_n": censored,
+            "total_n": len(rows),
+        }
     _q1, median, _q3 = routing.quantiles(values)
-    return f"{median:.6g}"
+    ordered = sorted(values)
+    return {
+        "values": ordered,
+        "median": median,
+        "minimum": ordered[0],
+        "maximum": ordered[-1],
+        "numeric_n": len(ordered),
+        "missing_n": missing,
+        "censored_n": censored,
+        "total_n": len(rows),
+    }
+
+
+def _format_endpoint(value: object) -> str:
+    if value is None:
+        return ""
+    return f"{float(value):.6g}"
+
+
+def _pooled_text(summary: Mapping[str, Any]) -> str:
+    return (
+        f"events={summary['total_n']} numeric={summary['numeric_n']} "
+        f"missing={summary['missing_n']} right_censored={summary['censored_n']} "
+        f"median={_format_endpoint(summary['median'])} "
+        f"min={_format_endpoint(summary['minimum'])} "
+        f"max={_format_endpoint(summary['maximum'])}"
+    )
 
 
 def _main_distribution_text(values: Sequence[float]) -> str:
@@ -291,7 +382,8 @@ def default_cross_check_lines(
     """Describe d1 and t50 against the stored main OptoFlood distributions."""
     lines = [
         "Default-configuration cross-check.",
-        "d1 and t50 are independent runs of the production OptoFlood parameter point.",
+        "d1 and t50 are five repetitions of the production OptoFlood parameter point.",
+        "Each sensitivity median is the median of the pooled handoff observations, not a median of run medians.",
         "Main statistics are read from existing production CSVs. This comparison is descriptive and has no pass/fail threshold.",
     ]
     opto_mobility = [row for row in main_mobility if row.get("configuration") == "OptoFlood"]
@@ -299,11 +391,15 @@ def default_cross_check_lines(
     for field, title, source in CROSS_CHECK_FIELDS:
         main_rows = opto_routing if source == "routing" else opto_mobility
         main_values = routing.numeric(_as_dicts(main_rows), field)
-        d1_values = routing.numeric(_as_dicts([row for row in d1_rows if str(row.get("cell")) == "d1"]), field)
-        t50_values = routing.numeric(_as_dicts([row for row in t50_rows if str(row.get("cell")) == "t50"]), field)
+        d1_summary = pooled_event_summary(
+            [row for row in d1_rows if str(row.get("cell")) == "d1"], field,
+        )
+        t50_summary = pooled_event_summary(
+            [row for row in t50_rows if str(row.get("cell")) == "t50"], field,
+        )
         lines.append(
             f"{title}: {_main_distribution_text(main_values)} "
-            f"d1_median={_median_text(d1_values)} t50_median={_median_text(t50_values)}"
+            f"d1_{_pooled_text(d1_summary)} t50_{_pooled_text(t50_summary)}"
         )
     return lines
 
@@ -340,7 +436,9 @@ def write_default_cross_check(repo: Path) -> List[str]:
 def _summary_lines(study: str, rows: Sequence[Dict[str, object]], cells: Sequence[Tuple[str, str]]) -> List[str]:
     lines = [
         f"study={study}",
-        "Blank numeric endpoints stay out of medians. The handoff row is retained.",
+        "Statistics pool the handoff observations from r1-r5. They are not medians of run medians.",
+        "Blank and non-numeric endpoints stay out of median, min, and max. The handoff row is retained.",
+        "A right-censored network FIB time stays blank. Its observation boundary is not used as the convergence time.",
         "FIB times use the production NFD_CONFIRMED endpoint. A missing install is not replaced by an NLSR registration time.",
         "verification_established requires the accelerated check to accept old UNREACHABLE and new REACHABLE.",
     ]
@@ -349,7 +447,7 @@ def _summary_lines(study: str, rows: Sequence[Dict[str, object]], cells: Sequenc
         if study == "verification-timeout":
             lines.append(timeout_cell_status(cell, selected))
         else:
-            censored = sum(1 for row in selected if str(row.get("network_fib_converged")) == "false")
+            censored = sum(1 for row in selected if is_network_fib_right_censored(row))
             established = sum(
                 1 for row in selected
                 if row.get("verification_established") is True or str(row.get("verification_established")) == "True"
@@ -376,43 +474,78 @@ def _summary_lines(study: str, rows: Sequence[Dict[str, object]], cells: Sequenc
             ("old_poa_unreachable_ms", "old PoA UNREACHABLE"),
             ("new_poa_reachable_ms", "new PoA REACHABLE"),
         ):
-            lines.append(routing.summarise(f"{cell} {label}", routing.numeric(selected, field)))
+            summary = pooled_event_summary(selected, field)
+            if summary["numeric_n"] == 0:
+                lines.append(f"{cell} {label}: unavailable {_pooled_text(summary)}")
+            else:
+                lines.append(f"{cell} {label}: {_pooled_text(summary)}")
     return lines
 
 
-# Median bar and IQR caps are centred on the group. Widths are fractions of the unit spacing.
-_MEDIAN_HALF_WIDTH = 0.18
-_IQR_CAP_HALF_WIDTH = 0.08
+def _parameter_positions(cells: Sequence[Tuple[str, str]]) -> List[float]:
+    """Actual numeric parameter values, in the tested order."""
+    return [float(parameter) for _cell, parameter in cells]
 
 
-def group_positions(cells: Sequence[Tuple[str, str]]) -> List[float]:
-    """Equally spaced positions, one per tested cell."""
-    return [float(index) for index in range(len(cells))]
+def _range_cap(x: float, y: float, log_x: bool) -> Tuple[List[float], List[float]]:
+    if log_x:
+        factor = 10 ** 0.02
+        return [x / factor, x * factor], [y, y]
+    return [x - 0.08, x + 0.08], [y, y]
 
 
-def group_tick_labels(cells: Sequence[Tuple[str, str]]) -> List[str]:
-    """Parameter value shown under each experimental level."""
-    return [parameter for _cell, parameter in cells]
-
-
-def _draw_parameter_panel(axis: Any, rows: Sequence[Mapping[str, object]], cells: Sequence[Tuple[str, str]], field: str, title: str, xlabel: str) -> None:
-    """Eight handoff observations at one experimental level, plus median and IQR."""
-    # Sensitivity cells are displayed as equally spaced experimental levels.
-    positions = group_positions(cells)
-    for x, (cell, _parameter) in zip(positions, cells):
-        values = routing.numeric(_as_dicts([row for row in rows if str(row["cell"]) == cell]), field)
-        axis.scatter([x] * len(values), values, s=22, color="C0", alpha=0.65, linewidths=0, zorder=3)
-        if not values:
+def _draw_parameter_panel(
+    axis: Any,
+    rows: Sequence[Mapping[str, object]],
+    cells: Sequence[Tuple[str, str]],
+    field: str,
+    title: str,
+    xlabel: str,
+    log_x: bool,
+) -> None:
+    """Pooled median trend with the observed numeric min–max range."""
+    positions = _parameter_positions(cells)
+    previous_index: Optional[int] = None
+    previous_x = 0.0
+    previous_median = 0.0
+    range_drawn = False
+    median_drawn = False
+    for index, ((cell, _parameter), x) in enumerate(zip(cells, positions)):
+        selected = [row for row in rows if str(row["cell"]) == cell]
+        summary = pooled_event_summary(selected, field)
+        if summary["numeric_n"] == 0:
+            previous_index = None
             continue
-        q1, median, q3 = routing.quantiles(values)
-        axis.plot([x - _MEDIAN_HALF_WIDTH, x + _MEDIAN_HALF_WIDTH], [median, median], color="black", linewidth=1.4, zorder=4)
-        if len(values) >= 2:
-            axis.plot([x, x], [q1, q3], color="black", linewidth=1.0, zorder=4)
-            axis.plot([x - _IQR_CAP_HALF_WIDTH, x + _IQR_CAP_HALF_WIDTH], [q1, q1], color="black", linewidth=1.0, zorder=4)
-            axis.plot([x - _IQR_CAP_HALF_WIDTH, x + _IQR_CAP_HALF_WIDTH], [q3, q3], color="black", linewidth=1.0, zorder=4)
+        minimum = float(summary["minimum"])
+        maximum = float(summary["maximum"])
+        median = float(summary["median"])
+        range_line, = axis.plot(
+            [x, x], [minimum, maximum], color="0.45", linewidth=0.9, zorder=2,
+            label="Observed numeric range" if not range_drawn else None,
+        )
+        range_drawn = True
+        for endpoint in (minimum, maximum):
+            cap_x, cap_y = _range_cap(x, endpoint, log_x)
+            axis.plot(cap_x, cap_y, color="0.45", linewidth=0.9, zorder=2)
+        if previous_index is not None and index == previous_index + 1:
+            axis.plot(
+                [previous_x, x], [previous_median, median],
+                color="black", linewidth=1.5, zorder=3,
+            )
+        axis.plot(
+            [x], [median], linestyle="None", marker="o", color="black",
+            markersize=5.5, zorder=4,
+            label="Pooled median" if not median_drawn else None,
+        )
+        range_line.set_zorder(2)
+        median_drawn = True
+        previous_index = index
+        previous_x = x
+        previous_median = median
     axis.set_xticks(positions)
-    axis.set_xticklabels(group_tick_labels(cells))
-    axis.set_xlim(-0.55, len(cells) - 0.45)
+    axis.set_xticklabels([parameter for _cell, parameter in cells])
+    if log_x:
+        axis.set_xscale("log")
     axis.set_title(title, loc="left", fontsize=9)
     axis.set_xlabel(xlabel)
     axis.set_ylabel("Time (ms)")
@@ -420,14 +553,14 @@ def _draw_parameter_panel(axis: Any, rows: Sequence[Mapping[str, object]], cells
     axis.set_axisbelow(True)
 
 
-def _plot(path: Path, rows: Sequence[Mapping[str, object]], cells: Sequence[Tuple[str, str]], field: str, ylabel: str, xlabel: str) -> None:
+def _plot(path: Path, rows: Sequence[Mapping[str, object]], cells: Sequence[Tuple[str, str]], field: str, ylabel: str, xlabel: str, log_x: bool) -> None:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     path.parent.mkdir(parents=True, exist_ok=True)
     figure, axis = plt.subplots(figsize=(6.2, 4.2))
-    _draw_parameter_panel(axis, rows, cells, field, ylabel, xlabel)
+    _draw_parameter_panel(axis, rows, cells, field, ylabel, xlabel, log_x)
     axis.set_title("")
     axis.set_ylabel(ylabel)
     figure.tight_layout()
@@ -436,17 +569,25 @@ def _plot(path: Path, rows: Sequence[Mapping[str, object]], cells: Sequence[Tupl
 
 
 def plot_production_figure(path: Path, study: str, rows: Sequence[Mapping[str, object]]) -> None:
-    """Three-panel figure of the eight handoffs from one sensitivity run."""
+    """Three-panel pooled median trend with the observed numeric range."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     path.parent.mkdir(parents=True, exist_ok=True)
     figure, axes = plt.subplots(1, 3, figsize=(9.6, 3.4))
+    log_x = study == "verification-timeout"
     letters = "abc"
     for axis, letter, (field, title) in zip(axes, letters, PAPER_PANELS[study]):
-        _draw_parameter_panel(axis, rows, STUDIES[study], field, f"({letter}) {title}", PAPER_XLABEL[study])
-    figure.tight_layout()
+        _draw_parameter_panel(
+            axis, rows, STUDIES[study], field, f"({letter}) {title}", PAPER_XLABEL[study], log_x,
+        )
+    handles, labels = axes[0].get_legend_handles_labels()
+    if handles:
+        figure.legend(handles, labels, loc="upper center", ncol=2, frameon=False, fontsize=8)
+        figure.tight_layout(rect=(0, 0, 1, 0.92))
+    else:
+        figure.tight_layout()
     figure.savefig(path)
     plt.close(figure)
 
@@ -460,8 +601,9 @@ def analyze(study: str) -> None:
     _write_rows(destination / "sensitivity_events.csv", rows)
     summary = _summary_lines(study, rows, cells)
     (destination / "sensitivity_summary.txt").write_text("\n".join(summary) + "\n", encoding="utf-8")
+    log_x = study == "verification-timeout"
     for field, ylabel in PRIMARY_FIELDS[study]:
-        _plot(destination / f"{field}.pdf", rows, cells, field, ylabel, PAPER_XLABEL[study])
+        _plot(destination / f"{field}.pdf", rows, cells, field, ylabel, PAPER_XLABEL[study], log_x)
     plot_production_figure(PAPER_FIGURES[study], study, rows)
     print("\n".join(summary))
 

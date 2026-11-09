@@ -29,7 +29,7 @@ initial box -> baseline box and solution box
 -> baseline smoke -> solution smoke
 -> g0/r1 -> ... -> g4/r5
 -> solution/r1 -> ... -> solution/r5
--> exp1 d0 -> d1 -> d2 -> d4 -> t10 -> t25 -> t50 -> t100 -> t250
+-> exp1 d0/r1..r5 -> d1/r1..r5 -> d2/r1..r5 -> d4/r1..r5 -> t10/r1..r5 -> t25/r1..r5 -> t50/r1..r5 -> t100/r1..r5 -> t250/r1..r5
 -> exp2 formal runs -> exp3 formal runs
 -> analysis and figures -> paper/OptoFlood.pdf
 ```
@@ -59,13 +59,13 @@ This command automates the entire process. It will:
 - `make test`
   Builds any boxes required by the smoke tests, then runs the Baseline smoke and the Solution smoke.
 - `make experiment`
-  Runs all 74 formal runs: Baseline (25), Solution (5), Exp1 (9), Exp2 (20), and Exp3 (15).
+  Runs all 110 formal runs: Baseline (25), Solution (5), Exp1 (45), Exp2 (20), and Exp3 (15).
 - `make experiment-baseline`
   Runs the 25 Baseline formal runs.
 - `make experiment-solution`
   Runs the five Solution formal runs.
 - `make experiment-exp1`
-  Runs the nine Exp1 formal cells.
+  Runs the 45 Exp1 formal runs: five repetitions of each of the nine cells.
 - `make experiment-exp2`
   Runs the 20 Exp2 formal runs.
 - `make experiment-exp3`
@@ -92,11 +92,11 @@ Active experiment code lives under `experiment/tool/`:
 
 Host recipes run `python3 -m experiment.tool...` from the repository root. Guest recipes pass `PYTHONPATH` to the repository root on the `sudo -E env` line and use the same module names. The two integration smokes stay in `test/`.
 
-The first Baseline run waits, as an order-only prerequisite, for both smoke stamps. Later Baseline runs wait only for the previous Baseline run. The first Solution run waits for the Solution smoke stamp and the last Baseline run. Formal Exp2 waits for the last Exp1 cell, and formal Exp3 waits for the last Exp2 run. Those links order the VMs; a newer predecessor does not rebuild the later captures. A change that affects only the Solution smoke does not rebuild Baseline captures.
+The first Baseline run waits, as an order-only prerequisite, for both smoke stamps. Later Baseline runs wait only for the previous Baseline run. The first Solution run waits for the Solution smoke stamp and the last Baseline run. Formal Exp2 waits for the last Exp1 run, t250/r5, and formal Exp3 waits for the last Exp2 run. Those links order the VMs; a newer predecessor does not rebuild the later captures. A change that affects only the Solution smoke does not rebuild Baseline captures.
 
 ## Mobility-event analysis
 
-Host-side analysis decodes each run's `pcap_nodes/*.pcap` with one Python decoder. Name equality uses `(component type, raw component bytes)`, not a rendered URI. Baseline is G0--G4, five runs, eight handoffs. The solution comparison is five OptoFlood runs of the same eight-handoff schedule. Exp1 reuses those mobility-event and routing measurements on one seeded r1 schedule shared by its nine cells.
+Host-side analysis decodes each run's `pcap_nodes/*.pcap` with one Python decoder. Name equality uses `(component type, raw component bytes)`, not a rendered URI. Baseline is G0--G4, five runs, eight handoffs. The solution comparison is five OptoFlood runs of the same eight-handoff schedule. Exp1 reuses those mobility-event and routing measurements on five seeded schedules. Each schedule is shared by the nine cells of one repetition, and each figure reports the pooled handoff median and observed numeric range.
 
 The active main-experiment metrics are service recovery time, content loss fraction, recovery flooding volume, and NLSR control rate. Service recovery time is the time from a handoff until the producer receives the first fresh post-handoff content Interest. Recovery flooding volume is the aggregate bytes of actual OptoFlood flood-marked sender-egress transmissions per handoff. NLSR control rate measures control-plane traffic; recovery flooding volume measures recovery-induced flooding traffic. Exp1 is OptoFlood parameter sensitivity. The Sync publication-delay figure reports service-path LSA lead, service-path FIB convergence, and network-wide FIB convergence. The verification-timeout figure reports complete mobility-topology update latency and the same two FIB times. Production figures:
 
