@@ -4,9 +4,10 @@
 # MAIN_HANDOFF_* comes from Makefile.baseline. Intervals are sampled again
 # inside each run; they are not paired with a baseline run.
 # Each run creates a new VM from the Solution box and destroys it afterwards.
-# The five recipes are order-only chained. The first waits for the Solution
-# smoke stamp and the last Baseline run, so a newer stamp or earlier output
-# does not rebuild these captures.
+# The five recipes are order-only chained. The first waits for
+# experiment-baseline, so a newer Baseline output does not rebuild these
+# captures. MAIN_HANDOFF_* is defined in Makefile.baseline, so that file is a
+# normal prerequisite.
 
 SOLUTION_INPUTS = box/solution/solution.$(PROVIDER).box \
                   experiment/app/producer.cpp \
@@ -44,16 +45,16 @@ export SOLUTION_NLSR_EVENT_DRIVEN_VERIFICATION_TIMEOUT_MS
 SOLUTION_NLSR_ENV = NLSR_RESULT_DRIVEN_ADJ_LSA_BUILD='$(SOLUTION_NLSR_RESULT_DRIVEN)' NLSR_EVENT_DRIVEN_ADJACENCY_VERIFICATION='$(SOLUTION_NLSR_EVENT_DRIVEN_VERIFICATION)' NLSR_CORRIDOR_PRIORITISED_ROUTING='$(SOLUTION_NLSR_CORRIDOR_PRIORITISED_ROUTING)' NLSR_CORRIDOR_ADJ_LSA_SYNC_PUBLISH_DELAY='$(SOLUTION_NLSR_CORRIDOR_ADJ_LSA_SYNC_PUBLISH_DELAY)' NLSR_EVENT_DRIVEN_VERIFICATION_TIMEOUT_MS='$(SOLUTION_NLSR_EVENT_DRIVEN_VERIFICATION_TIMEOUT_MS)'
 
 solution_run_outputs = $(addprefix results/solution/$(1)/,$(EXPERIMENT_RUN_FILES))
-SOLUTION_VM_ORDER := $(addprefix solution/,$(EXPERIMENT_RUN_IDS))
-SOLUTION_RESULTS := $(foreach run,$(EXPERIMENT_RUN_IDS),$(call solution_run_outputs,$(run)))
+SOLUTION_RAW_OUTPUTS := $(foreach run,$(EXPERIMENT_RUN_IDS),$(call solution_run_outputs,$(run)))
 
 # $(1) run id, $(2) order-only prerequisites (never empty).
+# The two Makefiles are normal prerequisites and are not passed to run-in-vm.sh.
 define emit_solution_run
-$(call solution_run_outputs,$(1)) &: scripts/run-in-vm.sh $$(SOLUTION_INPUTS) | $(2)
-	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="$$(SOLUTION_HANDOFF_ENV) $$(SOLUTION_NLSR_ENV) make all" sh $$^ $$@
+$(call solution_run_outputs,$(1)) &: scripts/run-in-vm.sh $$(SOLUTION_INPUTS) Makefile.solution Makefile.baseline | $(2)
+	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="$$(SOLUTION_HANDOFF_ENV) $$(SOLUTION_NLSR_ENV) make all" sh scripts/run-in-vm.sh $$(SOLUTION_INPUTS) $$@
 endef
 
-SOLUTION_CHAIN_PREV := test/.solution_pass.$(PROVIDER) $(BASELINE_LAST_RUN_OUTPUTS)
+SOLUTION_CHAIN_PREV := experiment-baseline
 
 define queue_solution_run
 $(eval $(call emit_solution_run,$(1),$(SOLUTION_CHAIN_PREV)))
@@ -65,29 +66,30 @@ $(foreach run,$(EXPERIMENT_RUN_IDS),$(call queue_solution_run,$(run)))
 # Host-side mobility-event analysis. G0 captures and the five Solution runs are
 # real inputs. Other Baseline profiles are not.
 
-SOLUTION_COMPARE_OUTPUTS := results/solution/mobility_events.csv \
-                            results/solution/mobility_event_audit.txt \
-                            results/solution_service_recovery_time.pdf \
-                            results/solution_content_loss_fraction.pdf \
-                            results/solution_nlsr_control_rate.pdf \
-                            results/solution_recovery_flooding_volume.pdf
+SOLUTION_ANALYSIS_OUTPUTS := results/solution/mobility_events.csv \
+                             results/solution/mobility_event_audit.txt
+SOLUTION_PAPER_FIGURES := results/solution_service_recovery_time.pdf \
+                          results/solution_content_loss_fraction.pdf \
+                          results/solution_recovery_flooding_volume.pdf \
+                          results/solution_nlsr_control_rate.pdf
+SOLUTION_MOBILITY_OUTPUTS := $(SOLUTION_ANALYSIS_OUTPUTS) $(SOLUTION_PAPER_FIGURES)
 
 # Recorded by the analysis command. Kept off the grouped rule so a missing
 # forwarding-cost PDF does not invalidate the solution figures, including RFV.
 SOLUTION_G0_OUTPUTS := $(foreach run,$(EXPERIMENT_RUN_IDS),$(call baseline_run_outputs,g0-h60-a10-r15-s60,$(run)))
-SOLUTION_ANALYSIS_EVIDENCE := $(SOLUTION_G0_OUTPUTS) $(SOLUTION_RESULTS)
+SOLUTION_MOBILITY_INPUTS := $(SOLUTION_G0_OUTPUTS) $(SOLUTION_RAW_OUTPUTS)
 
 SOLUTION_FCR_PDF := results/solution_forwarding_cost_ratio.pdf
 
 # Paper builds use these host-side analysis outputs.
 SOLUTION_ANALYSIS_CMD = python3 -m experiment.tool.analysis.run_mobility_event_analysis analyze-solution
 
-$(SOLUTION_COMPARE_OUTPUTS) &: experiment/tool/analysis/run_mobility_event_analysis.py \
+$(SOLUTION_MOBILITY_OUTPUTS) &: experiment/tool/analysis/run_mobility_event_analysis.py \
                               experiment/tool/analysis/mobility_event_metrics.py \
                               experiment/tool/analysis/plot_mobility_event_metrics.py \
                               experiment/tool/analysis/extract_overhead_csv.py \
                               experiment/tool/resources/ndn.lua \
-                              $(SOLUTION_ANALYSIS_EVIDENCE)
+                              $(SOLUTION_MOBILITY_INPUTS)
 	$(SOLUTION_ANALYSIS_CMD)
 
 $(SOLUTION_FCR_PDF): experiment/tool/analysis/run_mobility_event_analysis.py \
@@ -95,5 +97,5 @@ $(SOLUTION_FCR_PDF): experiment/tool/analysis/run_mobility_event_analysis.py \
                         experiment/tool/analysis/plot_mobility_event_metrics.py \
                         experiment/tool/analysis/extract_overhead_csv.py \
                         experiment/tool/resources/ndn.lua \
-                        $(SOLUTION_ANALYSIS_EVIDENCE)
+                        $(SOLUTION_MOBILITY_INPUTS)
 	$(SOLUTION_ANALYSIS_CMD)

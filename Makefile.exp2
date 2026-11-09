@@ -1,6 +1,6 @@
-# Exp2-A shared stream, N=2 and N=4. Formal runs are order-only after Exp1, so a
-# newer Exp1 output does not rebuild them. One Exp2 VM is locked, so campaign
-# targets run serially.
+# Exp2-A shared stream, N=2 and N=4. The first formal run is order-only after
+# experiment-exp1. One Exp2 VM is locked, so campaign targets run serially.
+# SOLUTION_NLSR_ENV is defined in Makefile.solution.
 
 EXP2_WARMUP_S ?= 20
 EXP2_TAIL_S ?= 30
@@ -52,7 +52,7 @@ $(EXP2_N4_SMOKE_OUTPUTS) &: $(EXP2_VM_PREREQS) | test/.solution_pass.$(PROVIDER)
 define exp2_full_rule
 EXP2_$(1)_$(2)_OUTPUTS := $$(call exp2_shared_outputs,$(EXP2_SHARED_ROOT)/$(3)/$(2),$(4),$(6))
 
-$$(EXP2_$(1)_$(2)_OUTPUTS) &: $$(EXP2_VM_PREREQS) | $(7)
+$$(EXP2_$(1)_$(2)_OUTPUTS) &: $$(EXP2_VM_PREREQS) Makefile.exp2 Makefile.solution | $(7)
 	RUN_IN_VM_PROFILE=exp2 MOBILITY_LOG_NODES="$(6)" RUN_IN_VM_REMOTE_MAKE="$(SOLUTION_NLSR_ENV) NLSR_HANDOFF_COUNT='8' NLSR_HANDOFF_SEQUENCE='$(EXP2_FULL_SEQUENCE)' NLSR_HANDOFF_INTERVALS='' NLSR_HANDOFF_INTERVAL_BASE='90' NLSR_HANDOFF_INTERVAL_JITTER='60' EXP2_ACTIVE_CONSUMERS='$(subst +,$(comma),$(5))' EXP2_SCHEDULE='full' EXP2_RUN_ID='$(2)' EXP_REQUEST_INTERVAL_MS='20' make exp2-shared" sh $$(EXP2_VM_PREREQS) $$@
 
 .PHONY: experiment-exp2-shared-$(3)-$(2) analyze-exp2-shared-$(3)-$(2) check-exp2-shared-$(3)-$(2)
@@ -66,7 +66,7 @@ check-exp2-shared-$(3)-$(2):
 	python3 -m experiment.tool.exp2.check_exp2_shared_evidence $(EXP2_SHARED_ROOT)/$(3)/$(2)
 endef
 
-EXP2_CHAIN_PREV := $(EXP1_LAST_OUTPUTS)
+EXP2_CHAIN_PREV := experiment-exp1
 
 define queue_exp2_n2
 $(eval $(call exp2_full_rule,N2,$(1),n2,consumer1 consumer2,consumer1+consumer2,$(EXP2_N2_NODES),$(EXP2_CHAIN_PREV)))
@@ -120,7 +120,7 @@ $(EXP2_N4_DISTINCT_SMOKE_OUTPUTS) &: $(EXP2_VM_PREREQS) | test/.solution_pass.$(
 define exp2_distinct_full_rule
 EXP2_DISTINCT_$(1)_$(2)_OUTPUTS := $$(call exp2_shared_outputs,$(EXP2_DISTINCT_ROOT)/$(3)/$(2),$(4),$(6))
 
-$$(EXP2_DISTINCT_$(1)_$(2)_OUTPUTS) &: $$(EXP2_VM_PREREQS) | $(7)
+$$(EXP2_DISTINCT_$(1)_$(2)_OUTPUTS) &: $$(EXP2_VM_PREREQS) Makefile.exp2 Makefile.solution | $(7)
 	RUN_IN_VM_PROFILE=exp2 MOBILITY_LOG_NODES="$(6)" RUN_IN_VM_REMOTE_MAKE="$(SOLUTION_NLSR_ENV) NLSR_HANDOFF_COUNT='8' NLSR_HANDOFF_SEQUENCE='$(EXP2_FULL_SEQUENCE)' NLSR_HANDOFF_INTERVALS='' NLSR_HANDOFF_INTERVAL_BASE='90' NLSR_HANDOFF_INTERVAL_JITTER='60' EXP2_ACTIVE_CONSUMERS='$(subst +,$(comma),$(5))' EXP2_SCHEDULE='full' EXP2_RUN_ID='$(2)' EXP2_DEMAND_PATTERN='distinct' EXP_REQUEST_INTERVAL_MS='20' make exp2-shared" sh $$(EXP2_VM_PREREQS) $$@
 
 .PHONY: experiment-exp2-distinct-$(3)-$(2) check-exp2-distinct-$(3)-$(2)
@@ -170,9 +170,9 @@ analyze-exp2-distinct-n2-r1:
 analyze-exp2-distinct-n4-r1:
 	python3 -m experiment.tool.exp2.run_exp2_distinct_analysis n4 r1
 
-EXP2_FORMAL_LAST := $(EXP2_CHAIN_PREV)
-EXP2_SHARED_FORMAL_EVIDENCE := $(foreach run,$(EXP2_FULL_RUNS),$(EXP2_N2_$(run)_OUTPUTS) $(EXP2_N4_$(run)_OUTPUTS))
-EXP2_DISTINCT_FORMAL_EVIDENCE := $(foreach run,$(EXP2_FULL_RUNS),$(EXP2_DISTINCT_N2_$(run)_OUTPUTS) $(EXP2_DISTINCT_N4_$(run)_OUTPUTS))
+EXP2_SHARED_RAW_OUTPUTS := $(foreach run,$(EXP2_FULL_RUNS),$(EXP2_N2_$(run)_OUTPUTS) $(EXP2_N4_$(run)_OUTPUTS))
+EXP2_DISTINCT_RAW_OUTPUTS := $(foreach run,$(EXP2_FULL_RUNS),$(EXP2_DISTINCT_N2_$(run)_OUTPUTS) $(EXP2_DISTINCT_N4_$(run)_OUTPUTS))
+EXP2_RAW_OUTPUTS := $(EXP2_SHARED_RAW_OUTPUTS) $(EXP2_DISTINCT_RAW_OUTPUTS)
 EXP2_SHARED_ANALYSIS_OUTPUTS := results/extended/exp2/analysis/network_handoffs.csv \
 	results/extended/exp2/analysis/consumer_handoffs.csv \
 	results/extended/exp2/analysis/analysis_audit.txt
@@ -180,6 +180,7 @@ EXP2_DISTINCT_ANALYSIS_OUTPUTS := results/extended/exp2/distinct/analysis/networ
 	results/extended/exp2/distinct/analysis/consumer_handoffs.csv \
 	results/extended/exp2/distinct/analysis/stream_recovery_diagnostics.csv \
 	results/extended/exp2/distinct/analysis/analysis_audit.txt
+EXP2_ANALYSIS_OUTPUTS := $(EXP2_SHARED_ANALYSIS_OUTPUTS) $(EXP2_DISTINCT_ANALYSIS_OUTPUTS)
 
 $(EXP2_SHARED_ANALYSIS_OUTPUTS) &: experiment/tool/exp2/run_exp2_scale_analysis.py \
 	experiment/tool/exp2/exp2_scale_metrics.py \
@@ -189,7 +190,7 @@ $(EXP2_SHARED_ANALYSIS_OUTPUTS) &: experiment/tool/exp2/run_exp2_scale_analysis.
 	experiment/tool/analysis/run_mobility_event_analysis.py \
 	experiment/tool/analysis/extract_overhead_csv.py \
 	experiment/tool/resources/ndn.lua \
-	$(EXP2_SHARED_FORMAL_EVIDENCE)
+	$(EXP2_SHARED_RAW_OUTPUTS)
 	python3 -m experiment.tool.exp2.run_exp2_scale_analysis
 
 $(EXP2_DISTINCT_ANALYSIS_OUTPUTS) &: experiment/tool/exp2/run_exp2_distinct_analysis.py \
@@ -199,10 +200,5 @@ $(EXP2_DISTINCT_ANALYSIS_OUTPUTS) &: experiment/tool/exp2/run_exp2_distinct_anal
 	experiment/tool/analysis/run_mobility_event_analysis.py \
 	experiment/tool/analysis/extract_overhead_csv.py \
 	experiment/tool/resources/ndn.lua \
-	$(EXP2_DISTINCT_FORMAL_EVIDENCE)
+	$(EXP2_DISTINCT_RAW_OUTPUTS)
 	python3 -m experiment.tool.exp2.run_exp2_distinct_analysis --all
-
-# Formal Exp2 VM runs only. The last run pulls the serial chain, including Exp1.
-.PHONY: experiment-exp2
-
-experiment-exp2: $(EXP2_FORMAL_LAST)

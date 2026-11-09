@@ -46,8 +46,9 @@ sensitivity_run_outputs = $(addprefix $(1)/$(2)/,$(EXPERIMENT_RUN_FILES))
 # $(3) sync publication delay in seconds, $(4) verification timeout in ms,
 # $(5) repetition id.
 # The interval list is read when the recipe runs, not while Make parses this file.
+# Makefile.exp1 is a normal prerequisite and is not passed to run-in-vm.sh.
 define emit_sensitivity_cell
-$(call sensitivity_run_outputs,$(1),$(5)) &: $$(call exp1_vm_prereqs,$(5))$(if $(2), | $(2))
+$(call sensitivity_run_outputs,$(1),$(5)) &: $$(call exp1_vm_prereqs,$(5)) Makefile.exp1$(if $(2), | $(2))
 	set -eu; \
 	intervals=$$$$(tr -d '\r\n' < $(EXP1_SCHEDULE_DIR)/$(5).txt); \
 	test -n "$$$$intervals"; \
@@ -65,7 +66,7 @@ define queue_exp1_cell
 $(foreach run,$(EXP1_RUN_IDS),$(call queue_exp1_run,$(run),$(1),$(2),$(3)))
 endef
 
-EXP1_CHAIN_PREV := $(SOLUTION_RESULTS)
+EXP1_CHAIN_PREV := experiment-solution
 $(call queue_exp1_cell,$(SENSITIVITY_SYNC_ROOT)/d0,0,50)
 $(call queue_exp1_cell,$(SENSITIVITY_SYNC_ROOT)/d1,1,50)
 $(call queue_exp1_cell,$(SENSITIVITY_SYNC_ROOT)/d2,2,50)
@@ -75,8 +76,6 @@ $(call queue_exp1_cell,$(SENSITIVITY_TIMEOUT_ROOT)/t25,1,25)
 $(call queue_exp1_cell,$(SENSITIVITY_TIMEOUT_ROOT)/t50,1,50)
 $(call queue_exp1_cell,$(SENSITIVITY_TIMEOUT_ROOT)/t100,1,100)
 $(call queue_exp1_cell,$(SENSITIVITY_TIMEOUT_ROOT)/t250,1,250)
-
-EXP1_LAST_OUTPUTS := $(EXP1_CHAIN_PREV)
 
 EXP1_RAW_OUTPUTS := \
 	$(foreach run,$(EXP1_RUN_IDS), \
@@ -94,4 +93,4 @@ EXP1_RAW_OUTPUTS := \
 
 experiment-exp1-sync-delay: $(call sensitivity_run_outputs,$(SENSITIVITY_SYNC_ROOT)/d4,r5)
 
-experiment-exp1-verification-timeout: $(EXP1_LAST_OUTPUTS)
+experiment-exp1-verification-timeout: $(call sensitivity_run_outputs,$(SENSITIVITY_TIMEOUT_ROOT)/t250,r5)

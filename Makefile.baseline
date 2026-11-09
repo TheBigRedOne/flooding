@@ -22,11 +22,6 @@ BASELINE_DEFAULT_DIR = results/baseline/g0-h60-a10-r15-s60
 BASELINE_PROFILE_LIST := g0-h60-a10-r15-s60 g1-h54-a9-r14-s54 g2-h48-a8-r12-s48 g3-h42-a7-r10-s42 g4-h36-a6-r9-s36
 
 EXPERIMENT_RUN_IDS := r1 r2 r3 r4 r5
-_of_empty :=
-_of_space := $(_of_empty) $(_of_empty)
-_of_comma := ,
-BASELINE_PROFILE_NAMES := $(subst $(_of_space),$(_of_comma),$(BASELINE_PROFILE_LIST))
-EXPERIMENT_RUN_CSV := $(subst $(_of_space),$(_of_comma),$(EXPERIMENT_RUN_IDS))
 
 # Eight-handoff schedule shared by the baseline profiles and the solution runs.
 MAIN_HANDOFF_COUNT := 8
@@ -47,9 +42,7 @@ EXPERIMENT_RUN_FILES := consumer_capture.pcap params.txt handoffs.txt \
 
 baseline_run_outputs = $(addprefix results/baseline/$(1)/$(2)/,$(EXPERIMENT_RUN_FILES))
 
-BASELINE_VM_ORDER := $(foreach profile,$(BASELINE_PROFILE_LIST),$(foreach run,$(EXPERIMENT_RUN_IDS),$(profile)/$(run)))
 BASELINE_RAW_OUTPUTS := $(foreach profile,$(BASELINE_PROFILE_LIST),$(foreach run,$(EXPERIMENT_RUN_IDS),$(call baseline_run_outputs,$(profile),$(run))))
-BASELINE_LAST_RUN_OUTPUTS := $(call baseline_run_outputs,$(lastword $(BASELINE_PROFILE_LIST)),$(lastword $(EXPERIMENT_RUN_IDS)))
 
 BASELINE_EXPERIMENT_INPUTS = box/baseline/baseline.$(PROVIDER).box \
                              experiment/app/producer.cpp \
@@ -66,11 +59,12 @@ BASELINE_PROFILE_ENV_g2-h48-a8-r12-s48 := NLSR_HELLO_INTERVAL='48' NLSR_ADJ_LSA_
 BASELINE_PROFILE_ENV_g3-h42-a7-r10-s42 := NLSR_HELLO_INTERVAL='42' NLSR_ADJ_LSA_BUILD_INTERVAL='7' NLSR_ROUTING_CALC_INTERVAL='10' NLSR_SYNC_INTEREST_LIFETIME_MS='42000' NLSR_TUNING_PROFILE='g3-h42-a7-r10-s42'
 BASELINE_PROFILE_ENV_g4-h36-a6-r9-s36 := NLSR_HELLO_INTERVAL='36' NLSR_ADJ_LSA_BUILD_INTERVAL='6' NLSR_ROUTING_CALC_INTERVAL='9' NLSR_SYNC_INTEREST_LIFETIME_MS='36000' NLSR_TUNING_PROFILE='g4-h36-a6-r9-s36'
 
-# $(1) profile, $(2) run id, $(3) order-only outputs of the previous VM run.
+# $(1) profile, $(2) run id, $(3) order-only predecessor.
+# Makefile.baseline is a normal prerequisite but is not passed to run-in-vm.sh.
 define emit_baseline_run
 $(if $(BASELINE_PROFILE_ENV_$(1)),,$(error missing baseline profile environment for $(1)))
-$(call baseline_run_outputs,$(1),$(2)) &: scripts/run-in-vm.sh $$(BASELINE_EXPERIMENT_INPUTS)$(if $(3), | $(3))
-	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="$(BASELINE_PROFILE_ENV_$(1)) $$(MAIN_HANDOFF_ENV) make all" sh $$^ $$@
+$(call baseline_run_outputs,$(1),$(2)) &: scripts/run-in-vm.sh $$(BASELINE_EXPERIMENT_INPUTS) Makefile.baseline$(if $(3), | $(3))
+	RUN_IN_VM_CLEAR_LOCAL=1 RUN_IN_VM_REMOTE_MAKE="$(BASELINE_PROFILE_ENV_$(1)) $$(MAIN_HANDOFF_ENV) make all" sh scripts/run-in-vm.sh $$(BASELINE_EXPERIMENT_INPUTS) $$@
 endef
 
 # The first run waits for both smoke stamps. Later runs wait only for the
@@ -87,11 +81,12 @@ $(foreach profile,$(BASELINE_PROFILE_LIST),$(foreach run,$(EXPERIMENT_RUN_IDS),$
 # Host-side mobility-event analysis. The raw run outputs are real inputs, so a
 # new capture rebuilds these figures and a missing capture builds that run.
 
-BASELINE_PROFILE_COMPARE_OUTPUTS := results/baseline/mobility_events.csv \
-                                   results/baseline/mobility_event_audit.txt \
-                                   results/baseline_service_recovery_time.pdf \
-                                   results/baseline_content_loss_fraction.pdf \
-                                   results/baseline_nlsr_control_rate.pdf
+BASELINE_ANALYSIS_OUTPUTS := results/baseline/mobility_events.csv \
+                             results/baseline/mobility_event_audit.txt
+BASELINE_PAPER_FIGURES := results/baseline_service_recovery_time.pdf \
+                          results/baseline_content_loss_fraction.pdf \
+                          results/baseline_nlsr_control_rate.pdf
+BASELINE_MOBILITY_OUTPUTS := $(BASELINE_ANALYSIS_OUTPUTS) $(BASELINE_PAPER_FIGURES)
 
 # Recorded by the analysis command. Not a paper dependency: sharing the grouped
 # rule above would rebuild the paper figures whenever this PDF is absent.
@@ -100,7 +95,7 @@ BASELINE_FCR_PDF := results/baseline_forwarding_cost_ratio.pdf
 # Paper builds use these host-side analysis outputs.
 BASELINE_ANALYSIS_CMD = python3 -m experiment.tool.analysis.run_mobility_event_analysis analyze-baseline
 
-$(BASELINE_PROFILE_COMPARE_OUTPUTS) &: experiment/tool/analysis/run_mobility_event_analysis.py \
+$(BASELINE_MOBILITY_OUTPUTS) &: experiment/tool/analysis/run_mobility_event_analysis.py \
                                       experiment/tool/analysis/mobility_event_metrics.py \
                                       experiment/tool/analysis/plot_mobility_event_metrics.py \
                                       experiment/tool/analysis/extract_overhead_csv.py \

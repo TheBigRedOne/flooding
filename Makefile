@@ -13,6 +13,8 @@ PROVIDER ?= virtualbox
 
 export PROVIDER
 
+.DEFAULT_GOAL := all
+
 # =============================================================================
 # Master Control Makefile
 
@@ -34,13 +36,8 @@ BASELINE_PROFILE_DIRS := $(addprefix results/baseline/,$(BASELINE_PROFILE_LIST))
 # and NLSR control rate. The OptoFlood comparison adds recovery flooding volume.
 # Routing convergence figures are produced with the routing tables. Legacy
 # forwarding-cost-ratio PDFs stay on the lower-level analysis targets only.
-GENERATED_FIGURES := results/baseline_service_recovery_time.pdf \
-                     results/baseline_content_loss_fraction.pdf \
-                     results/baseline_nlsr_control_rate.pdf \
-                     results/solution_service_recovery_time.pdf \
-                     results/solution_content_loss_fraction.pdf \
-                     results/solution_recovery_flooding_volume.pdf \
-                     results/solution_nlsr_control_rate.pdf \
+GENERATED_FIGURES := $(BASELINE_PAPER_FIGURES) \
+                     $(SOLUTION_PAPER_FIGURES) \
                      results/routing_topology_update_latency.pdf \
                      results/routing_service_path_fib_convergence.pdf \
                      results/routing_network_fib_convergence.pdf
@@ -49,18 +46,11 @@ GENERATED_FIGURES := results/baseline_service_recovery_time.pdf \
 EXP1_PAPER_FIGURES := results/extended/exp1/exp1_sync_delay_sensitivity.pdf \
                       results/extended/exp1/exp1_verification_timeout_sensitivity.pdf
 
-# Shared-versus-Distinct comparison figures. The recipe reads existing
-# analysis CSVs and does not start a VM.
+# Shared-versus-Distinct comparison figures. The recipe reads the Exp2
+# analysis outputs and does not start a VM.
 EXP2_PAPER_FIGURES := results/extended/exp2/comparison/rfv_shared_vs_distinct.pdf \
                       results/extended/exp2/comparison/srt_shared_vs_distinct.pdf \
                       results/extended/exp2/comparison/clf_shared_vs_distinct.pdf
-EXP2_COMPARISON_INPUTS := results/extended/exp2/analysis/network_handoffs.csv \
-                          results/extended/exp2/analysis/consumer_handoffs.csv \
-                          results/extended/exp2/analysis/analysis_audit.txt \
-                          results/extended/exp2/distinct/analysis/network_handoffs.csv \
-                          results/extended/exp2/distinct/analysis/consumer_handoffs.csv \
-                          results/extended/exp2/distinct/analysis/stream_recovery_diagnostics.csv \
-                          results/extended/exp2/distinct/analysis/analysis_audit.txt
 
 # Exp3 manuscript figures. Formal population plots stay under analysis/figures.
 # The two supplementary plots use paper-figures/ so they do not enter the
@@ -71,6 +61,7 @@ EXP3_FORMAL_PAPER_FIGURES := results/extended/exp3/analysis/figures/clf_by_popul
                              results/extended/exp3/analysis/figures/nlsr_control_rate_by_population.pdf
 EXP3_SUPPLEMENTARY_FIGURES := results/extended/exp3/paper-figures/srt_by_producer.pdf \
                               results/extended/exp3/paper-figures/prefix_rfv_by_attachment.pdf
+EXP3_PAPER_FIGURES := $(EXP3_FORMAL_PAPER_FIGURES) $(EXP3_SUPPLEMENTARY_FIGURES)
 
 ALL_FIGURES := paper/figures/NDN_Packets_Processing_Flow.pdf \
                paper/figures/NDN_Producer_Mobility_Problem.pdf \
@@ -79,10 +70,9 @@ ALL_FIGURES := paper/figures/NDN_Packets_Processing_Flow.pdf \
                $(GENERATED_FIGURES) \
                $(EXP1_PAPER_FIGURES) \
                $(EXP2_PAPER_FIGURES) \
-               $(EXP3_FORMAL_PAPER_FIGURES) \
-               $(EXP3_SUPPLEMENTARY_FIGURES)
+               $(EXP3_PAPER_FIGURES)
 
-$(EXP2_PAPER_FIGURES) &: experiment/tool/exp2/plot_exp2_comparison.py $(EXP2_COMPARISON_INPUTS)
+$(EXP2_PAPER_FIGURES) &: experiment/tool/exp2/plot_exp2_comparison.py $(EXP2_ANALYSIS_OUTPUTS)
 	python3 -m experiment.tool.exp2.plot_exp2_comparison
 
 $(EXP3_FORMAL_PAPER_FIGURES) &: experiment/tool/exp3/plot_exp3.py \
@@ -133,18 +123,22 @@ PLOT_TOOL_SRCS := experiment/tool/common/exp.py \
 all: paper/OptoFlood.pdf
 
 # High-level orchestration targets (set the provider via `PROVIDER=...` when needed)
-.PHONY: boxes experiment experiment-baseline experiment-solution experiment-exp1 exp1 \
-        analyse plot paper test mypy vm-clean
+.PHONY: boxes experiment experiment-baseline experiment-solution experiment-exp1 \
+        experiment-exp2 experiment-exp3 exp1 analyse plot paper test mypy vm-clean
 
 
 # Experiments run inside VMs and pull the captures back.
-# `experiment` is the five formal groups. The last Exp3 run order-only follows
-# Exp2, Exp1, Solution, and Baseline. Analyses and the paper stay on `all`.
+# `experiment` is the five formal groups, in order. Each group waits for the
+# previous group's public target. Analyses and the paper stay on `all`.
 experiment-baseline: $(BASELINE_RAW_OUTPUTS)
 
-experiment-solution: $(SOLUTION_RESULTS)
+experiment-solution: $(SOLUTION_RAW_OUTPUTS) | experiment-baseline
 
-experiment-exp1: $(EXP1_LAST_OUTPUTS)
+experiment-exp1: $(EXP1_RAW_OUTPUTS) | experiment-solution
+
+experiment-exp2: $(EXP2_RAW_OUTPUTS) | experiment-exp1
+
+experiment-exp3: $(EXP3_RAW_OUTPUTS) | experiment-exp2
 
 exp1: $(EXP1_PAPER_FIGURES)
 
@@ -245,22 +239,18 @@ $(EXP1_ANALYSIS_OUTPUTS) $(EXP1_PAPER_FIGURES) &: \
 # Analysis products. Baseline, Solution, routing, and Exp1 tables share their
 # generating commands with the corresponding paper figures, so those grouped
 # rules run once. Exp2 and Exp3 tables are separate from their plot recipes.
-ANALYSE_OUTPUTS := results/baseline/mobility_events.csv \
-                   results/baseline/mobility_event_audit.txt \
-                   results/solution/mobility_events.csv \
-                   results/solution/mobility_event_audit.txt \
+ANALYSE_OUTPUTS := $(BASELINE_ANALYSIS_OUTPUTS) \
+                   $(SOLUTION_ANALYSIS_OUTPUTS) \
                    $(ROUTING_ANALYSIS_OUTPUTS) \
                    $(EXP1_ANALYSIS_OUTPUTS) \
-                   $(EXP2_SHARED_ANALYSIS_OUTPUTS) \
-                   $(EXP2_DISTINCT_ANALYSIS_OUTPUTS) \
-                   $(EXP3_CAMPAIGN_OUTPUTS)
+                   $(EXP2_ANALYSIS_OUTPUTS) \
+                   $(EXP3_ANALYSIS_OUTPUTS)
 
 analyse: $(ANALYSE_OUTPUTS)
 
 # Experiment-derived figures named by paper/OptoFlood.tex. Static diagrams
 # under paper/figures/ stay on the paper rule only.
-plot: $(GENERATED_FIGURES) $(EXP1_PAPER_FIGURES) $(EXP2_PAPER_FIGURES) \
-      $(EXP3_FORMAL_PAPER_FIGURES) $(EXP3_SUPPLEMENTARY_FIGURES)
+plot: $(GENERATED_FIGURES) $(EXP1_PAPER_FIGURES) $(EXP2_PAPER_FIGURES) $(EXP3_PAPER_FIGURES)
 
 # Build the paper PDF (follow dependencies; do not hand-check and exit)
 paper: paper/OptoFlood.pdf
@@ -342,7 +332,7 @@ vm-clean:
 	PROVIDER=$(PROVIDER) LATEXMK=latexmk sh scripts/cleanup.sh vm-clean
 
 
-.PHONY: all build-boxes boxes clean deep-clean clean-ssh-config box box-initial box-baseline box-solution experiment experiment-baseline experiment-solution experiment-exp1 exp1 analyse plot paper test mypy vm-clean
+.PHONY: all build-boxes boxes clean deep-clean clean-ssh-config box box-initial box-baseline box-solution experiment experiment-baseline experiment-solution experiment-exp1 experiment-exp2 experiment-exp3 exp1 analyse plot paper test mypy vm-clean
 
 .DELETE_ON_ERROR:
 

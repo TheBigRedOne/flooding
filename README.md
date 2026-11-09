@@ -92,7 +92,7 @@ Active experiment code lives under `experiment/tool/`:
 
 Host recipes run `python3 -m experiment.tool...` from the repository root. Guest recipes pass `PYTHONPATH` to the repository root on the `sudo -E env` line and use the same module names. The two integration smokes stay in `test/`.
 
-The first Baseline run waits, as an order-only prerequisite, for both smoke stamps. Later Baseline runs wait only for the previous Baseline run. The first Solution run waits for the Solution smoke stamp and the last Baseline run. Formal Exp2 waits for the last Exp1 run, t250/r5, and formal Exp3 waits for the last Exp2 run. Those links order the VMs; a newer predecessor does not rebuild the later captures. A change that affects only the Solution smoke does not rebuild Baseline captures.
+The first Baseline run waits, as an order-only prerequisite, for both smoke stamps. Later Baseline runs wait only for the previous Baseline run. The first run of each later module waits for the previous module's public experiment target: Solution for `experiment-baseline`, Exp1 for `experiment-solution`, Exp2 for `experiment-exp1`, and Exp3 for `experiment-exp2`. Those links order the VMs; a newer predecessor does not rebuild the later captures. A change that affects only the Solution smoke does not rebuild Baseline captures.
 
 ## Mobility-event analysis
 
