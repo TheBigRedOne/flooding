@@ -126,6 +126,73 @@ def collect_nfd(nodes, output_dir: str) -> None:
         )
 
 
+# Producer attachments in the smoke topology. Faces are created while every
+# link is up; r3–r5 are then disabled before NLSR starts. r2 stays active.
+SMOKE_PRODUCER_ATTACHMENTS = ("r2", "r3", "r4", "r5")
+SMOKE_INACTIVE_ATTACHMENTS = ("r3", "r4", "r5")
+# Formal exp.py sleeps 30 s after NLSR starts, then at least 90 s before the
+# first handoff. The formal interval is 90 + Uniform(0, 60); smoke uses the
+# lower bound so the wait is deterministic.
+NLSR_INITIAL_WAIT_S = 30
+PRE_HANDOFF_WARMUP_S = 90
+
+
+def _attachment_ips(ndn, attachment: str):
+    producer = ndn.net["producer"]
+    access = ndn.net[attachment]
+    connections = producer.connectionsTo(access)
+    if len(connections) != 1:
+        raise RuntimeError(
+            f"producer--{attachment}: expected one link, found {len(connections)}"
+        )
+    producer_intf, access_intf = connections[0]
+    producer_ip = producer_intf.IP()
+    access_ip = access_intf.IP()
+    if not producer_ip or not access_ip:
+        raise RuntimeError(f"producer--{attachment}: missing interface address")
+    return producer_ip, access_ip
+
+
+def prepare_producer_mobility_faces(ndn, attachments=SMOKE_PRODUCER_ATTACHMENTS) -> None:
+    """Create permanent UDP faces before inactive producer links are taken down."""
+    from minindn.helpers.nfdc import Nfdc
+
+    producer = ndn.net["producer"]
+    for attachment in attachments:
+        access = ndn.net[attachment]
+        producer_ip, access_ip = _attachment_ips(ndn, attachment)
+        for node, remote_ip, label in (
+            (producer, access_ip, f"producer->{attachment}"),
+            (access, producer_ip, f"{attachment}->producer"),
+        ):
+            face_id = Nfdc.createFace(
+                node,
+                remote_ip,
+                Nfdc.PROTOCOL_UDP,
+                isPermanent=True,
+                allowExisting=True,
+            )
+            if face_id == -1:
+                raise RuntimeError(
+                    f"mobility face preparation failed: {label} udp://{remote_ip}"
+                )
+
+
+def producer_face_list(ndn) -> str:
+    return ndn.net["producer"].cmd("nfdc face list")
+
+
+def missing_producer_attachment_faces(ndn, attachments=SMOKE_PRODUCER_ATTACHMENTS):
+    """Return attachment names whose remote IP is absent from the producer face list."""
+    listing = producer_face_list(ndn)
+    missing = []
+    for attachment in attachments:
+        _producer_ip, access_ip = _attachment_ips(ndn, attachment)
+        if access_ip not in listing:
+            missing.append(f"{attachment} {access_ip}")
+    return missing, listing
+
+
 def write_handoff(output_dir: str, handoff_ns: int, source: str, target: str) -> None:
     path = os.path.join(output_dir, "handoff.txt")
     with open(path, "w", encoding="utf-8") as handle:

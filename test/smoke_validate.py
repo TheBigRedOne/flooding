@@ -12,7 +12,9 @@ ARM_NAME = "/localhost/nfd/optoflood/arm/LiveStream"
 _APP_LINE = re.compile(r"^\[(\d+)\]\s+(.*)$")
 _NFD_LINE = re.compile(r"^(\d+\.\d+)\s+.*$")
 _DELIVERED = re.compile(r"FRAME: delivered frame=(\d+)\b")
+_SEND = re.compile(r"SEND: frame=(\d+)\b")
 _DISCOVER = re.compile(r"DISCOVER: live edge = (\d+)\b")
+_GUARD_HELD = "GUARD-PRODUCER: holding guard"
 _ARMED = re.compile(r"MOBILITY: armed NFD (\S+)")
 _NFD_ARM = re.compile(r"OptoFlood arm prefix=(\S+)")
 _NFD_FORWARD = re.compile(r"OptoFlood forward data=(\S+)")
@@ -67,6 +69,50 @@ def load_handoff_ns(results_dir: str) -> int:
         if line.startswith("handoff_ns="):
             return int(line.split("=", 1)[1].strip())
     raise ValueError("handoff.txt has no handoff_ns")
+
+
+def has_non_root_livestream_fib(fib_text: str) -> bool:
+    """True when nfdc lists /LiveStream itself, not only the root or another prefix."""
+    for raw in fib_text.splitlines():
+        line = raw.strip()
+        if not line or line == "FIB:":
+            continue
+        token = line.split()[0]
+        if token.startswith("prefix="):
+            token = token.split("=", 1)[1]
+        token = token.rstrip(",")
+        if token == PREFIX or token.startswith(PREFIX + "/"):
+            return True
+    return False
+
+
+def pre_handoff_status(consumer_log: str, producer_daemon_log: str, fib_text: str) -> Tuple[bool, bool, bool]:
+    """Business delivery, held guard, and r3's non-root /LiveStream FIB are separate."""
+    business = discover_and_delivery(consumer_log) is None and bool(app_events(consumer_log, _DELIVERED))
+    guard = _GUARD_HELD in producer_daemon_log
+    return business, guard, has_non_root_livestream_fib(fib_text)
+
+
+def fresh_post_handoff_delivery(consumer_log: str, handoff_ns: int) -> bool:
+    """A recovered frame must be requested after the handoff, not merely delivered then."""
+    sent_at = {}
+    for timestamp, match in app_events(consumer_log, _SEND):
+        frame = int(match.group(1))
+        if frame not in sent_at or timestamp < sent_at[frame]:
+            sent_at[frame] = timestamp
+    deliveries = app_events(consumer_log, _DELIVERED)
+    pre_frames = [int(match.group(1)) for timestamp, match in deliveries if timestamp < handoff_ns]
+    if not pre_frames:
+        return False
+    last_pre = max(pre_frames)
+    for timestamp, match in deliveries:
+        frame = int(match.group(1))
+        if timestamp <= handoff_ns or frame <= last_pre:
+            continue
+        request_ns = sent_at.get(frame)
+        if request_ns is not None and request_ns > handoff_ns:
+            return True
+    return False
 
 
 def discover_and_delivery(consumer_log: str) -> Optional[str]:
@@ -126,14 +172,10 @@ def check_solution(results_dir: str) -> List[str]:
     daemon_log = read_text(daemon_path)
     deliveries = app_events(consumer_log, _DELIVERED)
     pre = [(timestamp, int(match.group(1))) for timestamp, match in deliveries if timestamp < handoff_ns]
-    post = [(timestamp, int(match.group(1))) for timestamp, match in deliveries if timestamp > handoff_ns]
     if not pre:
         errors.append("no Content delivery before the handoff")
-    else:
-        last_pre = max(frame for _timestamp, frame in pre)
-        fresh = [item for item in post if item[1] > last_pre]
-        if not fresh:
-            errors.append("no fresh Content frame delivered after the handoff")
+    elif not fresh_post_handoff_delivery(consumer_log, handoff_ns):
+        errors.append("no fresh Content frame delivered after the handoff")
     arms = [
         (timestamp, match.group(1))
         for timestamp, match in app_events(daemon_log, _ARMED)

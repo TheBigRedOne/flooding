@@ -10,19 +10,29 @@ from minindn.apps.nfd import Nfd
 from minindn.minindn import Minindn
 
 from smoke_runtime import (
+    NLSR_INITIAL_WAIT_S,
+    POLL_S,
+    PRE_HANDOFF_WARMUP_S,
     PREFIX,
     READY_TIMEOUT_S,
+    SMOKE_INACTIVE_ATTACHMENTS,
+    SMOKE_PRODUCER_ATTACHMENTS,
     BranchTopo,
     TunableNlsr,
     collect_nfd,
     launch_apps,
     launch_daemons,
+    missing_producer_attachment_faces,
     prepare_identity,
+    prepare_producer_mobility_faces,
     results_dir,
     wait_until,
     write_handoff,
 )
-from smoke_validate import _DELIVERED, app_events, discover_and_delivery
+from smoke_validate import (
+    fresh_post_handoff_delivery,
+    pre_handoff_status,
+)
 
 
 SOLUTION_NLSR = (
@@ -34,8 +44,36 @@ SOLUTION_NLSR = (
 )
 
 
-def _delivered_frames(text: str):
-    return [int(match.group(1)) for _timestamp, match in app_events(text, _DELIVERED)]
+def _read(path: str) -> str:
+    if not os.path.isfile(path):
+        return ""
+    with open(path, "r", encoding="utf-8", errors="replace") as handle:
+        return handle.read()
+
+
+def _wait_pre_handoff(consumer_log: str, daemon_log: str, r3) -> None:
+    """After the formal minimum wait, require business, guard, and r3 FIB separately."""
+    deadline = time.monotonic() + READY_TIMEOUT_S
+    business = guard = fib_ready = False
+    fib_text = ""
+    while time.monotonic() < deadline:
+        fib_text = r3.cmd("nfdc fib list")
+        business, guard, fib_ready = pre_handoff_status(
+            _read(consumer_log), _read(daemon_log), fib_text,
+        )
+        if business and guard and fib_ready:
+            info(
+                "smoke ready: business delivery, held guard, and r3 /LiveStream FIB\n"
+            )
+            return
+        time.sleep(POLL_S)
+    diag = os.path.join(os.path.dirname(consumer_log), "r3_fib_before_handoff.txt")
+    with open(diag, "w", encoding="utf-8") as handle:
+        handle.write(fib_text)
+    raise TimeoutError(
+        "pre-handoff readiness failed "
+        f"business={business} guard={guard} fib={fib_ready}; saved {diag}"
+    )
 
 
 def main() -> None:
@@ -52,30 +90,39 @@ def main() -> None:
         Minindn.verifyDependencies()
         ndn = Minindn(topo=BranchTopo())
         ndn.start()
-        info("Starting NFD and full-solution NLSR\n")
+        info("Starting NFD\n")
         AppManager(ndn, ndn.net.hosts, Nfd, logLevel="DEBUG")
-        AppManager(
-            ndn, ndn.net.hosts, TunableNlsr, logLevel="DEBUG", infoeditChanges=SOLUTION_NLSR,
-        )
-        for attachment in ("r3", "r4", "r5"):
-            ndn.net.configLinkStatus("producer", attachment, "down")
         producer = ndn.net["producer"]
         consumer = ndn.net["consumer"]
         routers = [ndn.net[name] for name in ("r1", "r2", "r3", "r4", "r5")]
         nfd_nodes = [producer, consumer, *routers]
+        prepare_producer_mobility_faces(ndn, SMOKE_PRODUCER_ATTACHMENTS)
+        for attachment in SMOKE_INACTIVE_ATTACHMENTS:
+            ndn.net.configLinkStatus("producer", attachment, "down")
+        missing, face_list = missing_producer_attachment_faces(ndn)
+        face_path = os.path.join(output_dir, "producer_faces_after_inactive_down.txt")
+        with open(face_path, "w", encoding="utf-8") as handle:
+            handle.write(face_list)
+        if missing:
+            raise RuntimeError(
+                "permanent mobility faces missing after inactive links were disabled: "
+                + ", ".join(missing)
+            )
+        info("Starting full-solution NLSR\n")
+        AppManager(
+            ndn, ndn.net.hosts, TunableNlsr, logLevel="DEBUG", infoeditChanges=SOLUTION_NLSR,
+        )
+        info(f"Waiting {NLSR_INITIAL_WAIT_S}s for NLSR initial convergence\n")
+        time.sleep(NLSR_INITIAL_WAIT_S)
         prepare_identity(producer)
         binary_dir = os.path.dirname(experiment_dir)
         launch_apps(producer, consumer, binary_dir, output_dir)
         launch_daemons(producer, consumer, binary_dir, output_dir)
+        info(f"Waiting {PRE_HANDOFF_WARMUP_S}s before the first handoff\n")
+        time.sleep(PRE_HANDOFF_WARMUP_S)
         consumer_log = os.path.join(output_dir, "consumer.log")
-        wait_until(
-            consumer_log,
-            lambda text: discover_and_delivery(text) is None and _delivered_frames(text),
-            READY_TIMEOUT_S,
-            "pre-handoff content delivery",
-        )
-        before = _delivered_frames(open(consumer_log, encoding="utf-8", errors="replace").read())
-        last_pre = max(before)
+        daemon_log = os.path.join(output_dir, "optoflood_producer.log")
+        _wait_pre_handoff(consumer_log, daemon_log, ndn.net["r3"])
         handoff_ns = time.time_ns()
         write_handoff(output_dir, handoff_ns, "r2", "r3")
         info(f"Handoff producer r2 -> r3 at {handoff_ns} for {PREFIX}\n")
@@ -83,10 +130,7 @@ def main() -> None:
         ndn.net.configLinkStatus("producer", "r3", "up")
 
         def recovered(text: str) -> bool:
-            for timestamp, match in app_events(text, _DELIVERED):
-                if timestamp > handoff_ns and int(match.group(1)) > last_pre:
-                    return True
-            return False
+            return fresh_post_handoff_delivery(text, handoff_ns)
 
         wait_until(
             consumer_log,
