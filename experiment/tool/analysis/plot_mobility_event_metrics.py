@@ -255,7 +255,13 @@ def draw_recovery_flooding_volume(rows: Sequence[Dict[str, str]], path: str, col
     ax.set_xticks(centers)
     ax.set_xticklabels(layout.labels)
     ax.set_xlim(0.5, len(layout.labels) + 0.5)
-    ax.set_ylim(5.5, 11.0)
+    # Median and mean are included so a reference line cannot fall outside the axes.
+    bounds = list(layout.y_kb) + [median_kb, mean_kb]
+    lower = min(bounds)
+    upper = max(bounds)
+    span = upper - lower
+    margin = span * 0.08 if span > 0.0 else max(abs(upper) * 0.08, 0.05)
+    ax.set_ylim(lower - margin, upper + margin)
     # The full ylabel is longer than the column canvas. The subcaption names
     # the metric; the axis keeps the unit. The legend sits below the axes.
     if column_pair:

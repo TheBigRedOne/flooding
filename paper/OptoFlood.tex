@@ -201,7 +201,7 @@ Figures~\ref{fig:baseline_content_loss_fraction}--\ref{fig:baseline_nlsr_control
     \subfloat[NLSR control rate]{%
         \includegraphics[width=0.30\textwidth]{baseline_nlsr_control_rate.pdf}%
         \label{fig:baseline_nlsr_control_rate}}
-    \caption{Baseline tuning for G0--G4. Each configuration contains 40 mobility events from five runs. One G1 event is right-censored; the marker shows its censoring bound and is excluded from the box statistics.}
+    \caption{Baseline NLSR timer profiles}
     \label{fig:baseline_results}
 \end{figure*}
 
@@ -340,7 +340,7 @@ The median CLF is 0.434 for G0 and 0.00049 for OptoFlood. The largest OptoFlood 
         \includegraphics[width=0.41\textwidth]{solution_content_loss_fraction.pdf}
         \label{fig:solution_content_loss_fraction}
     }
-    \caption{Request-path recovery and content loss for G0 and OptoFlood. Each box summarises 40 hand-off events.}
+    \caption{Service Recovery Time and Content Loss Fraction for G0 and OptoFlood}
     \todo{Rework Figure~\ref{fig:solution_service_delivery} into two narrower subfigures that fit side-by-side in one column.}
     \label{fig:solution_service_delivery}
 \end{figure*}
@@ -368,7 +368,7 @@ Network-wide convergence requires the correct FIB state at every affected router
     \subfloat[Network-wide FIB convergence]{%
         \includegraphics[width=0.31\textwidth]{routing_network_fib_convergence.pdf}%
         \label{fig:routing_network_fib_convergence}}
-    \caption{Routing behaviour after a hand-off. Each configuration contains 40 mobility events. (a)~Complete producer-side mobility-topology update. (b)~Service-path FIB convergence. (c)~Network-wide FIB convergence. The G1 marker in (c) is the right-censor observation boundary and is excluded from the box statistics.}
+    \caption{Routing behaviour after producer hand-off for G0--G4 and OptoFlood}
     \label{fig:routing_convergence}
 \end{figure*}
 \todo{End Section~\ref{sec:evaluation:routing} with a concise statement of the observed OptoFlood benefit.}
@@ -390,7 +390,7 @@ The median NLSR control rate is 1.27~kB/s for G0 and 1.18~kB/s for OptoFlood. In
     \subfloat[NLSR control rate]{%
         \includegraphics[width=0.40\textwidth]{solution_nlsr_control_rate.pdf}%
         \label{fig:solution_nlsr_control_rate}}
-    \caption{Recovery and control overhead in the main experiment. (a)~OptoFlood flooding volume per hand-off; G0--G4 contribute no recovery-flood bytes. (b)~NLSR control rate for G0 and OptoFlood.}
+    \caption{Recovery and control overhead: (a) OptoFlood recovery-flood volume per hand-off; (b) network-wide NLSR control rate.}
     \label{fig:solution_overhead}
 \end{figure*}
 
@@ -414,7 +414,7 @@ Figure~\ref{fig:ext_sync_delay} shows the three routing timings. The median Serv
 \begin{figure*}[t]
     \centering
     \includegraphics[width=0.98\textwidth]{results/extended/exp1/exp1_sync_delay_sensitivity.pdf}
-    \caption{Sensitivity to the SPRC Sync-publication delay. Each parameter value is represented by eight matched hand-off observations from one run. (a)~Service-Path LSA Lead. (b)~Service-Path FIB convergence. (c)~Network-Wide FIB convergence. The 1~s setting is the main-evaluation setting.}
+    \caption{Sensitivity to SPRC Sync-publication delay}
     \label{fig:ext_sync_delay}
 \end{figure*}
 
@@ -426,7 +426,7 @@ Figure~\ref{fig:ext_verification_timeout} shows the resulting routing timings. T
 \begin{figure*}[t]
     \centering
     \includegraphics[width=0.98\textwidth]{results/extended/exp1/exp1_verification_timeout_sensitivity.pdf}
-    \caption{Sensitivity to the EDRC event-driven verification timeout. Each parameter value is represented by eight matched hand-off observations from one run. (a)~Complete Mobility-Topology Update Latency. (b)~Service-Path FIB convergence. (c)~Network-Wide FIB convergence. The 50~ms setting is the main-evaluation setting.}
+    \caption{Sensitivity to EDRC verification timeout}
     \label{fig:ext_verification_timeout}
 \end{figure*}
 
@@ -445,7 +445,7 @@ Figure~\ref{fig:ext_consumers} shows network-wide Recovery Flooding Volume, the 
 \begin{figure*}[t]
     \centering
     \includegraphics[width=0.95\textwidth]{results/extended/exp2/comparison/rfv_shared_vs_distinct.pdf}
-    \caption{Network-wide Recovery Flooding Volume per hand-off. Each configuration contains five runs of eight hand-offs. Boxes show the event-level observations, and the five symbols mark the run-level medians.}
+    \caption{Network-wide Recovery Flooding Volume per hand-off}
     \label{fig:ext_consumers}
 \end{figure*}
 
@@ -454,7 +454,7 @@ Network-level Service Recovery Time runs from a hand-off until the producer rece
 \begin{figure*}[t]
     \centering
     \includegraphics[width=0.95\textwidth]{results/extended/exp2/comparison/srt_shared_vs_distinct.pdf}
-    \caption{Network-level Service Recovery Time, from the hand-off until the producer receives the earliest qualifying ordinary-content Interest packet issued after the hand-off. For \(N>1\), the observation is the earliest qualifying recovery among the active consumers. Every hand-off in these configurations has an observed recovery.}
+    \caption{Network-level service recovery time across consumer configurations}
     \label{fig:ext_consumers_srt}
 \end{figure*}
 
@@ -463,7 +463,7 @@ Content Loss Fraction is calculated separately for each consumer as one minus th
 \begin{figure*}[t]
     \centering
     \includegraphics[width=0.95\textwidth]{results/extended/exp2/comparison/clf_shared_vs_distinct.pdf}
-    \caption{Content Loss Fraction for each consumer, relative to nominal frame opportunities. The left panel shows the full range. The right panel magnifies the low-CLF region.}
+    \caption{Content Loss Fraction for each consumer}
     \label{fig:ext_consumers_clf}
 \end{figure*}
 
@@ -478,21 +478,21 @@ Exp3 attaches one, two, or four producer--consumer pairs. Each producer advertis
 \begin{figure*}[t]
     \centering
     \includegraphics[width=0.95\textwidth]{results/extended/exp3/paper-figures/srt_by_producer.pdf}
-    \caption{Service recovery time by producer, conditional on observed recovery. Points are handoffs within five runs, not independent replicates.}
+    \caption{Service Recovery Time by producer for recovered hand-offs}
     \label{fig:ext_producers_srt}
 \end{figure*}
 
 \begin{figure*}[t]
     \centering
     \includegraphics[width=0.95\textwidth]{results/extended/exp3/analysis/figures/clf_by_population.pdf}
-    \caption{Content loss fraction by paired consumer. The fraction is one minus the distinct delivered content frames divided by the nominal frame opportunities in the handoff window.}
+    \caption{Content Loss Fraction of paired consumers across producer populations}
     \label{fig:ext_producers_clf}
 \end{figure*}
 
 \begin{figure*}[t]
     \centering
     \includegraphics[width=0.95\textwidth]{results/extended/exp3/paper-figures/prefix_rfv_by_attachment.pdf}
-    \caption{Per-handoff prefix recovery-flood bytes and sender-egress transmissions, grouped by the producer's new attachment relative to its paired consumer. The two panels describe the same handoffs.}
+    \caption{Per-handoff prefix recovery flooding grouped by the producer's new attachment relative to its paired consumer}
     \label{fig:ext_producers_rfv}
 \end{figure*}
 
@@ -505,7 +505,7 @@ Exp3 attaches one, two, or four producer--consumer pairs. Each producer advertis
     \subfloat[Network-wide NLSR control rate per run.\label{fig:ext_producers_nlsr}]{%
         \includegraphics[width=0.48\textwidth]{results/extended/exp3/analysis/figures/nlsr_control_rate_by_population.pdf}%
     }
-    \caption{Run-level network overhead. Each point is one formal run. The totals are not multiplied by the producer population.}
+    \caption{Run-level network overhead across producer populations}
     \label{fig:ext_producers_overhead}
 \end{figure*}
 

@@ -162,7 +162,8 @@ def _style_populations(ax: plt.Axes, ylabel: str, title: str) -> None:
     ax.set_xticks(range(len(POPULATIONS)))
     ax.set_xticklabels(("P=1", "P=2", "P=4"))
     ax.set_ylabel(ylabel)
-    ax.set_title(title)
+    if title:
+        ax.set_title(title)
     ax.legend(frameon=False, fontsize=8)
 
 
@@ -202,7 +203,6 @@ def draw_formal(analysis_root: Path, figure_dir: Path) -> List[Path]:
         axis.set_title(population)
         axis.tick_params(axis="x", labelrotation=30)
     axes[0].set_ylabel("CLF (fraction per handoff)")
-    figure.suptitle("Exp3 content loss fraction, unweighted handoffs, by paired consumer")
     path = figure_dir / "clf_by_population.pdf"
     _save(figure, path)
     written.append(path)
@@ -224,7 +224,7 @@ def draw_formal(analysis_root: Path, figure_dir: Path) -> List[Path]:
     _style_populations(
         axis,
         "Network-wide RFV (bytes per run)",
-        "Exp3 network RFV, one observation per run, not multiplied by P",
+        "",
     )
     path = figure_dir / "network_rfv_by_population.pdf"
     _save(figure, path)
@@ -235,7 +235,7 @@ def draw_formal(analysis_root: Path, figure_dir: Path) -> List[Path]:
     _style_populations(
         axis,
         "NLSR control rate (bytes/s)",
-        "Exp3 network-wide NLSR control rate over the common observation interval",
+        "",
     )
     path = figure_dir / "nlsr_control_rate_by_population.pdf"
     _save(figure, path)
@@ -522,7 +522,8 @@ def draw_srt_by_producer(handoffs: Sequence[Mapping[str, str]], figure_dir: Path
         axis.set_title({"p1": "P=1", "p2": "P=2", "p4": "P=4"}[population], pad=4)
         axis.set_ylim(lower, upper)
     axes[0].set_ylabel("SRT (ms), conditional on recovery")
-    figure.suptitle(f"SRT by producer ({censored} right-censored)", y=0.98)
+    if censored:
+        figure.suptitle(f"SRT by producer ({censored} right-censored)", y=0.98)
     if legend_axis is not None and legend_axis.get_legend_handles_labels()[0]:
         handles, labels = legend_axis.get_legend_handles_labels()
         figure.legend(
@@ -573,15 +574,11 @@ def draw_prefix_rfv_by_attachment(handoffs: Sequence[Mapping[str, str]], figure_
             fontsize=8,
             annotation_clip=False,
         )
-    figure.suptitle(
-        "Prefix recovery flooding by new attachment relative to the paired consumer\n"
-        "Bytes and transmissions describe the same handoffs."
-    )
     if legend_axis is not None and legend_axis.get_legend_handles_labels()[0]:
         handles, labels = legend_axis.get_legend_handles_labels()
-        figure.legend(handles, labels, loc="upper center", ncol=5, frameon=False, bbox_to_anchor=(0.5, 0.90))
+        figure.legend(handles, labels, loc="upper center", ncol=5, frameon=False, bbox_to_anchor=(0.5, 0.98))
     path = figure_dir / "prefix_rfv_by_attachment.pdf"
-    _save(figure, path, bottom=0.22, top=0.84)
+    _save(figure, path, bottom=0.22, top=0.90)
     return path
 
 

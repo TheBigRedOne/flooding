@@ -542,10 +542,16 @@ def _draw_parameter_panel(
         previous_index = index
         previous_x = x
         previous_median = median
-    axis.set_xticks(positions)
-    axis.set_xticklabels([parameter for _cell, parameter in cells])
+    tick_labels = [parameter for _cell, parameter in cells]
     if log_x:
+        from matplotlib.ticker import FixedFormatter, FixedLocator, NullFormatter
         axis.set_xscale("log")
+        axis.xaxis.set_major_locator(FixedLocator(positions))
+        axis.xaxis.set_major_formatter(FixedFormatter(tick_labels))
+        axis.xaxis.set_minor_formatter(NullFormatter())
+    else:
+        axis.set_xticks(positions)
+        axis.set_xticklabels(tick_labels)
     axis.set_title(title, loc="left", fontsize=9)
     axis.set_xlabel(xlabel)
     axis.set_ylabel("Time (ms)")

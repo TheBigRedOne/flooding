@@ -252,7 +252,7 @@ def aggregate_solution() -> None:
     _write_rows(destination, rows)
     _audit(RESULTS / "solution" / "mobility_event_audit.txt", rows)
     _boxes(destination, "service_recovery_time_ms", "Service recovery time (ms)", "G0,OptoFlood", RESULTS / "solution_service_recovery_time.pdf", True, service_pair=True)
-    _boxes(destination, "content_loss_fraction", "Content loss fraction", "G0,OptoFlood", RESULTS / "solution_content_loss_fraction.pdf", False, service_pair=True)
+    _boxes(destination, "content_loss_fraction", "Content loss fraction", "G0,OptoFlood", RESULTS / "solution_content_loss_fraction.pdf", True, service_pair=True)
     # Legacy manuscript compatibility. FCR is not an active evaluation metric.
     _boxes(destination, "forwarding_cost_ratio", "Forwarding cost ratio", "G0,OptoFlood", RESULTS / "solution_forwarding_cost_ratio.pdf", False)
     _boxes(destination, "nlsr_control_rate_bytes_per_s", "NLSR control rate (bytes/s)", "G0,OptoFlood", RESULTS / "solution_nlsr_control_rate.pdf", False, column_pair=True)
