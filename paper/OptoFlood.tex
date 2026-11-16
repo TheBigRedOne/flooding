@@ -473,7 +473,13 @@ Median NLSR control rates are 1,176.52~B/s at \(N=1\), 1,417.95~B/s and 1,352.09
 \subsubsection{Multiple Producers}
 \label{sec:evaluation:extended:producers}
 
-Exp3 attaches one, two, or four producer--consumer pairs. Each producer advertises a distinct prefix and moves on an independent schedule. Each population consists of five formal runs. Figures~\ref{fig:ext_producers_srt}--\ref{fig:ext_producers_overhead} show the measured recovery time, content delivery, per-handoff recovery flooding, and run-level network overhead. Interpretation of these measurements is deferred.
+Exp3 evaluates OptoFlood with one, two, and four producer--consumer pairs. Each consumer remains at a fixed access point, while its paired producer advertises a distinct prefix and follows an independent mobility schedule. Each producer performs eight hand-offs per run. We conduct five independent runs for each producer population, giving 40, 80, and 160 producer hand-off observations, respectively.
+
+Figure~\ref{fig:ext_producers_srt} shows Service Recovery Time for each producer. All 280 hand-offs have an observed recovery. The per-producer median SRT ranges from approximately 57 to 64~ms across the three populations. The pooled medians are approximately 57, 60, and 60~ms for \(P=1\), \(P=2\), and \(P=4\), respectively. A small number of hand-offs take longer, while typical recovery remains around 60~ms. Figure~\ref{fig:ext_producers_clf} reports Content Loss Fraction for the paired consumers. Their medians range from approximately 0.0006 to 0.0008, with higher values in a small number of hand-off events.
+
+Figure~\ref{fig:ext_producers_rfv} compares Prefix Recovery Flooding Volume and sender-egress recovery transmissions per producer hand-off. The median recovery volume is approximately 5--6~kB per hand-off across the three populations, corresponding to around 20--25 flood-marked packet transmissions across the network. The boxes show the variation among hand-offs, alongside five run-level medians for each population.
+
+Figure~\ref{fig:ext_producers_overhead} reports network-wide recovery flooding and NLSR control traffic at the run level. Network Recovery Flooding Volume increases across the tested populations, with observed ranges of approximately 38--55~kB for \(P=1\), 66--83~kB for \(P=2\), and 139--182~kB for \(P=4\). NLSR control rates follow the same trend, at approximately 1.1~kB/s for \(P=1\), 2.2~kB/s for \(P=2\), and 5.7--6.3~kB/s for \(P=4\). These totals reflect the combined workload and routing domain of each configuration. The number of producer hand-offs, advertised prefixes, and routing nodes increases with the producer population. Across the evaluated configurations, OptoFlood maintains similar median request-path recovery times while incurring greater aggregate network overhead as more producers move.
 
 \begin{figure*}[t]
     \centering
@@ -491,7 +497,7 @@ Exp3 attaches one, two, or four producer--consumer pairs. Each producer advertis
 
 \begin{figure*}[t]
     \centering
-    \includegraphics[width=0.95\textwidth]{results/extended/exp3/paper-figures/prefix_rfv_by_population.pdf}
+    \includegraphics[width=0.95\textwidth]{results/extended/exp3/analysis/figures/prefix_rfv_by_population.pdf}
     \caption{Per-handoff prefix recovery flooding across producer populations}
     \label{fig:ext_producers_rfv}
 \end{figure*}
