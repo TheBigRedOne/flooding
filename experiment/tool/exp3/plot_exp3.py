@@ -11,6 +11,7 @@ P=4 pilot diagnostics, labelled as a pilot rather than formal r1:
 from __future__ import annotations
 
 import csv
+import statistics
 import sys
 import zlib
 from pathlib import Path
@@ -347,15 +348,7 @@ def draw_pilot(analysis_root: Path, figure_dir: Path) -> List[Path]:
 
 
 EVENT_KEY = ("population", "run_id", "producer", "handoff_index")
-ATTACHMENT_CATEGORIES = ("same-access", "same-aggregation", "opposite-aggregation")
-ATTACHMENT_LABELS = {
-    "same-access": "Same access",
-    "same-aggregation": "Same aggregation,\ndifferent access",
-    "opposite-aggregation": "Opposite aggregation",
-}
-EXTENDED_FIGURES = ("srt_by_producer.pdf", "prefix_rfv_by_attachment.pdf")
-_ATTACHMENT_GROUP = 4.0
-_ATTACHMENT_SLOT = 0.9
+EXTENDED_FIGURES = ("srt_by_producer.pdf", "prefix_rfv_by_population.pdf")
 
 
 def _access_aggregation() -> Dict[str, str]:
@@ -461,10 +454,6 @@ def load_extended_handoffs(analysis_root: Path) -> List[Dict[str, str]]:
     return joined
 
 
-def _attachment_position(category: str, population: str) -> float:
-    return ATTACHMENT_CATEGORIES.index(category) * _ATTACHMENT_GROUP + POPULATIONS.index(population) * _ATTACHMENT_SLOT
-
-
 def _producer_label(producer: str) -> str:
     if not producer.startswith("producer") or not producer.removeprefix("producer").isdigit():
         raise PlotDataError(f"unknown producer: {producer}")
@@ -535,50 +524,85 @@ def draw_srt_by_producer(handoffs: Sequence[Mapping[str, str]], figure_dir: Path
     return path
 
 
-def draw_prefix_rfv_by_attachment(handoffs: Sequence[Mapping[str, str]], figure_dir: Path) -> Path:
-    """Bytes and sender-egress transmissions for the same handoffs, by new attachment."""
-    figure, axes = plt.subplots(2, 1, figsize=(8.0, 7.2), sharex=True)
-    panels = (
-        (axes[0], "prefix_rfv_bytes", "Prefix RFV\n(bytes per handoff)", True),
-        (axes[1], "prefix_rfv_packets", "Sender-egress transmissions\nper handoff", False),
-    )
-    legend_axis = None
-    for axis, value_key, ylabel, label_runs in panels:
-        def position(row: Mapping[str, str]) -> Optional[float]:
-            category = row.get("attachment_category")
-            if category not in ATTACHMENT_CATEGORIES or row["population"] not in POPULATIONS:
-                return None
-            return _attachment_position(category, row["population"])
+def draw_prefix_rfv_by_population(handoffs: Sequence[Mapping[str, str]], figure_dir: Path) -> Path:
+    """Prefix RFV by producer population.
 
-        _box_with_runs(axis, handoffs, value_key, position, jitter=True, label_runs=label_runs, widths=0.62)
-        axis.relim()
-        axis.autoscale_view()
-        legend_axis = legend_axis or axis
-        axis.set_ylabel(ylabel)
-    positions = [
-        _attachment_position(category, population)
-        for category in ATTACHMENT_CATEGORIES
-        for population in POPULATIONS
-    ]
-    axes[1].set_xticks(positions)
-    axes[1].set_xticklabels(["P=1", "P=2", "P=4"] * len(ATTACHMENT_CATEGORIES))
-    for category in ATTACHMENT_CATEGORIES:
-        axes[1].annotate(
-            ATTACHMENT_LABELS[category],
-            xy=(_attachment_position(category, "p2"), 0.0),
-            xycoords=("data", "axes fraction"),
-            xytext=(0, -36),
-            textcoords="offset points",
-            ha="center",
-            va="top",
-            fontsize=8,
-            annotation_clip=False,
+    Each box pools that population's producer hand-offs. The five markers are run medians.
+    """
+    expected = {"p1": 40, "p2": 80, "p4": 160}
+    per_run = {"p1": 8, "p2": 16, "p4": 32}
+    counts = {population: 0 for population in POPULATIONS}
+    for row in handoffs:
+        if row["population"] not in counts:
+            raise PlotDataError(f"unexpected population: {row['population']}")
+        counts[row["population"]] += 1
+    if len(handoffs) != 280 or counts != expected:
+        raise PlotDataError(f"prefix RFV figure requires 280 hand-offs {expected}; got {len(handoffs)} {counts}")
+    figure, axes = plt.subplots(2, 1, figsize=(6.2, 6.4), sharex=True)
+    panels = (
+        (axes[0], "prefix_rfv_bytes", "Prefix RFV (bytes per handoff)"),
+        (axes[1], "prefix_rfv_packets", "Sender-egress transmissions per handoff"),
+    )
+    labelled: set[str] = set()
+    for axis, value_key, ylabel in panels:
+        series: List[List[float]] = []
+        for population in POPULATIONS:
+            values: List[float] = []
+            for row in handoffs:
+                if row["population"] != population:
+                    continue
+                value = _numeric(row, value_key)
+                if value is None:
+                    raise PlotDataError(f"missing {value_key} for {row['population']} {row['run_id']}")
+                values.append(value)
+            series.append(values)
+        axis.boxplot(
+            series, positions=list(range(len(POPULATIONS))), widths=0.55, whis=1.5,
+            showfliers=True, showmeans=False,
         )
-    if legend_axis is not None and legend_axis.get_legend_handles_labels()[0]:
-        handles, labels = legend_axis.get_legend_handles_labels()
-        figure.legend(handles, labels, loc="upper center", ncol=5, frameon=False, bbox_to_anchor=(0.5, 0.98))
-    path = figure_dir / "prefix_rfv_by_attachment.pdf"
-    _save(figure, path, bottom=0.22, top=0.90)
+        for population_index, population in enumerate(POPULATIONS):
+            for run_index, run_id in enumerate(RUNS):
+                selected = []
+                for row in handoffs:
+                    if row["population"] != population or row["run_id"] != run_id:
+                        continue
+                    value = _numeric(row, value_key)
+                    if value is None:
+                        raise PlotDataError(f"missing {value_key} for {population} {run_id}")
+                    selected.append(value)
+                if len(selected) != per_run[population]:
+                    raise PlotDataError(
+                        f"{population} {run_id} has {len(selected)} {value_key} values; expected {per_run[population]}"
+                    )
+                label = None
+                if run_id not in labelled:
+                    label = run_id
+                    labelled.add(run_id)
+                axis.plot(
+                    population_index + (run_index - 2) * 0.11,
+                    statistics.median(selected),
+                    marker=RUN_MARKERS[run_index],
+                    markerfacecolor="black",
+                    markeredgecolor="white",
+                    markeredgewidth=0.6,
+                    markersize=6.5,
+                    linestyle="None",
+                    zorder=6,
+                    label=label,
+                )
+        axis.set_ylabel(ylabel)
+        axis.grid(True, axis="y", linestyle="--", alpha=0.6)
+        axis.set_axisbelow(True)
+    axes[1].set_xticks(list(range(len(POPULATIONS))))
+    axes[1].set_xticklabels(("P=1", "P=2", "P=4"))
+    handles, labels = axes[0].get_legend_handles_labels()
+    if handles:
+        figure.legend(
+            handles, labels, title="Run median", loc="upper center", ncol=5,
+            frameon=False, fontsize=8, title_fontsize=8, bbox_to_anchor=(0.5, 0.98),
+        )
+    path = figure_dir / "prefix_rfv_by_population.pdf"
+    _save(figure, path, bottom=0.08, top=0.90)
     return path
 
 
@@ -588,7 +612,7 @@ def draw_extended(analysis_root: Path, figure_dir: Path) -> List[Path]:
     handoffs = load_extended_handoffs(analysis_root)
     written = [
         draw_srt_by_producer(handoffs, figure_dir),
-        draw_prefix_rfv_by_attachment(handoffs, figure_dir),
+        draw_prefix_rfv_by_population(handoffs, figure_dir),
     ]
     return written
 

@@ -71,7 +71,7 @@ EXP3_FORMAL_PAPER_FIGURES := results/extended/exp3/analysis/figures/clf_by_popul
                              results/extended/exp3/analysis/figures/network_rfv_by_population.pdf \
                              results/extended/exp3/analysis/figures/nlsr_control_rate_by_population.pdf
 EXP3_SUPPLEMENTARY_FIGURES := results/extended/exp3/paper-figures/srt_by_producer.pdf \
-                              results/extended/exp3/paper-figures/prefix_rfv_by_attachment.pdf
+                              results/extended/exp3/paper-figures/prefix_rfv_by_population.pdf
 EXP3_PAPER_FIGURES := $(EXP3_FORMAL_PAPER_FIGURES) $(EXP3_SUPPLEMENTARY_FIGURES)
 
 ALL_FIGURES := paper/figures/NDN_Packets_Processing_Flow.pdf \
