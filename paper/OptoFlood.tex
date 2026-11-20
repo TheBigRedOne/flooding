@@ -410,7 +410,9 @@ The main evaluation uses a 1~s SPRC Sync-publication delay and a 50~ms EDRC veri
 \textbf{SPRC Sync-publication delay.}
 After an updated Adj-LSA has been installed locally and made available through SPRC along the service-relevant branch, this parameter delays its publication through ordinary NLSR Sync. The tested values are 0, 1, 2, and 4~s. The 1~s value is the main-evaluation setting, and the sweep characterises the effect of this parameter across the tested range. At 0~s, SPRC remains enabled and the updated Adj-LSA is published through ordinary NLSR Sync without an additional deferral.
 
-Figure~\ref{fig:ext_sync_delay} shows the three routing timings. The median Service-Path LSA Lead increases from approximately 186.6~ms at 0~s to approximately 4.12~s at 4~s. Service-Path FIB convergence remains approximately 252--257~ms across the sweep, and Complete Mobility-Topology Update Latency stays approximately 165--168~ms. Network-Wide FIB convergence increases from approximately 491.6~ms at 0~s to approximately 4.47~s at 4~s. Increasing the publication delay extends the temporal head start before the update is disseminated more widely through ordinary NLSR Sync. Network-wide convergence shifts by approximately the added publication delay, while the service-path convergence time changes little. The 0~s case still has a positive Service-Path LSA Lead of about 187~ms, consistent with SPRC remaining active without deliberate Sync deferral.
+Figure~\ref{fig:ext_sync_delay} shows the routing timings under different Sync-publication delays. The median Service-Path LSA Lead increases from approximately 0.11~s at 0~s to 4.11~s at 4~s. Median network-wide FIB convergence increases from approximately 0.45 to 4.48~s over the same range. Service-path FIB convergence remains approximately 253--256~ms, while producer-side topology-update latency stays around 166~ms.
+
+Increasing the publication delay extends the interval during which service-path routers can obtain updated routing information ahead of ordinary NLSR synchronisation. Even without an additional publication delay, service-prioritised Adj-LSA delivery generally precedes ordinary NLSR synchronisation.
 
 \begin{figure*}[t]
     \centering
@@ -422,7 +424,9 @@ Figure~\ref{fig:ext_sync_delay} shows the three routing timings. The median Serv
 \textbf{EDRC verification timeout.}
 This timeout applies to the mobility-triggered verification Hello Interests. The periodic NLSR Hello interval remains unchanged. The tested values are 10, 25, 50, 100, and 250~ms, with the SPRC Sync-publication delay fixed at 1~s. The 50~ms value is the main-evaluation setting.
 
-Figure~\ref{fig:ext_verification_timeout} shows the resulting routing timings. The median Complete Mobility-Topology Update Latency increases from approximately 45.9~ms at a 10~ms timeout to approximately 764.7~ms at 250~ms. Service-Path FIB convergence increases from approximately 121~ms to approximately 860~ms, and Network-Wide FIB convergence from approximately 1.41~s to approximately 1.83~s. The new attachment becomes REACHABLE in approximately 36--38~ms across the sweep, whereas the time to declare the old attachment UNREACHABLE grows with the configured timeout. Topology-update completion closely tracks that UNREACHABLE decision. The observed topology-update medians are consistent with approximately a three-timeout retry budget plus fixed protocol and processing overhead. The timeout therefore primarily controls how quickly the disconnected old attachment is declared unreachable. The new-attachment REACHABLE timing varies little across the sweep and is dominated by the Hello exchange and processing time. All five timeout settings produced the intended verification result in all eight hand-offs.
+Figure~\ref{fig:ext_verification_timeout} shows the routing timings under different verification timeouts. Median Complete Mobility-Topology Update Latency increases from approximately 46~ms at a 10~ms timeout to 766~ms at 250~ms. Service-path FIB convergence increases from approximately 116 to 856~ms. Network-wide FIB convergence remains around 1.45--1.48~s for timeouts of 10--100~ms, rising to approximately 1.83~s at 250~ms.
+
+The new attachment becomes REACHABLE within approximately 36--38~ms across the tested settings. The time required to declare the previous attachment UNREACHABLE increases with the configured timeout, and topology-update completion closely follows this decision. This is consistent with timeout-based Hello retries. All five settings establish the expected adjacency states in all 40 hand-offs per setting.
 
 \begin{figure*}[t]
     \centering
@@ -431,7 +435,7 @@ Figure~\ref{fig:ext_verification_timeout} shows the resulting routing timings. T
     \label{fig:ext_verification_timeout}
 \end{figure*}
 
-Across both sweeps, SRT remains near the main-solution range while the routing-control timings vary substantially. In the verification-timeout sweep, SRT medians remain approximately 78--86~ms while topology-update latency ranges from approximately 46~ms to 765~ms. In the Sync-publication-delay sweep, SRT remains approximately 81--88~ms while network-wide FIB convergence ranges from approximately 0.49~s to 4.47~s. This is consistent with Immediate Service Recovery restoring the request path while subsequent routing convergence proceeds on a different timescale, under the evaluated topology and workload. The two separately collected runs at the main-evaluation parameter combination also fall within the ranges observed in the main OptoFlood experiment for the corresponding routing metrics and SRT.
+Across both parameter sweeps, median SRT remains approximately 57--61~ms despite substantial variation in routing convergence times. In the verification-timeout sweep, median topology-update latency ranges from approximately 46 to 766~ms. In the Sync-publication-delay sweep, median network-wide FIB convergence ranges from approximately 0.45 to 4.48~s. These results show that Immediate Service Recovery typically restores the request path within tens of milliseconds while NLSR convergence continues. The observed distributions include occasional longer recovery times.
 
 % - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 \subsubsection{Multiple Consumers}
@@ -441,7 +445,7 @@ One mobile producer serves \(N=1\), \(N=2\), or \(N=4\) consumers. The five conf
 
 Each configuration has five independent runs of eight hand-offs, hence 40 network-level observations. The \(N=2\) and \(N=4\) runs draw their own intervals from \(90+U(0,60)\)~s.
 
-Figure~\ref{fig:ext_consumers} shows network-wide Recovery Flooding Volume, the sender-egress recovery-flood bytes per hand-off. Event-level medians are 8,318~B at \(N=1\), 12,897.5~B and 15,800~B for \(N=2\) Shared and Distinct, and 15,592.5~B and 30,362~B for \(N=4\) Shared and Distinct. Distinct demand raises the median by 22.5\% at \(N=2\) and 94.7\% at \(N=4\). At \(N=4\), the lowest Distinct RFV is 22,100~B, exceeding the highest Shared observation of 21,528~B. At both \(N=2\) and \(N=4\), every Distinct run-level median exceeds all five Shared run-level medians. All recorded recovery-flood bytes are marked Data flooding. Distinct content Names reduce opportunities for same-name sharing, which is consistent with the higher aggregate recovery-flood volume observed in these configurations.
+Figure~\ref{fig:ext_consumers} shows network-wide Recovery Flooding Volume per hand-off. The median is approximately 4.7~kB for \(N=1\). For \(N=2\), the Shared and Distinct medians are approximately 7.9 and 8.4~kB, respectively. At \(N=4\), they increase to approximately 12.1 and 16.5~kB. Distinct demand has a higher median by approximately 6\% at \(N=2\) and 37\% at \(N=4\), although the observed distributions overlap. All recorded recovery-flood transmissions are Data transmissions. The higher median overhead under Distinct demand is consistent with fewer opportunities for same-name content sharing.
 
 \begin{figure*}[t]
     \centering
@@ -450,7 +454,9 @@ Figure~\ref{fig:ext_consumers} shows network-wide Recovery Flooding Volume, the 
     \label{fig:ext_consumers}
 \end{figure*}
 
-Network-level Service Recovery Time runs from a hand-off until the producer receives the earliest qualifying ordinary-content Interest packet that matches a fresh post-handoff consumer Interest. For multiple consumers, SRT uses the earliest qualifying Interest arrival across all active consumers, giving one network-level observation per hand-off. Figure~\ref{fig:ext_consumers_srt} gives event-level medians of 82.73~ms at \(N=1\), 77.21~ms and 74.13~ms for \(N=2\) Shared and Distinct, and 61.33~ms and 60.34~ms for \(N=4\) Shared and Distinct. All 40 hand-offs in every configuration are observed. At fixed \(N\), Shared and Distinct stay close. The lower \(N=4\) medians characterise the first recovered request path across a larger consumer population. Separate Distinct per-stream diagnostics observe recovery in all 240 stream events, with medians of approximately 77--87~ms. Those values record producer receipt of each stream's Interest packet.
+For multiple consumers, network-level Service Recovery Time ends when the producer receives the earliest qualifying post-handoff normal-content Interest from any active consumer. Figure~\ref{fig:ext_consumers_srt} shows median SRT of approximately 58~ms for \(N=1\). The medians are approximately 57 and 54~ms for \(N=2\) Shared and Distinct, and 53 and 50~ms for \(N=4\) Shared and Distinct. Recovery is observed in all 40 hand-offs per configuration.
+
+At a fixed consumer population, the Shared and Distinct medians remain close. These network-level values represent the earliest restored request path among the active consumers. Separate Distinct per-stream diagnostics record recovery in all 240 stream events, with per-stream median SRT ranging from approximately 58 to 66~ms.
 
 \begin{figure*}[t]
     \centering
@@ -459,7 +465,7 @@ Network-level Service Recovery Time runs from a hand-off until the producer rece
     \label{fig:ext_consumers_srt}
 \end{figure*}
 
-Content Loss Fraction is calculated separately for each consumer as one minus the ratio of delivered unique frames to nominal frame opportunities. All per-consumer medians are below 0.002, with a few much larger events. In \(N=2\) Distinct, run r1, hand-off 7, C1 and C2 reach approximately 0.05631 and 0.05647 in the same event. CLF compares delivered frames with nominal frame opportunities, so its value reflects application scheduling and live-edge behaviour alongside network delivery. The \(N=4\) Shared observations include a slight negative value where the delivered-frame count marginally exceeds the nominal frame opportunities. Figure~\ref{fig:ext_consumers_clf} plots the full range and a magnified low-CLF view of the same observations.
+Figure~\ref{fig:ext_consumers_clf} shows per-consumer CLF, including the full observed range and a magnified view of the lower values. All per-consumer medians remain below 0.002, although some hand-offs exhibit substantially higher content loss. The measurements cover the complete mobility-event interval and reflect both content delivery and application request scheduling.
 
 \begin{figure*}[t]
     \centering
@@ -468,7 +474,7 @@ Content Loss Fraction is calculated separately for each consumer as one minus th
     \label{fig:ext_consumers_clf}
 \end{figure*}
 
-Median NLSR control rates are 1,176.52~B/s at \(N=1\), 1,417.95~B/s and 1,352.09~B/s for \(N=2\) Shared and Distinct, and 1,822.69~B/s and 1,771.06~B/s for \(N=4\). At fixed \(N\) the two patterns share the advertised prefix and the NLSR nodes, and their rates are similar. The increase across \(N\) includes the growth from 11 to 14 routing nodes. At a fixed population, Distinct demand incurs more Data recovery flooding, while first request-path recovery stays in a similar observed range.
+The median NLSR control rate is approximately 1.13~kB/s at \(N=1\). For \(N=2\), the Shared and Distinct rates are approximately 1.44 and 1.33~kB/s, respectively. At \(N=4\), they are approximately 1.84 and 1.80~kB/s. The increase across consumer populations also reflects the growth in the routing domain from 11 to 14 nodes. At a fixed population, the two demand patterns produce broadly similar NLSR control rates.
 
 % - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 \subsubsection{Multiple Producers}
